@@ -1,11 +1,12 @@
 """
 Unitree G1 Motion Editor - Backend Server
-Version: 5.0 (ArmControllerWrapper 신규 메서드 적용)
+Version: 5.1 (Waist 3축 제어 추가)
 
 구조:
 - 팔 제어 (15~28): ArmControllerWrapper 사용
   - move_joint_smooth(): 단일 관절 보간 이동
   - move_joints_smooth(): 전체 관절 보간 이동
+- 허리 제어 (전역 0~2): ArmControllerWrapper.move_waist_smooth() 사용
 - 걷기: LocoClientWrapper 사용
 - 손 제어: HandController 유지
 """
@@ -53,12 +54,18 @@ if USE_HAND_CONTROL:
 
 # --- Pydantic 모델 ---
 class MotorCommand(BaseModel):
-    motor_index: int  # 15~28 (팔)
+    motor_index: int  # 0~2 (허리), 15~28 (팔)
     target_degree: float
     duration: float = 1.0
 
 class AllMotorsCommand(BaseModel):
-    target_degrees: List[float]  # 14개
+    target_degrees: List[float]  # 14개 (팔만)
+    duration: float = 1.0
+
+class WaistCommand(BaseModel):
+    yaw: float = 0.0
+    roll: float = 0.0
+    pitch: float = 0.0
     duration: float = 1.0
 
 class LocoCommand(BaseModel):
@@ -153,22 +160,21 @@ async def execute_hand_motion(hand: str, motion: str, release: bool = False):
 
 
 async def emergency_stop():
-    """긴급 정지 - 팔 14개 모터 0도로"""
+    """긴급 정지 - 팔 14개 + 허리 3축 동시 홈으로"""
     print("!!! 긴급 정지 실행 !!!")
 
     # 걷기 정지
     if loco_wrapper:
         loco_wrapper.stop()
 
-    # 팔 홈으로 (14개 모터 0도) - 보간 이동
     if arm_wrapper:
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            arm_wrapper.move_joints_smooth,
-            [0] * 14,
-            1.0  # 1초 동안 이동
-        )
+        # 팔과 허리 동시 복귀
+        tasks = [
+            loop.run_in_executor(None, arm_wrapper.move_joints_smooth, [0] * 14, 1.0),
+            loop.run_in_executor(None, arm_wrapper.move_waist_smooth, 0.0, 0.0, 0.0, 1.0),
+        ]
+        await asyncio.gather(*tasks)
 
     # 손 초기화
     if USE_HAND_CONTROL:
@@ -186,7 +192,8 @@ async def startup_event():
     print("--- FastAPI 서버 시작 ---")
     print("=" * 50)
     print("구조:")
-    print("  - 팔 제어: ArmControllerWrapper")
+    print("  - 허리 제어: ArmControllerWrapper.move_waist_smooth() (전역 0~2)")
+    print("  - 팔 제어: ArmControllerWrapper (전역 15~28)")
     print("    - move_joint_smooth(): 단일 관절")
     print("    - move_joints_smooth(): 전체 관절")
     print("  - 걷기: LocoClientWrapper")
@@ -275,7 +282,9 @@ async def set_hand(command: HandCommand):
 @app.post("/set_motor")
 async def set_motor(command: MotorCommand):
     """
-    단일 모터 제어 (팔: 0~13 또는 15~28)
+    단일 모터 제어
+    - 허리: motor_index 0~2 (전역: WaistYaw, WaistRoll, WaistPitch)
+    - 팔: motor_index 15~28 (전역) 또는 0~13 (내부)
     move_joint_smooth() 사용 - 보간 적용
     """
     if not arm_wrapper:
@@ -300,10 +309,36 @@ async def set_motor(command: MotorCommand):
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/set_waist")
+async def set_waist(command: WaistCommand):
+    """
+    허리 3축 동시 제어
+    - yaw: WaistYaw (좌우 회전)
+    - roll: WaistRoll (좌우 기울기)
+    - pitch: WaistPitch (앞뒤 기울기)
+    """
+    if not arm_wrapper:
+        return {"status": "error", "message": "ArmControllerWrapper not initialized"}
+
+    print(f"[set_waist] yaw={command.yaw}, roll={command.roll}, pitch={command.pitch}, dur={command.duration}")
+
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            arm_wrapper.move_waist_smooth,
+            command.yaw, command.roll, command.pitch, command.duration
+        )
+        return {"status": "success"}
+    except Exception as e:
+        print(f"[set_waist Error] {e}")
+        return {"status": "error", "message": str(e)}
+
+
 @app.post("/set_all_motors")
 async def set_all_motors(command: AllMotorsCommand):
     """
-    전체 모터 제어 (14개)
+    전체 팔 모터 제어 (14개)
     move_joints_smooth() 사용 - 보간 적용
     """
     if not arm_wrapper:
@@ -375,6 +410,7 @@ async def set_loco_motion(command: LocoCommand):
 
 
 # ==================== 관절 정보 API ====================
+@app.get("/joint_info")
 async def get_joint_info():
     """관절 정보 조회 (인덱스 매핑)"""
     return {
@@ -405,37 +441,58 @@ async def set_motion(motion_sequence: List[MotionFrame]):
 
         print(f"[모션] 프레임 {i+1}/{len(motion_sequence)} ({frame.duration}초)")
 
-        # 손 모션
+        # 손 모션 (비동기 시작)
         hand_task = None
         if frame.hand_motion and USE_HAND_CONTROL:
             hand_task = asyncio.create_task(
                 execute_hand_motion(frame.hand_motion.hand, frame.hand_motion.motion)
             )
 
-        # 자세(포즈) 명령 - arm_wrapper 사용 (15~28 또는 0~13)
+        # 자세(포즈) 명령 - arm_wrapper 사용
         if frame.pose and frame.pose.targets and arm_wrapper:
-            # 모든 타겟을 한번에 처리하기 위해 현재 목표값 기반으로 구성
+            # 현재 팔 타겟 읽기
             with arm_wrapper.arm_ctrl.ctrl_lock:
-                current_targets = np.degrees(arm_wrapper.arm_ctrl.q_target.copy())
+                current_arm_targets = np.degrees(arm_wrapper.arm_ctrl.q_target.copy())
+
+            # 현재 허리 타겟 읽기
+            try:
+                with arm_wrapper.arm_ctrl.ctrl_lock:
+                    curr_waist = np.degrees(
+                        getattr(arm_wrapper.arm_ctrl, 'waist_q_target', np.zeros(3)).copy()
+                    )
+            except:
+                curr_waist = np.zeros(3)
+            waist_targets = curr_waist.copy()
+            has_waist = False
 
             for target in frame.pose.targets:
-                # 전체 인덱스(15~28)를 내부 인덱스(0~13)로 변환
-                if 15 <= target.motor_index <= 28:
+                if 0 <= target.motor_index <= 2:  # 허리 전역 (WaistYaw=0, WaistRoll=1, WaistPitch=2)
+                    waist_targets[target.motor_index] = target.target_degree
+                    has_waist = True
+                elif 15 <= target.motor_index <= 28:  # 팔 전역
                     internal_idx = GLOBAL_TO_INTERNAL[target.motor_index]
-                elif 0 <= target.motor_index <= 13:
-                    internal_idx = target.motor_index
-                else:
-                    continue  # 범위 외 무시
+                    current_arm_targets[internal_idx] = target.target_degree
+                elif 3 <= target.motor_index <= 16:  # 팔 내부 인덱스 (하위 호환)
+                    current_arm_targets[target.motor_index] = target.target_degree
+                # else: 범위 외 무시
 
-                current_targets[internal_idx] = target.target_degree
-
-            # 전체 관절 보간 이동
-            await loop.run_in_executor(
-                None,
-                arm_wrapper.move_joints_smooth,
-                current_targets.tolist(),
-                frame.duration
-            )
+            # 팔 이동 (항상)
+            move_tasks = [
+                loop.run_in_executor(
+                    None, arm_wrapper.move_joints_smooth,
+                    current_arm_targets.tolist(), frame.duration
+                )
+            ]
+            # 허리 이동 (타겟이 있을 때만)
+            if has_waist:
+                move_tasks.append(
+                    loop.run_in_executor(
+                        None, arm_wrapper.move_waist_smooth,
+                        float(waist_targets[0]), float(waist_targets[1]),
+                        float(waist_targets[2]), frame.duration
+                    )
+                )
+            await asyncio.gather(*move_tasks)
 
         # 걷기 명령
         if frame.locomotion and loco_wrapper:
