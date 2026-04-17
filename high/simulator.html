@@ -19,6 +19,7 @@
             --accent-primary-hover: #79C0FF;
             --accent-danger: #F85149;
             --accent-hand: #F778BA;
+            --accent-waist: #F0A050;
             --font-sans: 'Noto Sans KR', sans-serif;
             --font-mono: 'Roboto Mono', monospace;
         }
@@ -120,12 +121,30 @@
             gap: 0.8rem 2rem;
         }
 
+        /* 허리 섹션 */
+        #waist-section {
+            margin-top: 1rem;
+            padding-top: 0.8rem;
+            border-top: 1px solid var(--border-primary);
+        }
+
+        #WAIST_CONTROLS {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.8rem;
+        }
+
         .joint-group-title {
             font-size: 0.95rem;
             font-weight: 700;
             margin: 0 0 0.8rem 0;
             padding-bottom: 0.4rem;
             border-bottom: 1px solid var(--border-primary);
+        }
+
+        .joint-group-title.waist-title {
+            color: var(--accent-waist);
+            border-color: var(--accent-waist);
         }
 
         .control-item { margin-bottom: 0.6rem; }
@@ -163,6 +182,11 @@
             background: var(--accent-primary);
             border-radius: 50%;
             cursor: grab;
+        }
+
+        /* 허리 슬라이더 색상 구분 */
+        #waist-section input[type="range"]::-webkit-slider-thumb {
+            background: var(--accent-waist);
         }
 
         input[type="number"] {
@@ -367,7 +391,7 @@
 <body>
     <div class="app-container">
         <header class="app-header">
-            <h1 class="app-title">G1 Motion Editor <span>v5.1</span></h1>
+            <h1 class="app-title">G1 Motion Editor <span>v5.2</span></h1>
             <div class="header-status">
                 <div id="hand-status-left" class="hand-status">왼손: -</div>
                 <div id="hand-status-right" class="hand-status">오른손: -</div>
@@ -385,6 +409,11 @@
                     <h4 class="joint-group-title">왼쪽 팔</h4>
                     <div id="L_ARM_CONTROLS"></div>
                 </div>
+            </div>
+            <!-- 허리 제어 섹션 -->
+            <div id="waist-section">
+                <h4 class="joint-group-title waist-title">허리 (Waist)</h4>
+                <div id="WAIST_CONTROLS"></div>
             </div>
         </div>
 
@@ -446,7 +475,7 @@
                     <label>현재 자세 저장</label>
                     <div class="checkbox-item">
                         <input type="checkbox" id="save-pose-checkbox" checked>
-                        <label for="save-pose-checkbox">포함</label>
+                        <label for="save-pose-checkbox">포함 (팔 + 허리)</label>
                     </div>
                 </div>
                 <div>
@@ -478,6 +507,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_BASE = `http://${location.hostname}:8000`;
     const API = {
         MOTOR: `${API_BASE}/set_motor`,
+        WAIST: `${API_BASE}/set_waist`,
         LOCO: `${API_BASE}/set_loco_motion`,
         MOTION: `${API_BASE}/set_motion`,
         STOP: `${API_BASE}/stop_motion`,
@@ -485,14 +515,26 @@ document.addEventListener('DOMContentLoaded', () => {
         HAND_MOTIONS: `${API_BASE}/hand_motions`
     };
 
+    // 전역 인덱스: 허리(0~2) + 팔(15~28)
     const G1Joint = {
+        // 허리 (Waist) - 전역 0~2
+        WaistYaw:   0,
+        WaistRoll:  1,
+        WaistPitch: 2,
+        // 왼쪽 팔 - 전역 15~21
         LeftShoulderPitch: 15, LeftShoulderRoll: 16, LeftShoulderYaw: 17, LeftElbow: 18,
         LeftWristRoll: 19, LeftWristPitch: 20, LeftWristYaw: 21,
+        // 오른쪽 팔 - 전역 22~28
         RightShoulderPitch: 22, RightShoulderRoll: 23, RightShoulderYaw: 24, RightElbow: 25,
         RightWristRoll: 26, RightWristPitch: 27, RightWristYaw: 28,
     };
 
     const JOINT_LIMITS = {
+        // 허리
+        0: [-45, 45],   // WaistYaw
+        1: [-20, 20],   // WaistRoll
+        2: [-30, 30],   // WaistPitch
+        // 팔
         15: [-177, 153], 16: [-91, 129], 17: [-150, 150], 18: [-60, 120],
         19: [-113, 113], 20: [-92.5, 92.5], 21: [-92.5, 92.5],
         22: [-177, 153], 23: [-129, 91], 24: [-150, 150], 25: [-60, 120],
@@ -507,8 +549,14 @@ document.addEventListener('DOMContentLoaded', () => {
         'L_ARM_CONTROLS': [
             ['Shoulder Pitch', 15], ['Shoulder Roll', 16], ['Shoulder Yaw', 17], ['Elbow', 18],
             ['Wrist Roll', 19], ['Wrist Pitch', 20], ['Wrist Yaw', 21],
+        ],
+        'WAIST_CONTROLS': [
+            ['Yaw (좌우)', 0], ['Roll (기울기)', 1], ['Pitch (숙임)', 2],
         ]
     };
+
+    // 허리 전용 API 사용 여부 (true: /set_waist 사용, false: /set_motor 사용)
+    const WAIST_INDICES = new Set([0, 1, 2]);
 
     let originalLimits = JSON.parse(JSON.stringify(JOINT_LIMITS));
     let currentLimits = { ...JOINT_LIMITS };
@@ -564,12 +612,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!m) return;
         const [, type, idxStr] = m;
         const idx = parseInt(idxStr);
-        const [min, max] = currentLimits[idx];
+        const [min, max] = currentLimits[idx] || [-180, 180];
         let val = Math.max(min, Math.min(max, parseFloat(e.target.value) || 0));
         if (type === 'slider') document.getElementById(`number-${idx}`).value = val.toFixed(1);
         else document.getElementById(`slider-${idx}`).value = val;
         clearTimeout(motorTimeout[idx]);
-        motorTimeout[idx] = setTimeout(() => apiCall(API.MOTOR, { motor_index: idx, target_degree: val, duration: 1.0 }), 50);
+        motorTimeout[idx] = setTimeout(() => {
+            // 허리는 /set_motor 사용 (move_joint_smooth가 0~2를 허리로 처리)
+            apiCall(API.MOTOR, { motor_index: idx, target_degree: val, duration: 0.5 });
+        }, 50);
     }
 
     async function initHandControls() {
@@ -609,12 +660,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function toggleSafeMode() {
         const safe = document.getElementById('safe-mode-checkbox').checked;
-        Object.keys(originalLimits).forEach(i => { const [min,max] = originalLimits[i]; currentLimits[i] = safe ? [min*0.5, max*0.5] : [min, max]; });
+        Object.keys(originalLimits).forEach(i => {
+            const [min, max] = originalLimits[i];
+            currentLimits[i] = safe ? [min * 0.5, max * 0.5] : [min, max];
+        });
         initControls();
         resetRobot();
     }
 
     async function resetRobot() {
+        // G1Joint의 모든 인덱스(허리 0~2 + 팔 15~28) 전부 0으로
         const targets = Object.values(G1Joint).map(i => ({ motor_index: i, target_degree: 0 }));
         await apiCall(API.MOTION, [{ duration: 0.5, pose: { targets }, locomotion: { direction: 'stop' } }]);
         Object.values(G1Joint).forEach(i => setMotorValue(i, 0));
@@ -628,21 +683,34 @@ document.addEventListener('DOMContentLoaded', () => {
         const savePose = document.getElementById('save-pose-checkbox').checked;
         if (!savePose && loco === 'none' && hand === 'none') return;
         const frame = { duration };
-        if (savePose) frame.pose = { targets: Object.values(G1Joint).map(i => ({ motor_index: i, target_degree: getMotorValue(i) })) };
+        if (savePose) {
+            // 팔(15~28) + 허리(0~2) 모두 저장
+            frame.pose = { targets: Object.values(G1Joint).map(i => ({ motor_index: i, target_degree: getMotorValue(i) })) };
+        }
         if (loco !== 'none') frame.locomotion = { direction: loco };
         if (hand !== 'none') frame.hand_motion = { hand: handTarget, motion: hand };
         motionFrames.push(frame);
         renderTimeline();
     }
 
+    function getFrameDescription(f) {
+        const actions = [];
+        if (f.pose) {
+            const hasWaist = f.pose.targets.some(t => WAIST_INDICES.has(t.motor_index) && t.target_degree !== 0);
+            const hasArm = f.pose.targets.some(t => t.motor_index >= 15);
+            if (hasArm) actions.push('팔');
+            if (hasWaist) actions.push('허리');
+            if (!hasArm && !hasWaist) actions.push('자세');
+        }
+        if (f.locomotion) actions.push(f.locomotion.direction);
+        if (f.hand_motion) actions.push(f.hand_motion.motion);
+        return actions.join(' + ') || '자세';
+    }
+
     function renderTimeline() {
         const tbody = document.getElementById('timeline-table-body');
         tbody.innerHTML = motionFrames.map((f, i) => {
-            const actions = [];
-            if (f.pose) actions.push('자세');
-            if (f.locomotion) actions.push(f.locomotion.direction);
-            if (f.hand_motion) actions.push(f.hand_motion.motion);
-            return `<tr data-index="${i}"><td>${i+1}</td><td>${actions.join(' + ')}</td><td>${f.duration.toFixed(1)}s</td><td><button class="delete-frame-btn" data-index="${i}">&times;</button></td></tr>`;
+            return `<tr data-index="${i}"><td>${i+1}</td><td>${getFrameDescription(f)}</td><td>${f.duration.toFixed(1)}s</td><td><button class="delete-frame-btn" data-index="${i}">&times;</button></td></tr>`;
         }).join('');
         tbody.querySelectorAll('tr').forEach(row => row.addEventListener('click', () => loadFrame(parseInt(row.dataset.index))));
         tbody.querySelectorAll('.delete-frame-btn').forEach(btn => btn.addEventListener('click', e => { e.stopPropagation(); motionFrames.splice(parseInt(btn.dataset.index), 1); renderTimeline(); }));
@@ -650,7 +718,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadFrame(i) {
         const f = motionFrames[i];
-        if (f?.pose) { await apiCall(API.MOTION, [{ duration: 1.0, pose: f.pose }]); f.pose.targets.forEach(t => setMotorValue(t.motor_index, t.target_degree)); }
+        if (f?.pose) {
+            await apiCall(API.MOTION, [{ duration: 1.0, pose: f.pose }]);
+            f.pose.targets.forEach(t => setMotorValue(t.motor_index, t.target_degree));
+        }
     }
 
     async function playMotion() { if (isPlaying || !motionFrames.length) return; isPlaying = true; togglePlayUI(false); await apiCall(API.MOTION, motionFrames); isPlaying = false; togglePlayUI(true); }
