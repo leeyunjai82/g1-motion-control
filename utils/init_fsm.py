@@ -1,0 +1,19 @@
+from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
+from unitree_sdk2py.core.channel import ChannelFactoryInitialize
+import time
+
+def setfsmid(n):
+    print(f"[setfsmid-START]: id({n})")
+    res = loco_client.SetFsmId(n)
+    print(f"[setfsmid-END]: Result({res})")
+
+ChannelFactoryInitialize(0, "wlp45s0f0")
+loco_client = LocoClient()
+loco_client.Init()
+loco_client.SetTimeout(10.0)
+
+setfsmid(1)
+time.sleep(5)
+setfsmid(4)
+time.sleep(10)
+setfsmid(501)

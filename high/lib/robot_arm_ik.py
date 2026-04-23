@@ -9,7 +9,8 @@ import os
 import sys
 import pickle
 import logging_mp
-logger_mp = logging_mp.get_logger(__name__)
+#logger_mp = logging_mp.get_logger(__name__)
+logger_mp = logging_mp.getLogger(__name__)
 parent2_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(parent2_dir)
 
@@ -26,11 +27,11 @@ class G1_29_ArmIK:
         self.cache_path = "g1_29_model_cache.pkl"
 
         if not self.Unit_Test:
-            self.urdf_path = '/home/unitree/g1-motion-control/assets/g1/g1_body29_hand14.urdf'
-            self.model_dir = '/home/unitree/g1-motion-control/assets/g1/'
+            self.urdf_path = '../assets/g1/g1_body29_hand14.urdf'
+            self.model_dir = '../assets/g1/'
         else:
-            self.urdf_path = '/home/unitree/g1-motion-control/assets/g1/g1_body29_hand14.urdf'
-            self.model_dir = '/home/unitree/g1-motion-control/assets/g1/'
+            self.urdf_path = '../assets/g1/g1_body29_hand14.urdf'
+            self.model_dir = '../assets/g1/'
 
         # Try loading cache first
         if os.path.exists(self.cache_path) and (not self.Visualization):

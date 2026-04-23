@@ -18,10 +18,10 @@ from typing import List, Optional
 import numpy as np
 import pinocchio as pin
 
-os.system('sudo chown unitree:unitree /dev/ttyACM0')
-os.system('sudo chown unitree:unitree /dev/ttyACM1')
+#os.system('sudo chown unitree:unitree /dev/ttyACM0')
+#os.system('sudo chown unitree:unitree /dev/ttyACM1')
 
-USE_HAND_CONTROL = True
+USE_HAND_CONTROL = False
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 
