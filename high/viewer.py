@@ -25,7 +25,7 @@ MESH_DIR   = os.path.join(ASSETS_DIR, 'meshes')
 # 로봇 연결
 # ==========================================
 try:
-    from lib.robot_arm import G1_29_ArmController
+    from ctrl.robot_arm import G1_29_ArmController
     ctrl = G1_29_ArmController(motion_mode=False, simulation_mode=False)
     ROBOT_AVAILABLE = True
     print("[시스템] 로봇 연결 성공")

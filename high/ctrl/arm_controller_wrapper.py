@@ -15,8 +15,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from lib.robot_arm import G1_29_ArmController, G1_29_JointArmIndex
-from lib.robot_arm_ik import G1_29_ArmIK
+from ctrl.robot_arm import G1_29_ArmController, G1_29_JointArmIndex
+from ctrl.robot_arm_ik import G1_29_ArmIK
 
 # Locomotion 관련 임포트
 try:

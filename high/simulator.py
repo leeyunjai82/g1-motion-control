@@ -20,16 +20,13 @@ import os, time, asyncio, threading
 from typing import List, Optional
 import numpy as np
 
-os.system('sudo chown unitree:unitree /dev/ttyACM0')
-os.system('sudo chown unitree:unitree /dev/ttyACM1')
-
 # --- 전역 설정 ---
 USE_HAND_CONTROL = True
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 
 # --- Wrapper 임포트 ---
-from lib.arm_controller_wrapper import (
+from ctrl.arm_controller_wrapper import (
     ArmControllerWrapper,
     LocoClientWrapper,
     JOINT_INFO,
@@ -45,7 +42,7 @@ available_hand_motions = []
 
 if USE_HAND_CONTROL:
     try:
-        from lib.mandro import HandController, motions
+        from ctrl.mandro import HandController, motions
         available_hand_motions = list(motions.keys())
         print(f"✅ 손 제어 라이브러리 로드 성공. 사용 가능한 모션: {len(available_hand_motions)}개")
     except ImportError as e:

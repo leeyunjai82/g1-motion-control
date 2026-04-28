@@ -25,7 +25,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 try:
-    from lib.arm_controller_wrapper import LocoClientWrapper
+    from ctrl.arm_controller_wrapper import LocoClientWrapper
     print("[시스템] Locomotion 라이브러리 로드 성공")
 except ImportError as e:
     print(f"[오류] 라이브러리를 찾을 수 없습니다: {e}")

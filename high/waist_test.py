@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import time
-from lib.arm_controller_wrapper import ArmControllerWrapper
+from ctrl.arm_controller_wrapper import ArmControllerWrapper
 
 def print_waist_menu():
     print("\n" + "="*50)

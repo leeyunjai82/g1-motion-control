@@ -25,7 +25,7 @@ USE_HAND_CONTROL = False
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 
-from lib.arm_controller_wrapper import (
+from ctrl.arm_controller_wrapper import (
     ArmControllerWrapper,
     LocoClientWrapper,
 )
@@ -38,7 +38,7 @@ available_hand_motions = []
 
 if USE_HAND_CONTROL:
     try:
-        from lib.mandro import HandController, motions
+        from ctrl.mandro import HandController, motions
         available_hand_motions = list(motions.keys())
         print(f"✅ 손 제어 라이브러리 로드 성공. 모션: {len(available_hand_motions)}개")
     except ImportError as e:
