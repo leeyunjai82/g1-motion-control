@@ -24,14 +24,11 @@ class G1_29_ArmIK:
         self.Visualization = Visualization
 
         # fixed cache file path
-        self.cache_path = "g1_29_model_cache.pkl"
+        _dir = os.path.dirname(os.path.abspath(__file__))
 
-        if not self.Unit_Test:
-            self.urdf_path = '../assets/g1/g1_body29_hand14.urdf'
-            self.model_dir = '../assets/g1/'
-        else:
-            self.urdf_path = '../assets/g1/g1_body29_hand14.urdf'
-            self.model_dir = '../assets/g1/'
+        self.cache_path = os.path.join(_dir, 'g1_29_model_cache.pkl')
+        self.urdf_path  = os.path.join(_dir, '..', 'assets', 'g1', 'g1_29dof_rev_1_0.urdf')
+        self.model_dir  = os.path.join(_dir, '..', 'assets', 'g1')
 
         # Try loading cache first
         if os.path.exists(self.cache_path) and (not self.Visualization):
@@ -57,22 +54,6 @@ class G1_29_ArmIK:
                                             "waist_yaw_joint" ,
                                             "waist_roll_joint" ,
                                             "waist_pitch_joint" ,
-                                            
-                                            "left_hand_thumb_0_joint" ,
-                                            "left_hand_thumb_1_joint" ,
-                                            "left_hand_thumb_2_joint" ,
-                                            "left_hand_middle_0_joint" ,
-                                            "left_hand_middle_1_joint" ,
-                                            "left_hand_index_0_joint" ,
-                                            "left_hand_index_1_joint" ,
-                                            
-                                            "right_hand_thumb_0_joint" ,
-                                            "right_hand_thumb_1_joint" ,
-                                            "right_hand_thumb_2_joint" ,
-                                            "right_hand_index_0_joint" ,
-                                            "right_hand_index_1_joint" ,
-                                            "right_hand_middle_0_joint",
-                                            "right_hand_middle_1_joint"
                                         ]
 
             self.reduced_robot = self.robot.buildReducedRobot(
@@ -312,7 +293,7 @@ class G1_29_ArmIK:
         
 if __name__ == "__main__":
     arm_ik = G1_29_ArmIK(Unit_Test = True, Visualization = False)
-
+    print(arm_ik.reduced_robot.model.frames[0].name) 
     # initial positon
     L_tf_target = pin.SE3(
         pin.Quaternion(1, 0, 0, 0),

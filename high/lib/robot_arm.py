@@ -4,11 +4,10 @@ import time
 from enum import IntEnum
 
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber, ChannelFactoryInitialize # dds
-from unitree_sdk2py.idl.unitree_hg.msg.dds_ import ( LowCmd_ as hg_LowCmd, LowState_ as hg_LowState) 
+from unitree_sdk2py.idl.unitree_hg.msg.dds_ import ( LowCmd_ as hg_LowCmd, LowState_ as hg_LowState)
 from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowCmd_
 from unitree_sdk2py.utils.crc import CRC
 
-# 로깅 모듈 (사용자 환경에 맞게 로거 설정)
 import logging
 logging.basicConfig(level=logging.INFO)
 logger_mp = logging.getLogger(__name__)
@@ -44,15 +43,15 @@ class DataBuffer:
 class G1_29_ArmController:
     def __init__(self, motion_mode = False, simulation_mode = False):
         logger_mp.info("G1_29_ArmController 초기화 중...")
-        
+
         # 제어 타겟 초기화
         self.q_target = np.zeros(14)        # 양팔 14축
         self.tauff_target = np.zeros(14)    # 양팔 토크 피드포워드
         self.waist_q_target = np.zeros(3)   # 허리 3축 (Yaw, Roll, Pitch)
-        
+
         self.motion_mode = motion_mode
         self.simulation_mode = simulation_mode
-        
+
         # 게인 설정
         self.kp_high = 300.0
         self.kd_high = 3.0
@@ -60,7 +59,7 @@ class G1_29_ArmController:
         self.kd_low = 3.0
         self.kp_wrist = 40.0
         self.kd_wrist = 1.5
-        self.kp_waist = 150.0  # 허리용 게인
+        self.kp_waist = 150.0
         self.kd_waist = 3.0
 
         self.arm_velocity_limit = 20.0
@@ -68,6 +67,11 @@ class G1_29_ArmController:
 
         self._speed_gradual_max = False
         self._gradual_start_time = None
+
+        # IMU 데이터 (subscribe 루프에서 갱신)
+        self.imu_rpy   = np.zeros(3)  # [roll, pitch, yaw] rad
+        self.imu_accel = np.zeros(3)  # [x, y, z] m/s²
+        self.imu_gyro  = np.zeros(3)  # [x, y, z] rad/s
 
         # DDS 초기화
         if self.simulation_mode:
@@ -80,7 +84,7 @@ class G1_29_ArmController:
             self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Motion, hg_LowCmd)
         else:
             self.lowcmd_publisher = ChannelPublisher(kTopicLowCommand_Debug, hg_LowCmd)
-            
+
         self.lowcmd_publisher.Init()
         self.lowstate_subscriber = ChannelSubscriber(kTopicLowState, hg_LowState)
         self.lowstate_subscriber.Init()
@@ -101,7 +105,7 @@ class G1_29_ArmController:
         self.crc = CRC()
         self.msg = unitree_hg_msg_dds__LowCmd_()
         self.msg.mode_pr = 0
-        self.msg.mode_machine = 0 # 초기값
+        self.msg.mode_machine = 0
 
         # 현재 상태 읽기 및 초기 타겟 설정
         current_all_q = self.get_current_motor_q()
@@ -114,7 +118,6 @@ class G1_29_ArmController:
 
         for id in G1_29_JointIndex:
             self.msg.motor_cmd[id].mode = 1
-            # 팔 관절 게인 설정
             if id.value in arm_indices:
                 if self._Is_wrist_motor(id):
                     self.msg.motor_cmd[id].kp = self.kp_wrist
@@ -122,11 +125,9 @@ class G1_29_ArmController:
                 else:
                     self.msg.motor_cmd[id].kp = self.kp_low
                     self.msg.motor_cmd[id].kd = self.kd_low
-            # 허리 관절 게인 설정
             elif id.value in waist_indices:
                 self.msg.motor_cmd[id].kp = self.kp_waist
                 self.msg.motor_cmd[id].kd = self.kd_waist
-            # 나머지 관절 게인 설정
             else:
                 if self._Is_weak_motor(id):
                     self.msg.motor_cmd[id].kp = self.kp_low
@@ -134,10 +135,9 @@ class G1_29_ArmController:
                 else:
                     self.msg.motor_cmd[id].kp = self.kp_high
                     self.msg.motor_cmd[id].kd = self.kd_high
-            
-            # 초기 위치는 현재 위치로 고정
+
             self.msg.motor_cmd[id].q = current_all_q[id]
-            
+
         logger_mp.info("관절 고정 완료.")
 
         # 송신 스레드 시작
@@ -152,11 +152,18 @@ class G1_29_ArmController:
         while True:
             msg = self.lowstate_subscriber.Read()
             if msg is not None:
+                # 관절 상태 저장
                 lowstate = G1_29_LowState()
                 for id in range(G1_29_Num_Motors):
                     lowstate.motor_state[id].q  = msg.motor_state[id].q
                     lowstate.motor_state[id].dq = msg.motor_state[id].dq
                 self.lowstate_buffer.SetData(lowstate)
+
+                # IMU 데이터 저장 (pelvis IMU)
+                self.imu_rpy   = np.array(msg.imu_state.rpy)
+                self.imu_accel = np.array(msg.imu_state.accelerometer)
+                self.imu_gyro  = np.array(msg.imu_state.gyroscope)
+
             time.sleep(0.002)
 
     def clip_arm_q_target(self, target_q, velocity_limit):
@@ -167,7 +174,6 @@ class G1_29_ArmController:
         return cliped_arm_q_target
 
     def _ctrl_motor_state(self):
-        # 제어권 획득 (Joint 29를 1로 설정하여 arm_sdk 활성화)
         if self.motion_mode:
             self.msg.motor_cmd[G1_29_JointIndex.kNotUsedJoint0].q = 1.0
 
@@ -183,17 +189,17 @@ class G1_29_ArmController:
             if self.simulation_mode:
                 cliped_arm_q_target = arm_q_target
             else:
-                cliped_arm_q_target = self.clip_arm_q_target(arm_q_target, velocity_limit = self.arm_velocity_limit)
+                cliped_arm_q_target = self.clip_arm_q_target(arm_q_target, velocity_limit=self.arm_velocity_limit)
 
             for idx, id in enumerate(G1_29_JointArmIndex):
-                self.msg.motor_cmd[id].q = cliped_arm_q_target[idx]
-                self.msg.motor_cmd[id].dq = 0
+                self.msg.motor_cmd[id].q   = cliped_arm_q_target[idx]
+                self.msg.motor_cmd[id].dq  = 0
                 self.msg.motor_cmd[id].tau = arm_tauff_target[idx]
 
             # 2. 허리 제어 업데이트 (12, 13, 14번)
             for i, joint_idx in enumerate([12, 13, 14]):
-                self.msg.motor_cmd[joint_idx].q = waist_q_target[i]
-                self.msg.motor_cmd[joint_idx].dq = 0
+                self.msg.motor_cmd[joint_idx].q   = waist_q_target[i]
+                self.msg.motor_cmd[joint_idx].dq  = 0
                 self.msg.motor_cmd[joint_idx].tau = 0
 
             # 3. CRC 계산 및 전송
@@ -209,6 +215,8 @@ class G1_29_ArmController:
             sleep_time = max(0, (self.control_dt - (current_time - start_time)))
             time.sleep(sleep_time)
 
+    # ==================== 제어 메서드 ====================
+
     def ctrl_dual_arm(self, q_target, tauff_target):
         with self.ctrl_lock:
             self.q_target = q_target
@@ -221,6 +229,8 @@ class G1_29_ArmController:
         with self.ctrl_lock:
             self.waist_q_target = np.array(q_target)
 
+    # ==================== 상태 조회 메서드 ====================
+
     def get_current_motor_q(self):
         return np.array([self.lowstate_buffer.GetData().motor_state[id].q for id in range(G1_29_Num_Motors)])
 
@@ -230,77 +240,110 @@ class G1_29_ArmController:
     def get_current_dual_arm_dq(self):
         return np.array([self.lowstate_buffer.GetData().motor_state[id].dq for id in G1_29_JointArmIndex])
 
+    # ==================== IMU 조회 메서드 ====================
+
+    def get_imu_rpy(self):
+        """pelvis IMU RPY [roll, pitch, yaw] (rad)"""
+        return self.imu_rpy.copy()
+
+    def get_imu_roll(self):
+        """pelvis IMU roll (rad)"""
+        return float(self.imu_rpy[0])
+
+    def get_imu_pitch(self):
+        """pelvis IMU pitch (rad)"""
+        return float(self.imu_rpy[1])
+
+    def get_imu_yaw(self):
+        """pelvis IMU yaw (rad)"""
+        return float(self.imu_rpy[2])
+
+    def get_imu_accel(self):
+        """pelvis IMU accelerometer [x, y, z] (m/s²)"""
+        return self.imu_accel.copy()
+
+    def get_imu_gyro(self):
+        """pelvis IMU gyroscope [x, y, z] (rad/s)"""
+        return self.imu_gyro.copy()
+
+    def get_waist_q(self):
+        """현재 허리 관절각 [yaw, roll, pitch] (rad)"""
+        q = self.get_current_motor_q()
+        return q[12:15].copy()
+
+    # ==================== 유틸리티 ====================
+
     def ctrl_dual_arm_go_home(self):
         logger_mp.info("양팔 홈 포지션 이동 시작...")
         with self.ctrl_lock:
             self.q_target = np.zeros(14)
-            self.waist_q_target = np.zeros(3) # 허리도 홈으로
-        
-        time.sleep(2.0) # 이동 대기
-        
+            self.waist_q_target = np.zeros(3)
+
+        time.sleep(2.0)
+
         if self.motion_mode:
-            # 제어권 반납 (Joint 29를 0으로 서서히 변경)
             for weight in np.linspace(1, 0, num=50):
                 self.msg.motor_cmd[G1_29_JointIndex.kNotUsedJoint0].q = weight
                 time.sleep(0.02)
         logger_mp.info("홈 이동 완료 및 제어권 반납.")
 
-    def speed_gradual_max(self, t = 5.0):
+    def speed_gradual_max(self, t=5.0):
         self._gradual_start_time = time.time()
         self._speed_gradual_max = True
 
     def _Is_weak_motor(self, motor_index):
-        weak_motors = [4, 10, 15, 16, 17, 18, 22, 23, 24, 25] # AnklePitch, Shoulder, Elbow 등
+        weak_motors = [4, 10, 15, 16, 17, 18, 22, 23, 24, 25]
         return motor_index.value in weak_motors
 
     def _Is_wrist_motor(self, motor_index):
         wrist_motors = [19, 20, 21, 26, 27, 28]
         return motor_index.value in wrist_motors
 
+
 class G1_29_JointArmIndex(IntEnum):
     kLeftShoulderPitch = 15
-    kLeftShoulderRoll = 16
-    kLeftShoulderYaw = 17
-    kLeftElbow = 18
-    kLeftWristRoll = 19
-    kLeftWristPitch = 20
-    kLeftWristyaw = 21
+    kLeftShoulderRoll  = 16
+    kLeftShoulderYaw   = 17
+    kLeftElbow         = 18
+    kLeftWristRoll     = 19
+    kLeftWristPitch    = 20
+    kLeftWristyaw      = 21
     kRightShoulderPitch = 22
-    kRightShoulderRoll = 23
-    kRightShoulderYaw = 24
-    kRightElbow = 25
-    kRightWristRoll = 26
-    kRightWristPitch = 27
-    kRightWristYaw = 28
+    kRightShoulderRoll  = 23
+    kRightShoulderYaw   = 24
+    kRightElbow         = 25
+    kRightWristRoll     = 26
+    kRightWristPitch    = 27
+    kRightWristYaw      = 28
 
 class G1_29_JointIndex(IntEnum):
-    kLeftHipPitch = 0
-    kLeftHipRoll = 1
-    kLeftHipYaw = 2
-    kLeftKnee = 3
+    kLeftHipPitch   = 0
+    kLeftHipRoll    = 1
+    kLeftHipYaw     = 2
+    kLeftKnee       = 3
     kLeftAnklePitch = 4
-    kLeftAnkleRoll = 5
-    kRightHipPitch = 6
-    kRightHipRoll = 7
-    kRightHipYaw = 8
-    kRightKnee = 9
+    kLeftAnkleRoll  = 5
+    kRightHipPitch  = 6
+    kRightHipRoll   = 7
+    kRightHipYaw    = 8
+    kRightKnee      = 9
     kRightAnklePitch = 10
-    kRightAnkleRoll = 11
-    kWaistYaw = 12
-    kWaistRoll = 13
-    kWaistPitch = 14
+    kRightAnkleRoll  = 11
+    kWaistYaw        = 12
+    kWaistRoll       = 13
+    kWaistPitch      = 14
     kLeftShoulderPitch = 15
-    kLeftShoulderRoll = 16
-    kLeftShoulderYaw = 17
-    kLeftElbow = 18
-    kLeftWristRoll = 19
-    kLeftWristPitch = 20
-    kLeftWristyaw = 21
+    kLeftShoulderRoll  = 16
+    kLeftShoulderYaw   = 17
+    kLeftElbow         = 18
+    kLeftWristRoll     = 19
+    kLeftWristPitch    = 20
+    kLeftWristyaw      = 21
     kRightShoulderPitch = 22
-    kRightShoulderRoll = 23
-    kRightShoulderYaw = 24
-    kRightElbow = 25
-    kRightWristRoll = 26
-    kRightWristPitch = 27
-    kRightWristYaw = 28
-    kNotUsedJoint0 = 29
+    kRightShoulderRoll  = 23
+    kRightShoulderYaw   = 24
+    kRightElbow         = 25
+    kRightWristRoll     = 26
+    kRightWristPitch    = 27
+    kRightWristYaw      = 28
+    kNotUsedJoint0      = 29

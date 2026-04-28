@@ -61,7 +61,6 @@ if __name__ == '__main__':
     print("=" * 50)
 
     arm = ArmControllerWrapper(motion_mode=True, simulation_mode=False)
-
     print("\n" + "=" * 50)
     user_input = input("시작하려면 's' 입력 후 Enter: ")
 
