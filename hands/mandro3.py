@@ -41,6 +41,10 @@ motions = {
         create_command([1, 0, 0, 0, 0], 1.0),
         create_command([0, 1, 1, 1, 1], 1.0),
     ],
+    "test": [ 
+        create_command([1, 0, 0, 0, 0], 0.9),
+        create_command([0, 1, 1, 1, 1], 1.0),
+    ],
     "fold_ha": [ 
         create_command([1, 0, 0, 0, 0], 0.5),
         create_command([0, 1, 1, 1, 1], 0.5),

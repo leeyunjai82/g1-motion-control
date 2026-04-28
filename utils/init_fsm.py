@@ -7,7 +7,7 @@ def setfsmid(n):
     res = loco_client.SetFsmId(n)
     print(f"[setfsmid-END]: Result({res})")
 
-ChannelFactoryInitialize(0, "wlp45s0f0")
+ChannelFactoryInitialize(0)
 loco_client = LocoClient()
 loco_client.Init()
 loco_client.SetTimeout(10.0)

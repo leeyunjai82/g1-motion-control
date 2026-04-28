@@ -8,7 +8,7 @@ except Exception as e:
     print(f"컨트롤러 초기화 실패: {e}")
     exit()
  
-while False:
+while True:
     # Example usage
     command_name = input("Enter command name,selector(left|right|both) (or 'exit'): ")
     if command_name == "exit":
@@ -27,7 +27,7 @@ while False:
         continue
     hand.send_motion(name, selector)
 
-while True:
+while False:
     hand.send_motion("fold_a")
     time.sleep(1.8)
     hand.send_motion("unfold_a")
