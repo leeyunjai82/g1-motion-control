@@ -696,4 +696,4 @@ def robot_only():
     return HTMLResponse(HTML_PAGE.replace('<body>', '<body class="robot-only">', 1))
 
 if __name__ == '__main__':
-    uvicorn.run(app, host='0.0.0.0', port=5001)
+    uvicorn.run(app, host='0.0.0.0', port=50001)

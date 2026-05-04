@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Version: 1.39
-# Changes from 1.38:
-#   - 손목 yaw 기본값: ±5° → ±10°
+# Version: 1.43
+# Changes from 1.42:
+#   - HOME z: 0.2 → 0.15
 """
 Unitree G1 + 원격/로컬 MJPEG 스트림
 ArUco 마커 3D 박스 오버레이 + Start / Release / Home
@@ -38,7 +38,7 @@ except ImportError as e:
 # ==========================================
 # 설정
 # ==========================================
-RS_STREAM_URL = os.environ.get("RS_STREAM_URL", "http://localhost:8002/video_feed")
+RS_STREAM_URL = os.environ.get("RS_STREAM_URL", "http://localhost:50002/video_feed")
 
 # 카메라 캘리브레이션 (camera_calib.py 실행해서 출력된 값을 여기에 붙여넣기)
 CAM_WIDTH  = 640
@@ -57,8 +57,8 @@ CAMERA_Y          = 0.01753
 CAMERA_Z          = 0.42987
 CAMERA_PITCH_URDF = 0.8307767239493009  # 47.6도
 
-HOME_LEFT  = [0.3,  0.2, 0.2]
-HOME_RIGHT = [0.3, -0.2, 0.2]
+HOME_LEFT  = [0.2,  0.2, 0.15]
+HOME_RIGHT = [0.2, -0.2, 0.15]
 
 HALF_W     = 0.27 / 2
 HALF_D     = 0.09 / 2
@@ -224,6 +224,13 @@ def init_robot():
         print("[로봇] waist 0으로 리셋")
         arm.move_waist_smooth(yaw=0.0, roll=0.0, pitch=0.0, duration=2.0)
         time.sleep(2.0)
+
+        print("[로봇] HOME 자세로 이동")
+        try:
+            arm.move_hands(HOME_LEFT, HOME_RIGHT, None, None, 2.0, 100)
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"[로봇] HOME 이동 실패: {e}")
     except Exception as e:
         print(f"[로봇] 초기화 실패: {e}")
 
@@ -620,10 +627,10 @@ HTML_PAGE = """<!DOCTYPE html>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: monospace; background: #1a1a1a; color: #fff; padding: 24px; }
+        #wrap { max-width: 1000px; margin: 0 auto; }
         h1   { color: #4CAF50; margin-bottom: 4px; font-size: 22px; }
         .sub { color: #666; font-size: 13px; margin-bottom: 24px; }
-
-        #layout { display: flex; gap: 24px; align-items: flex-start; }
+        #layout { display: flex; gap: 24px; align-items: flex-start; justify-content: center; }
         #stream  { border: 2px solid #4CAF50; display: block; }
 
         #panel {
@@ -668,6 +675,7 @@ HTML_PAGE = """<!DOCTYPE html>
     </style>
 </head>
 <body>
+    <div id="wrap">
     <h1>G1 Box Grab</h1>
     <p class="sub">원격 MJPEG → 마커 감지 → 가로면 잡기 → 정면 대칭 → 건네기</p>
 
@@ -1047,4 +1055,4 @@ async def set_auto_mode(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=50000)
