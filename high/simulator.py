@@ -1,6 +1,6 @@
 """
 Unitree G1 Motion Editor - Backend Server
-Version: 5.1 (Waist 3축 제어 추가)
+Version: 5.3 (단일 손 동글 통합 + 시작 시 허리 0 리셋)
 
 구조:
 - 팔 제어 (15~28): ArmControllerWrapper 사용
@@ -8,7 +8,7 @@ Version: 5.1 (Waist 3축 제어 추가)
   - move_joints_smooth(): 전체 관절 보간 이동
 - 허리 제어 (전역 0~2): ArmControllerWrapper.move_waist_smooth() 사용
 - 걷기: LocoClientWrapper 사용
-- 손 제어: HandController 유지
+- 손 제어: HandController (단일 동글, left/right/both selector)
 """
 
 import uvicorn
@@ -36,22 +36,22 @@ from ctrl.arm_controller_wrapper import (
 print("✅ arm_controller_wrapper 로드 성공")
 
 # --- 손 제어 라이브러리 임포트 ---
-hand_left = None
-hand_right = None
+hand_controller = None
 available_hand_motions = []
 
 if USE_HAND_CONTROL:
     try:
-        from ctrl.mandro import HandController, motions
+        from ctrl.mandro3 import HandController, motions
         available_hand_motions = list(motions.keys())
         print(f"✅ 손 제어 라이브러리 로드 성공. 사용 가능한 모션: {len(available_hand_motions)}개")
     except ImportError as e:
         print(f"⚠️ 손 제어 라이브러리를 찾을 수 없습니다: {e}")
         USE_HAND_CONTROL = False
 
+
 # --- Pydantic 모델 ---
 class MotorCommand(BaseModel):
-    motor_index: int  # 0~2 (허리), 15~28 (팔)
+    motor_index: int
     target_degree: float
     duration: float = 1.0
 
@@ -79,7 +79,7 @@ class LocomotionData(BaseModel):
     direction: str
 
 class HandMotionData(BaseModel):
-    hand: str
+    hand: str   # 'left', 'right', 'both'
     motion: str
 
 class MotionFrame(BaseModel):
@@ -89,17 +89,16 @@ class MotionFrame(BaseModel):
     hand_motion: Optional[HandMotionData] = None
 
 class HandCommand(BaseModel):
-    hand: str
+    hand: str   # 'left', 'right', 'both'
     motion: str
     release: Optional[bool] = False
+
 
 # --- FastAPI 앱 ---
 app = FastAPI()
 
-# 전역 인스턴스
 arm_wrapper: Optional[ArmControllerWrapper] = None
 loco_wrapper: Optional[LocoClientWrapper] = None
-
 STOP_REQUESTED = False
 
 app.add_middleware(
@@ -111,41 +110,18 @@ app.add_middleware(
 )
 
 
-# --- 손 제어 함수 ---
-def execute_hand_motion_sync(hand: str, motion: str, release: bool = False):
-    """손 모션 실행 (동기)"""
-    if not USE_HAND_CONTROL:
-        return
+# ==================== 손 제어 함수 ====================
 
+def execute_hand_motion_sync(hand: str, motion: str, release: bool = False):
+    """손 모션 실행 (동기) - 단일 동글, selector로 좌우/양손 구분"""
+    if not USE_HAND_CONTROL or not hand_controller:
+        return
     try:
-        if hand == "left" and hand_left:
-            if release:
-                hand_left.send_release(motion)
-            else:
-                hand_left.send_motion(motion)
-        elif hand == "right" and hand_right:
-            if release:
-                hand_right.send_release(motion)
-            else:
-                hand_right.send_motion(motion)
-        elif hand == "both":
-            threads = []
-            if hand_left:
-                t = threading.Thread(
-                    target=hand_left.send_release if release else hand_left.send_motion,
-                    args=(motion,)
-                )
-                threads.append(t)
-                t.start()
-            if hand_right:
-                t = threading.Thread(
-                    target=hand_right.send_release if release else hand_right.send_motion,
-                    args=(motion,)
-                )
-                threads.append(t)
-                t.start()
-            for t in threads:
-                t.join()
+        selector = hand  # 'left', 'right', 'both' 그대로 전달
+        if release:
+            hand_controller.send_release(selector=selector)
+        else:
+            hand_controller.send_motion(motion, selector=selector)
     except Exception as e:
         print(f"[Hand] 에러: {e}")
 
@@ -160,32 +136,29 @@ async def emergency_stop():
     """긴급 정지 - 팔 14개 + 허리 3축 동시 홈으로"""
     print("!!! 긴급 정지 실행 !!!")
 
-    # 걷기 정지
     if loco_wrapper:
         loco_wrapper.stop()
 
     if arm_wrapper:
         loop = asyncio.get_running_loop()
-        # 팔과 허리 동시 복귀
         tasks = [
             loop.run_in_executor(None, arm_wrapper.move_joints_smooth, [0] * 14, 1.0),
             loop.run_in_executor(None, arm_wrapper.move_waist_smooth, 0.0, 0.0, 0.0, 1.0),
         ]
         await asyncio.gather(*tasks)
 
-    # 손 초기화
-    if USE_HAND_CONTROL:
+    if USE_HAND_CONTROL and hand_controller:
         try:
-            await execute_hand_motion("both", "unfold_a", release=False)
-        except:
-            pass
+            hand_controller.send_motion('unfold_a', selector='both')
+        except Exception as e:
+            print(f"[Hand 긴급정지] 에러: {e}")
 
     print("!!! 긴급 정지 완료 !!!")
 
 
 @app.on_event("startup")
 async def startup_event():
-    global hand_left, hand_right, arm_wrapper, loco_wrapper
+    global hand_controller, arm_wrapper, loco_wrapper
     print("--- FastAPI 서버 시작 ---")
     print("=" * 50)
     print("구조:")
@@ -194,7 +167,7 @@ async def startup_event():
     print("    - move_joint_smooth(): 단일 관절")
     print("    - move_joints_smooth(): 전체 관절")
     print("  - 걷기: LocoClientWrapper")
-    print("  - 손: HandController")
+    print("  - 손: HandController (단일 동글)")
     print("=" * 50)
 
     ChannelFactoryInitialize(0)
@@ -215,25 +188,23 @@ async def startup_event():
         )
         arm_wrapper.start()
         print("✅ ArmControllerWrapper 초기화 성공")
+
+        # 시작 시 waist 0으로 명시적 리셋 (이전 실행 잔류값 정리)
+        print("[로봇] waist 0으로 리셋")
+        arm_wrapper.move_waist_smooth(yaw=0.0, roll=0.0, pitch=0.0, duration=2.0)
+        time.sleep(2.0)
     except Exception as e:
         print(f"⚠️ ArmControllerWrapper 초기화 실패: {e}")
         arm_wrapper = None
 
-    # 손 제어 초기화
+    # 손 제어 초기화 (단일 동글)
     if USE_HAND_CONTROL:
         try:
-            hand_left = HandController('/dev/ttyACM0')
-            print("✅ 왼손 컨트롤러 연결 성공")
+            hand_controller = HandController('/dev/ttyACM0')
+            print("✅ 손 컨트롤러 연결 성공 (/dev/ttyACM0)")
         except Exception as e:
-            print(f"⚠️ 왼손 컨트롤러 연결 실패: {e}")
-            hand_left = None
-
-        try:
-            hand_right = HandController('/dev/ttyACM1')
-            print("✅ 오른손 컨트롤러 연결 성공")
-        except Exception as e:
-            print(f"⚠️ 오른손 컨트롤러 연결 실패: {e}")
-            hand_right = None
+            print(f"⚠️ 손 컨트롤러 연결 실패: {e}")
+            hand_controller = None
 
     await asyncio.sleep(3)
     await emergency_stop()
@@ -242,7 +213,6 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """서버 종료시 정리"""
     print("--- 서버 종료 ---")
     if arm_wrapper:
         arm_wrapper.go_home()
@@ -252,20 +222,25 @@ async def shutdown_event():
 
 @app.get("/hand_motions")
 async def get_hand_motions():
-    """손 모션 목록"""
+    """손 모션 목록 및 연결 상태"""
+    connected = hand_controller is not None
     return {
         "enabled": USE_HAND_CONTROL,
-        "left_connected": hand_left is not None,
-        "right_connected": hand_right is not None,
+        "left_connected": connected,
+        "right_connected": connected,
+        "single_dongle": True,
         "motions": available_hand_motions
     }
 
 
 @app.post("/set_hand")
 async def set_hand(command: HandCommand):
-    """손 모션 실행"""
+    """손 모션 실행 (left/right/both)"""
     if not USE_HAND_CONTROL:
         return {"status": "disabled", "message": "Hand control is disabled"}
+
+    if not hand_controller:
+        return {"status": "error", "message": "Hand controller not connected"}
 
     if command.motion not in available_hand_motions:
         return {"status": "error", "message": f"Unknown motion: {command.motion}"}
@@ -278,12 +253,7 @@ async def set_hand(command: HandCommand):
 
 @app.post("/set_motor")
 async def set_motor(command: MotorCommand):
-    """
-    단일 모터 제어
-    - 허리: motor_index 0~2 (전역: WaistYaw, WaistRoll, WaistPitch)
-    - 팔: motor_index 15~28 (전역) 또는 0~13 (내부)
-    move_joint_smooth() 사용 - 보간 적용
-    """
+    """단일 모터 제어 (허리 0~2, 팔 15~28)"""
     if not arm_wrapper:
         return {"status": "error", "message": "ArmControllerWrapper not initialized"}
 
@@ -308,12 +278,7 @@ async def set_motor(command: MotorCommand):
 
 @app.post("/set_waist")
 async def set_waist(command: WaistCommand):
-    """
-    허리 3축 동시 제어
-    - yaw: WaistYaw (좌우 회전)
-    - roll: WaistRoll (좌우 기울기)
-    - pitch: WaistPitch (앞뒤 기울기)
-    """
+    """허리 3축 동시 제어"""
     if not arm_wrapper:
         return {"status": "error", "message": "ArmControllerWrapper not initialized"}
 
@@ -334,17 +299,12 @@ async def set_waist(command: WaistCommand):
 
 @app.post("/set_all_motors")
 async def set_all_motors(command: AllMotorsCommand):
-    """
-    전체 팔 모터 제어 (14개)
-    move_joints_smooth() 사용 - 보간 적용
-    """
+    """전체 팔 모터 제어 (14개)"""
     if not arm_wrapper:
         return {"status": "error", "message": "ArmControllerWrapper not initialized"}
 
     if len(command.target_degrees) != 14:
         return {"status": "error", "message": "target_degrees must have 14 elements"}
-
-    print(f"[set_all_motors] degrees={command.target_degrees}, dur={command.duration}")
 
     try:
         loop = asyncio.get_running_loop()
@@ -360,15 +320,14 @@ async def set_all_motors(command: AllMotorsCommand):
         return {"status": "error", "message": str(e)}
 
 
-
-# ==================== 걷기(Locomotion) API ====================
+# ==================== 걷기 API ====================
 
 last_loco_command = {"direction": None, "timestamp": 0}
 loco_lock = asyncio.Lock()
 
 @app.post("/set_loco_motion")
 async def set_loco_motion(command: LocoCommand):
-    """걷기 명령 (LocoClientWrapper 사용)"""
+    """걷기 명령"""
     global last_loco_command
 
     if not loco_wrapper:
@@ -383,33 +342,29 @@ async def set_loco_motion(command: LocoCommand):
 
     try:
         loop = asyncio.get_running_loop()
-
         direction_map = {
-            "forward": loco_wrapper.forward,
-            "backward": loco_wrapper.backward,
-            "left": loco_wrapper.left,
-            "right": loco_wrapper.right,
-            "turn_left": loco_wrapper.turn_left,
+            "forward":    loco_wrapper.forward,
+            "backward":   loco_wrapper.backward,
+            "left":       loco_wrapper.left,
+            "right":      loco_wrapper.right,
+            "turn_left":  loco_wrapper.turn_left,
             "turn_right": loco_wrapper.turn_right,
-            "stop": loco_wrapper.stop,
+            "stop":       loco_wrapper.stop,
         }
-
         if command.direction in direction_map:
             await loop.run_in_executor(None, direction_map[command.direction])
         else:
             return {"status": "error", "message": f"Unknown direction: {command.direction}"}
-
         return {"status": "success"}
-
     except Exception as e:
         print(f"[Loco Error] {e}")
         return {"status": "error", "message": str(e)}
 
 
 # ==================== 관절 정보 API ====================
+
 @app.get("/joint_info")
 async def get_joint_info():
-    """관절 정보 조회 (인덱스 매핑)"""
     return {
         "status": "success",
         "joint_info": [
@@ -440,18 +395,19 @@ async def set_motion(motion_sequence: List[MotionFrame]):
 
         # 손 모션 (비동기 시작)
         hand_task = None
-        if frame.hand_motion and USE_HAND_CONTROL:
+        if frame.hand_motion and USE_HAND_CONTROL and hand_controller:
             hand_task = asyncio.create_task(
-                execute_hand_motion(frame.hand_motion.hand, frame.hand_motion.motion)
+                execute_hand_motion(
+                    frame.hand_motion.hand,
+                    frame.hand_motion.motion
+                )
             )
 
-        # 자세(포즈) 명령 - arm_wrapper 사용
+        # 자세(포즈) 명령
         if frame.pose and frame.pose.targets and arm_wrapper:
-            # 현재 팔 타겟 읽기
             with arm_wrapper.arm_ctrl.ctrl_lock:
                 current_arm_targets = np.degrees(arm_wrapper.arm_ctrl.q_target.copy())
 
-            # 현재 허리 타겟 읽기
             try:
                 with arm_wrapper.arm_ctrl.ctrl_lock:
                     curr_waist = np.degrees(
@@ -459,28 +415,26 @@ async def set_motion(motion_sequence: List[MotionFrame]):
                     )
             except:
                 curr_waist = np.zeros(3)
+
             waist_targets = curr_waist.copy()
             has_waist = False
 
             for target in frame.pose.targets:
-                if 0 <= target.motor_index <= 2:  # 허리 전역 (WaistYaw=0, WaistRoll=1, WaistPitch=2)
+                if 0 <= target.motor_index <= 2:
                     waist_targets[target.motor_index] = target.target_degree
                     has_waist = True
-                elif 15 <= target.motor_index <= 28:  # 팔 전역
+                elif 15 <= target.motor_index <= 28:
                     internal_idx = GLOBAL_TO_INTERNAL[target.motor_index]
                     current_arm_targets[internal_idx] = target.target_degree
-                elif 3 <= target.motor_index <= 16:  # 팔 내부 인덱스 (하위 호환)
+                elif 3 <= target.motor_index <= 16:
                     current_arm_targets[target.motor_index] = target.target_degree
-                # else: 범위 외 무시
 
-            # 팔 이동 (항상)
             move_tasks = [
                 loop.run_in_executor(
                     None, arm_wrapper.move_joints_smooth,
                     current_arm_targets.tolist(), frame.duration
                 )
             ]
-            # 허리 이동 (타겟이 있을 때만)
             if has_waist:
                 move_tasks.append(
                     loop.run_in_executor(
@@ -494,16 +448,14 @@ async def set_motion(motion_sequence: List[MotionFrame]):
         # 걷기 명령
         if frame.locomotion and loco_wrapper:
             direction = frame.locomotion.direction
-
             direction_methods = {
-                "forward": loco_wrapper.forward,
-                "backward": loco_wrapper.backward,
-                "left": loco_wrapper.left,
-                "right": loco_wrapper.right,
-                "turn_left": loco_wrapper.turn_left,
+                "forward":    loco_wrapper.forward,
+                "backward":   loco_wrapper.backward,
+                "left":       loco_wrapper.left,
+                "right":      loco_wrapper.right,
+                "turn_left":  loco_wrapper.turn_left,
                 "turn_right": loco_wrapper.turn_right,
             }
-
             if direction in direction_methods:
                 start_time = time.time()
                 while time.time() - start_time < frame.duration:
@@ -511,11 +463,9 @@ async def set_motion(motion_sequence: List[MotionFrame]):
                         break
                     direction_methods[direction]()
                     await asyncio.sleep(0.02)
-
                 if not STOP_REQUESTED:
                     loco_wrapper.stop()
         elif not frame.pose:
-            # pose가 없으면 duration만큼 대기
             await asyncio.sleep(frame.duration)
 
         if hand_task:
@@ -534,7 +484,7 @@ async def set_motion(motion_sequence: List[MotionFrame]):
 
 @app.post("/stop_motion")
 async def stop_motion():
-    """정지"""
+    """긴급 정지"""
     global STOP_REQUESTED
     print("[정지] 요청 수신")
     STOP_REQUESTED = True

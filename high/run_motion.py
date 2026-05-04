@@ -1,161 +1,447 @@
+"""
+G1 Motion Runner Server
+- 관절값 포맷 (simulator.py)  → /run, /run_file
+- IK 포맷     (simulator_ik.py) → /run_ik, /run_ik_file
+
+실행: python motion_runner.py
+docs: http://로봇IP:8001/docs
+"""
+
+import uvicorn
+import asyncio
+import json
+import time
+import numpy as np
+from contextlib import asynccontextmanager
+from typing import List, Optional
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
 import os
 import sys
-import time
-import json
+import pinocchio as pin
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
-# g1_motor_high.py 파일이 같은 디렉토리에 있다고 가정합니다.
-from g1_motor_high import G1JointIndex, Custom
+from ctrl.arm_controller_wrapper import ArmControllerWrapper, LocoClientWrapper, GLOBAL_TO_INTERNAL
 
-# JSON의 motor_index를 g1_motor_high.py의 G1JointIndex Enum으로 변환하는 매핑 테이블
-# 제공된 g1_motor_high.py의 G1JointIndex 클래스 정의에 맞춰 수정되었습니다.
-MOTOR_ID_TO_JOINT_INDEX = {
-    # Waist
-    12: G1JointIndex.WaistYaw,
-    13: G1JointIndex.WaistRoll,
-    14: G1JointIndex.WaistPitch,
-    # Left Arm
-    15: G1JointIndex.LeftShoulderPitch,
-    16: G1JointIndex.LeftShoulderRoll,
-    17: G1JointIndex.LeftShoulderYaw,
-    18: G1JointIndex.LeftElbow,
-    19: G1JointIndex.LeftWristRoll,
-    20: G1JointIndex.LeftWristPitch,
-    21: G1JointIndex.LeftWristYaw,
-    # Right Arm
-    22: G1JointIndex.RightShoulderPitch,
-    23: G1JointIndex.RightShoulderRoll,
-    24: G1JointIndex.RightShoulderYaw,
-    25: G1JointIndex.RightElbow,
-    26: G1JointIndex.RightWristRoll,
-    27: G1JointIndex.RightWristPitch,
-    28: G1JointIndex.RightWristYaw,
-}
-
-# JSON의 방향 문자열을 로코모션 속도 벡터(vx, vy, vyaw)로 변환하는 매핑
-# 값은 필요에 따라 조정할 수 있습니다. (vx: 전후, vy: 좌우, vyaw: 회전)
-LOCO_DIRECTION_MAP = {
-    "forward": (0.3, 0.0, 0.0),
-    "backward": (-0.3, 0.0, 0.0),
-    "left": (0.0, 0.2, 0.0),
-    "right": (0.0, -0.2, 0.0),
-    "turn_left": (0.0, 0.0, 0.4),
-    "turn_right": (0.0, 0.0, -0.4),
-    "stop": (0.0, 0.0, 0.0),
-}
+# 손 제어
+try:
+    from ctrl.mandro3 import HandController, motions as hand_motions
+    HAND_AVAILABLE = True
+except ImportError:
+    HAND_AVAILABLE = False
 
 
-def set_motion(custom, motion_data):
-    """
-    파싱된 JSON 모션 데이터를 기반으로 로봇 동작(포즈 및 보행)을 실행합니다.
+# ==========================================
+# 전역 상태
+# ==========================================
+arm:  Optional[ArmControllerWrapper] = None
+loco: Optional[LocoClientWrapper]    = None
+hand: Optional[object]               = None
 
-    Args:
-        custom (Custom): 초기화된 로봇 제어 객체.
-        motion_data (list): JSON 파일에서 로드된 동작 데이터 리스트.
-    """
-    print("🤖 JSON 파일에 정의된 모션 시퀀스를 시작합니다.")
-
-    # JSON 파일의 각 동작 단계를 순차적으로 실행
-    for i, action in enumerate(motion_data):
-        duration = float(action.get("duration", 1.0))
-        print(f"\n[단계 {i+1}/{len(motion_data)}] - 지속 시간: {duration}초")
-
-        # 'pose' 동작 처리 (팔/허리 관절 제어)
-        if "pose" in action and "targets" in action["pose"]:
-            targets = action["pose"]["targets"]
-            
-            # 한 단계에 있는 모든 모터 명령을 동시에 전송
-            for target in targets:
-                motor_id = target.get("motor_index")
-                target_deg = float(target.get("target_degree", 0.0))
-
-                if motor_id in MOTOR_ID_TO_JOINT_INDEX:
-                    custom.command_new_move(motor_id, target_deg, duration)
-                else:
-                    print(f"    ⚠️ 경고: 모터 ID {motor_id}에 대한 매핑 정보가 없습니다. 이 동작은 건너뜁니다.")
-            
-            # 포즈 변경 명령들이 모두 적용될 때까지 대기
-            time.sleep(duration + 0.1)
-
-        # 'locomotion' 동작 처리 (보행 제어)
-        elif "locomotion" in action:
-            direction = action["locomotion"].get("direction", "stop")
-            
-            if direction in LOCO_DIRECTION_MAP:
-                vx, vy, vyaw = LOCO_DIRECTION_MAP[direction]
-                print(vx, vy, vyaw)
-                print(f"  ▶️ 이동 명령: '{direction}' 방향으로 {duration}초 동안 이동합니다.")
-                
-                # 이동 시작
-                custom.execute_loco_command("Move", vx, vy, vyaw)
-                # 지정된 시간만큼 이동
-                time.sleep(duration)
-                # 이동 정지
-                print(f"  ▶️ 이동 정지.")
-                custom.execute_loco_command("Move", 0.0, 0.0, 0.0)
-                time.sleep(0.5) # 정지 후 안정을 위해 잠시 대기
-            else:
-                print(f"    ⚠️ 경고: 알 수 없는 이동 방향 '{direction}'입니다.")
-
-    print("\n✅ 모든 모션 시퀀스를 완료했습니다.")
+is_running = False
+STOP_FLAG  = False
 
 
-if __name__ == '__main__':
-    # 1. 커맨드 라인 인자 확인
-    if len(sys.argv) < 2:
-        print("오류: 실행할 모션 파일 경로를 입력해주세요.")
-        print("사용법: python3 main.py eth0 <json_file_path>")
-        sys.exit(1)
-        
-    motion_file_path = sys.argv[2]
+# ==========================================
+# Pydantic 모델 - 관절값 포맷
+# ==========================================
+class MotorTarget(BaseModel):
+    motor_index:   int
+    target_degree: float
 
-    # 2. JSON 파일 로드
+class PoseData(BaseModel):
+    targets: List[MotorTarget]
+
+class LocomotionData(BaseModel):
+    direction: str
+
+class HandMotionData(BaseModel):
+    hand:   str
+    motion: str
+
+class MotionFrame(BaseModel):
+    duration:    float
+    pose:        Optional[PoseData]              = None
+    locomotion:  Optional[LocomotionData]        = None
+    hand_motion: Optional[HandMotionData]        = None
+
+
+# ==========================================
+# Pydantic 모델 - IK 포맷
+# ==========================================
+class IKMotionFrame(BaseModel):
+    duration:    float
+    left_xyz:    Optional[List[float]]           = None
+    right_xyz:   Optional[List[float]]           = None
+    left_rpy:    Optional[List[float]]           = None
+    right_rpy:   Optional[List[float]]           = None
+    locomotion:  Optional[LocomotionData]        = None
+    hand_motion: Optional[HandMotionData]        = None
+
+
+# ==========================================
+# 헬퍼
+# ==========================================
+def rpy_to_quaternion(roll_deg, pitch_deg, yaw_deg):
+    roll  = np.radians(roll_deg)
+    pitch = np.radians(pitch_deg)
+    yaw   = np.radians(yaw_deg)
+    cr, sr = np.cos(roll/2),  np.sin(roll/2)
+    cp, sp = np.cos(pitch/2), np.sin(pitch/2)
+    cy, sy = np.cos(yaw/2),   np.sin(yaw/2)
+    w = cr*cp*cy + sr*sp*sy
+    x = sr*cp*cy - cr*sp*sy
+    y = cr*sp*cy + sr*cp*sy
+    z = cr*cp*sy - sr*sp*cy
+    return pin.Quaternion(w, x, y, z).normalized()
+
+
+def move_hands_with_rotation(left_xyz, right_xyz, left_rpy, right_rpy, duration, frequency=100):
+    left_rot  = rpy_to_quaternion(*left_rpy)  if left_rpy  and any(v != 0 for v in left_rpy)  else None
+    right_rot = rpy_to_quaternion(*right_rpy) if right_rpy and any(v != 0 for v in right_rpy) else None
+    arm.move_hands(left_xyz, right_xyz, left_rot, right_rot, duration, frequency)
+
+
+def execute_hand_motion_sync(h: str, motion: str):
+    if hand:
+        hand.send_motion(motion, selector=h)
+
+
+# ==========================================
+# Lifespan
+# ==========================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global arm, loco, hand
+
+    print("[Motion Runner] 시작")
+    ChannelFactoryInitialize(0)
+
     try:
-        with open(motion_file_path, 'r', encoding='utf-8') as f:
-            motion_data = json.load(f)
-    except FileNotFoundError:
-        print(f"오류: '{motion_file_path}' 파일을 찾을 수 없습니다.")
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print(f"오류: '{motion_file_path}' 파일이 올바른 JSON 형식이 아닙니다.")
-        sys.exit(1)
+        loco = LocoClientWrapper()
+        print("✅ Loco 초기화 성공")
+    except Exception as e:
+        print(f"⚠️ Loco 초기화 실패: {e}")
 
-    # 3. 로봇 초기화 및 준비
-    print("WARNING: Please ensure there are no obstacles around the robot while running this example.")
-    input("Press Enter to continue...")
+    try:
+        arm = ArmControllerWrapper(motion_mode=True, simulation_mode=False)
+        arm.start()
+        print("✅ Arm 초기화 성공")
+    except Exception as e:
+        print(f"⚠️ Arm 초기화 실패: {e}")
 
-    # 로봇의 FSM(Finite State Machine) 상태를 변경하여 제어 준비
-    print("로봇 상태를 설정합니다...")
-    os.system(f'../g1_cmd {sys.argv[1]} --set_fsm_id=1'); time.sleep(5)
-    os.system(f'../g1_cmd {sys.argv[1]} --set_fsm_id=4'); time.sleep(5)
-    os.system(f'../g1_cmd {sys.argv[1]} --set_fsm_id=500'); time.sleep(5)
+    if HAND_AVAILABLE:
+        try:
+            hand = HandController('/dev/ttyACM0')
+            print("✅ 손 초기화 성공")
+        except Exception as e:
+            print(f"⚠️ 손 초기화 실패: {e}")
 
-    # 통신 채널 초기화 (네트워크 인터페이스 지정)
-    if len(sys.argv) > 1:
-        ChannelFactoryInitialize(0, sys.argv[1])
-    else:
-        ChannelFactoryInitialize(0)
+    print("[Motion Runner] 준비 완료")
 
-    # 커스텀 제어 객체 생성 및 초기화
-    custom = Custom()
-    custom.Init()
-    custom.Start()
-    
-    # 로봇이 제어 명령을 받을 준비가 될 때까지 대기
-    print("로봇 제어 초기화 중... (3초)")
-    time.sleep(5)
-    print("초기화 완료. 명령을 시작합니다.")
+    yield
 
-    # 4. JSON 데이터에 따라 동작 실행
-    set_motion(custom, motion_data)
+    if arm:
+        arm.go_home()
+    print("[Motion Runner] 종료")
 
-    # 5. 모든 동작 완료 후 초기 자세로 복귀
-    print("\n동작 완료. 2초 후 모든 팔/허리 관절을 초기 자세로 되돌립니다.")
-    time.sleep(2)
-    for n in custom.arm_joints:
-        custom.command_new_move(n, 0, 1.5)
-    time.sleep(1.6)
 
-    print("프로그램이 실행 중입니다. 종료하려면 Ctrl+C를 누르세요.")
-    while True:
-        time.sleep(1)
+# ==========================================
+# FastAPI 앱
+# ==========================================
+app = FastAPI(
+    title="G1 Motion Runner",
+    description="""
+모션 파일을 받아서 G1 로봇에 실행하는 서버
 
+## 포맷 구분
+- **관절값 포맷** (`simulator.py` 저장): `/run`, `/run_file`
+- **IK 포맷** (`simulator_ik.py` 저장): `/run_ik`, `/run_ik_file`
+""",
+    version="1.1.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ==========================================
+# 공통 - 걷기 루프
+# ==========================================
+async def _run_loco(direction: str, duration: float):
+    direction_map = {
+        "forward":    loco.forward,
+        "backward":   loco.backward,
+        "left":       loco.left,
+        "right":      loco.right,
+        "turn_left":  loco.turn_left,
+        "turn_right": loco.turn_right,
+    }
+    method = direction_map.get(direction)
+    if method and loco:
+        start = time.time()
+        while time.time() - start < duration:
+            if STOP_FLAG: break
+            method()
+            await asyncio.sleep(0.02)
+        if not STOP_FLAG and loco:
+            loco.stop()
+
+
+# ==========================================
+# 관절값 포맷 실행
+# ==========================================
+async def _execute_frames(frames: List[MotionFrame]):
+    global is_running, STOP_FLAG
+    is_running = True
+    STOP_FLAG  = False
+    loop = asyncio.get_running_loop()
+
+    try:
+        for i, frame in enumerate(frames):
+            if STOP_FLAG:
+                print(f"[Runner] 중단: 프레임 {i+1}")
+                break
+
+            print(f"[Runner] 프레임 {i+1}/{len(frames)} ({frame.duration}s)")
+
+            hand_future = None
+            if frame.hand_motion and hand:
+                hand_future = loop.run_in_executor(
+                    None, execute_hand_motion_sync,
+                    frame.hand_motion.hand, frame.hand_motion.motion
+                )
+
+            if frame.pose and frame.pose.targets and arm:
+                with arm.arm_ctrl.ctrl_lock:
+                    arm_targets = np.degrees(arm.arm_ctrl.q_target.copy())
+                try:
+                    with arm.arm_ctrl.ctrl_lock:
+                        waist_targets = np.degrees(
+                            getattr(arm.arm_ctrl, 'waist_q_target', np.zeros(3)).copy()
+                        )
+                except:
+                    waist_targets = np.zeros(3)
+
+                has_waist = False
+                for t in frame.pose.targets:
+                    if 0 <= t.motor_index <= 2:
+                        waist_targets[t.motor_index] = t.target_degree
+                        has_waist = True
+                    elif 15 <= t.motor_index <= 28:
+                        arm_targets[GLOBAL_TO_INTERNAL[t.motor_index]] = t.target_degree
+
+                tasks = [
+                    loop.run_in_executor(
+                        None, arm.move_joints_smooth,
+                        arm_targets.tolist(), frame.duration
+                    )
+                ]
+                if has_waist:
+                    tasks.append(loop.run_in_executor(
+                        None, arm.move_waist_smooth,
+                        float(waist_targets[0]), float(waist_targets[1]),
+                        float(waist_targets[2]), frame.duration
+                    ))
+                await asyncio.gather(*tasks)
+
+            elif frame.locomotion and loco:
+                await _run_loco(frame.locomotion.direction, frame.duration)
+            else:
+                await asyncio.sleep(frame.duration)
+
+            if hand_future:
+                await hand_future
+
+    finally:
+        is_running = False
+        if loco: loco.stop()
+        print("[Runner] 완료")
+
+
+# ==========================================
+# IK 포맷 실행
+# ==========================================
+async def _execute_ik_frames(frames: List[IKMotionFrame]):
+    global is_running, STOP_FLAG
+    is_running = True
+    STOP_FLAG  = False
+    loop = asyncio.get_running_loop()
+
+    try:
+        for i, frame in enumerate(frames):
+            if STOP_FLAG:
+                print(f"[IK Runner] 중단: 프레임 {i+1}")
+                break
+
+            print(f"[IK Runner] 프레임 {i+1}/{len(frames)} ({frame.duration}s)")
+
+            hand_future = None
+            if frame.hand_motion and hand:
+                hand_future = loop.run_in_executor(
+                    None, execute_hand_motion_sync,
+                    frame.hand_motion.hand, frame.hand_motion.motion
+                )
+
+            if frame.left_xyz and frame.right_xyz and arm:
+                left_rpy  = frame.left_rpy  or [0.0, 0.0, 0.0]
+                right_rpy = frame.right_rpy or [0.0, 0.0, 0.0]
+                await loop.run_in_executor(
+                    None, move_hands_with_rotation,
+                    frame.left_xyz, frame.right_xyz,
+                    left_rpy, right_rpy, frame.duration, 100
+                )
+
+            elif frame.locomotion and loco:
+                await _run_loco(frame.locomotion.direction, frame.duration)
+            else:
+                await asyncio.sleep(frame.duration)
+
+            if hand_future:
+                await hand_future
+
+    finally:
+        is_running = False
+        if loco: loco.stop()
+        print("[IK Runner] 완료")
+
+
+# ==========================================
+# API 엔드포인트
+# ==========================================
+
+@app.get("/status", summary="실행 상태 확인")
+async def status():
+    """현재 모션 실행 중 여부와 하드웨어 연결 상태를 반환합니다."""
+    return {
+        "is_running": is_running,
+        "arm_ready":  arm  is not None,
+        "loco_ready": loco is not None,
+        "hand_ready": hand is not None,
+    }
+
+
+# ---- 관절값 포맷 ----
+
+@app.post("/run", summary="관절값 모션 실행 (JSON body)",
+          description="simulator.py에서 저장한 모션 JSON을 body로 전송합니다.")
+async def run_motion(frames: List[MotionFrame]):
+    """
+    ```bash
+    curl -X POST http://로봇IP:8001/run \\
+      -H "Content-Type: application/json" -d @motion.json
+    ```
+    """
+    if is_running:
+        raise HTTPException(409, "이미 실행 중. /stop 먼저 호출하세요.")
+    if not frames:
+        raise HTTPException(400, "빈 모션입니다.")
+    asyncio.create_task(_execute_frames(frames))
+    return {"status": "started", "frames": len(frames)}
+
+
+@app.post("/run_file", summary="관절값 모션 파일 업로드 후 실행",
+          description="simulator.py에서 저장한 .json 파일을 업로드합니다.")
+async def run_motion_file(file: UploadFile = File(...)):
+    """
+    ```bash
+    curl -X POST http://로봇IP:8001/run_file -F "file=@motion.json"
+    ```
+    """
+    if is_running:
+        raise HTTPException(409, "이미 실행 중. /stop 먼저 호출하세요.")
+    try:
+        data   = json.loads(await file.read())
+        frames = [MotionFrame(**f) for f in data]
+    except Exception as e:
+        raise HTTPException(400, f"파일 파싱 오류: {e}")
+    if not frames:
+        raise HTTPException(400, "빈 모션입니다.")
+    asyncio.create_task(_execute_frames(frames))
+    return {"status": "started", "frames": len(frames), "filename": file.filename}
+
+
+# ---- IK 포맷 ----
+
+@app.post("/run_ik", summary="IK 모션 실행 (JSON body)",
+          description="simulator_ik.py에서 저장한 모션 JSON을 body로 전송합니다.")
+async def run_ik_motion(frames: List[IKMotionFrame]):
+    """
+    ```bash
+    curl -X POST http://로봇IP:8001/run_ik \\
+      -H "Content-Type: application/json" -d @ik_motion.json
+    ```
+    """
+    if is_running:
+        raise HTTPException(409, "이미 실행 중. /stop 먼저 호출하세요.")
+    if not frames:
+        raise HTTPException(400, "빈 모션입니다.")
+    asyncio.create_task(_execute_ik_frames(frames))
+    return {"status": "started", "frames": len(frames)}
+
+
+@app.post("/run_ik_file", summary="IK 모션 파일 업로드 후 실행",
+          description="simulator_ik.py에서 저장한 .json 파일을 업로드합니다.")
+async def run_ik_motion_file(file: UploadFile = File(...)):
+    """
+    ```bash
+    curl -X POST http://로봇IP:8001/run_ik_file -F "file=@ik_motion.json"
+    ```
+    """
+    if is_running:
+        raise HTTPException(409, "이미 실행 중. /stop 먼저 호출하세요.")
+    try:
+        data   = json.loads(await file.read())
+        frames = [IKMotionFrame(**f) for f in data]
+    except Exception as e:
+        raise HTTPException(400, f"파일 파싱 오류: {e}")
+    if not frames:
+        raise HTTPException(400, "빈 모션입니다.")
+    asyncio.create_task(_execute_ik_frames(frames))
+    return {"status": "started", "frames": len(frames), "filename": file.filename}
+
+
+# ---- 공통 제어 ----
+
+@app.post("/stop", summary="실행 중인 모션 정지")
+async def stop_motion():
+    """실행 중인 모션을 중단하고 홈 포지션으로 복귀합니다."""
+    global STOP_FLAG
+    STOP_FLAG = True
+    if loco: loco.stop()
+    if arm:
+        loop = asyncio.get_running_loop()
+        await asyncio.gather(
+            loop.run_in_executor(None, arm.move_joints_smooth, [0]*14, 1.0),
+            loop.run_in_executor(None, arm.move_waist_smooth,  0.0, 0.0, 0.0, 1.0),
+        )
+    return {"status": "stopped"}
+
+
+@app.post("/home", summary="홈 포지션으로 이동")
+async def go_home():
+    """즉시 홈 포지션으로 이동합니다."""
+    global STOP_FLAG
+    STOP_FLAG = True
+    await asyncio.sleep(0.1)
+    if arm:
+        loop = asyncio.get_running_loop()
+        await asyncio.gather(
+            loop.run_in_executor(None, arm.move_joints_smooth, [0]*14, 2.0),
+            loop.run_in_executor(None, arm.move_waist_smooth,  0.0, 0.0, 0.0, 2.0),
+        )
+    return {"status": "home"}
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8001)

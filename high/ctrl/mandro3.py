@@ -42,8 +42,8 @@ motions = {
         create_command([0, 1, 1, 1, 1], 1.0),
     ],
     "test": [ 
-        create_command([1, 0, 0, 0, 0], 0.01),
-        create_command([0, 1, 1, 1, 1], 0.4),
+        create_command([1, 0, 0, 0, 0], 1.0),
+        create_command([0, 1, 1, 1, 1], 0.3),
     ],
     "fold_ha": [ 
         create_command([1, 0, 0, 0, 0], 0.5),
@@ -82,7 +82,7 @@ motions = {
 }
 
 # --- [Controller Class] ---
-class HandControler:
+class HandController:
     def __init__(self, port):
         # 타임아웃 설정으로 무한 대기 방지
         self.ser = serial.Serial(
@@ -157,3 +157,39 @@ class HandControler:
     def close(self):
         if self.ser.is_open:
             self.ser.close()
+
+
+if __name__ == "__main__":
+  import readline
+
+  try:
+    hand = HandController('/dev/ttyACM0') # L 컨트롤러 L동글 부터 연결
+    print("컨트롤러 초기화 성공")
+  except Exception as e:
+    print(f"컨트롤러 초기화 실패: {e}")
+    exit()
+ 
+  while True:
+    # Example usage
+    command_name = input("Enter command name,selector(left|right|both) (or 'exit'): ")
+    if command_name == "exit":
+      break
+
+    if command_name == "reset":
+      hand.reset()
+      continue
+    if command_name == "preset":
+      hand.preset()
+      continue
+    try:
+      name, selector = command_name.split(',')
+    except Exception as e:
+      print(e)
+      continue
+    hand.send_motion(name, selector)
+
+  while False:
+    hand.send_motion("fold_a")
+    time.sleep(1.8)
+    hand.send_motion("unfold_a")
+    time.sleep(1.8)
