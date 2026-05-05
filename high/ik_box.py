@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Version: 1.43
-# Changes from 1.42:
-#   - HOME z: 0.2 → 0.15
+# Version: 1.44
+# Changes from 1.43:
+#   - 시작 시 자동 모드 ON (AUTO_DEFAULT.enabled = True)
 """
 Unitree G1 + 원격/로컬 MJPEG 스트림
 ArUco 마커 3D 박스 오버레이 + Start / Release / Home
@@ -121,7 +121,7 @@ grab_state = {'active': False, 'lifted_left': None, 'lifted_right': None, 'busy'
 
 # 자동 모드 설정
 AUTO_DEFAULT = {
-    "enabled": False,
+    "enabled": True,
     "x_min": 0.30, "x_max": 0.40,
     "y_min": -0.15, "y_max": 0.15,
     "z_min": -0.10, "z_max": 0.20,
