@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-G1 URDF Live Motor Visualization Server (Live-only)
+G1 URDF Live Motor Visualization Server (Live-only, integrated)
 
 Routes:
-  /            -> Full UI
+  /            -> Full UI (3D viewer)
   /robot-only  -> Bare 3D viewport only
+  /dashboard   -> 통합 대시보드 (3D viewer + video + depth)
+  /api/*       -> URDF / mesh / SSE 등
+  /stream/video-feed -> localhost:50000/video_feed 프록시
+  /stream/depth-feed -> localhost:50002/depth_feed 프록시
 """
 
 import os
@@ -12,9 +16,10 @@ import sys
 import json
 import asyncio
 import numpy as np
+import httpx
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, Response
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
@@ -22,6 +27,10 @@ sys.path.append(current_dir)
 ASSETS_DIR = os.path.join(current_dir, 'assets', 'g1')
 URDF_PATH  = os.path.join(ASSETS_DIR, 'g1_29dof_rev_1_0.urdf')
 MESH_DIR   = os.path.join(ASSETS_DIR, 'meshes')
+
+# ===== Stream upstreams =====
+VIDEO_FEED = "http://localhost:50000/video_feed"
+DEPTH_FEED = "http://localhost:50001/depth_feed"
 
 # ==========================================
 # Robot connection
@@ -118,7 +127,49 @@ def status():
     return {'connected': ROBOT_AVAILABLE}
 
 # ==========================================
-# HTML
+# MJPEG proxy (video / depth)
+# ==========================================
+async def _stream_proxy(upstream_url: str):
+    """스트림(MJPEG/SSE) 또는 일반 응답을 그대로 흘려보냄."""
+    print(f"[proxy] -> {upstream_url}")
+    client = httpx.AsyncClient(timeout=None)
+    try:
+        req = client.build_request("GET", upstream_url)
+        resp = await client.send(req, stream=True)
+    except Exception as e:
+        await client.aclose()
+        print(f"[proxy] connect FAIL: {e!r}")
+        return Response(content=str(e), status_code=502)
+
+    ctype = resp.headers.get("content-type", "application/octet-stream")
+    print(f"[proxy]    status={resp.status_code} ctype={ctype}")
+
+    async def iterator():
+        try:
+            async for chunk in resp.aiter_raw():
+                yield chunk
+        except Exception as e:
+            print(f"[proxy] stream error: {e!r}")
+        finally:
+            await resp.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        iterator(),
+        status_code=resp.status_code,
+        media_type=ctype,
+    )
+
+@app.get("/stream/video-feed")
+async def video_feed():
+    return await _stream_proxy(VIDEO_FEED)
+
+@app.get("/stream/depth-feed")
+async def depth_feed():
+    return await _stream_proxy(DEPTH_FEED)
+
+# ==========================================
+# HTML (3D viewer)
 # ==========================================
 HTML_PAGE = r"""<!DOCTYPE html>
 <html lang="en">
@@ -185,14 +236,13 @@ canvas#cv{display:block;width:100%!important;height:100%!important}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#1e1e2e;border-radius:2px}
 
-/* Robot-only mode */
-body.robot-only header,
-body.robot-only .left,
-body.robot-only .right,
-body.robot-only .hud,
-body.robot-only .tooltip { display: none !important; }
-body.robot-only .main { flex: 1; }
-body.robot-only .viewport { width: 100vw; height: 100vh; }
+/* Dashboard mode: keep right (Joint States) panel, hide header + left */
+body.dashboard-mode header,
+body.dashboard-mode .left,
+body.dashboard-mode .hud,
+body.dashboard-mode .tooltip { display: none !important; }
+body.dashboard-mode .main { flex: 1; }
+body.dashboard-mode .right { width: 240px; }
 </style>
 </head>
 <body>
@@ -345,29 +395,29 @@ function parseOrig(el){
 const basename=s=>s.split(/[/\\]/).pop().toLowerCase();
 const sid=n=>n.replace(/\W/g,'_');
 
-// ============ Logo: REDHAT (red) - INTEL (blue) ============
-const REDHAT_COLOR = '#EE0000';
-const INTEL_COLOR  = '#0071C5';
+// ============ Logo: RedHat / intel / Circulus ============
+const REDHAT_COLOR   = '#EE0000';
+const INTEL_COLOR    = '#0068B5';
+const CIRCULUS_COLOR = '#00AEEF';
 
-// Build text plane sized & positioned to match the original logo's bounding box.
-// logoGeo: BufferGeometry of the original logo_link.STL (in logo_link local frame).
 function makeLogoTextMesh(logoGeo){
-  // Default fallback if STL missing
   let width=0.10, height=0.025, cx=0.005, cy=0, cz=0;
 
   if(logoGeo){
     logoGeo.computeBoundingBox();
     const bb=logoGeo.boundingBox;
-    // URDF: X=forward, Y=left, Z=up. Logo is on chest plate facing +X.
-    // -> width across (Y), height up (Z), thickness (X)
     width  = (bb.max.y - bb.min.y);
     height = (bb.max.z - bb.min.z);
-    cx     = bb.max.x + 0.0008;            // sit just above front face
+    cx     = bb.max.x + 0.0008;
     cy     = (bb.min.y + bb.max.y) * 0.5;
     cz     = (bb.min.z + bb.max.z) * 0.5;
   }
 
-  // Adapt canvas aspect to logo aspect so text isn't squashed
+  // Scale logo plane (text gets bigger by the same factor)
+  const SCALE = 1.5;
+  width  *= SCALE;
+  height *= SCALE;
+
   const aspect=Math.max(0.3, width/Math.max(height,0.001));
   const canvas=document.createElement('canvas');
   canvas.height=256;
@@ -375,42 +425,52 @@ function makeLogoTextMesh(logoGeo){
   const ctx=canvas.getContext('2d');
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  const partRed='REDHAT';
-  const partSep=' - ';
-  const partInt='INTEL';
+  // Two-line layout:
+  //   Line 1: "RedHat intel"
+  //   Line 2: "Circulus"
+  const line1=[
+    {text:'RedHat', color:REDHAT_COLOR},
+    {text:' ',      color:'#fff'},
+    {text:'intel',  color:INTEL_COLOR},
+  ];
+  const line2=[
+    {text:'Circulus', color:CIRCULUS_COLOR},
+  ];
 
-  // Fit font size so the whole string fits canvas width with padding
-  let fontSize=Math.round(canvas.height*0.7);
+  // Each line ~ 42% of canvas height
+  let fontSize=Math.round(canvas.height*0.42);
   const setFont=()=>{ctx.font=`900 ${fontSize}px "Segoe UI", Arial, sans-serif`;};
   setFont();
-  let totalW=ctx.measureText(partRed).width+ctx.measureText(partSep).width+ctx.measureText(partInt).width;
+  const measure=(parts)=>parts.reduce((w,p)=>w+ctx.measureText(p.text).width,0);
   const maxW=canvas.width*0.92;
-  if(totalW>maxW){fontSize=Math.max(20,Math.floor(fontSize*maxW/totalW));setFont();
-    totalW=ctx.measureText(partRed).width+ctx.measureText(partSep).width+ctx.measureText(partInt).width;}
+  let w1=measure(line1), w2=measure(line2);
+  let widest=Math.max(w1,w2);
+  if(widest>maxW){
+    fontSize=Math.max(18,Math.floor(fontSize*maxW/widest));
+    setFont();
+    w1=measure(line1); w2=measure(line2);
+  }
 
   ctx.textBaseline='middle';ctx.textAlign='left';
-  ctx.strokeStyle='#000';ctx.lineWidth=Math.max(3,fontSize*0.04);ctx.lineJoin='round';
+  ctx.strokeStyle='#000';ctx.lineWidth=Math.max(2,fontSize*0.04);ctx.lineJoin='round';
 
-  let x=(canvas.width-totalW)/2;
-  const y=canvas.height/2;
-  const wRed=ctx.measureText(partRed).width;
-  const wSep=ctx.measureText(partSep).width;
-
-  ctx.strokeText(partRed,x,y);
-  ctx.fillStyle=REDHAT_COLOR;ctx.fillText(partRed,x,y);x+=wRed;
-
-  ctx.strokeText(partSep,x,y);
-  ctx.fillStyle='#1a1a1a';ctx.fillText(partSep,x,y);x+=wSep;
-
-  ctx.strokeText(partInt,x,y);
-  ctx.fillStyle=INTEL_COLOR;ctx.fillText(partInt,x,y);
+  function drawLine(parts,totalW,yPos){
+    let x=(canvas.width-totalW)/2;
+    for(const p of parts){
+      ctx.strokeText(p.text,x,yPos);
+      ctx.fillStyle=p.color;
+      ctx.fillText(p.text,x,yPos);
+      x+=ctx.measureText(p.text).width;
+    }
+  }
+  drawLine(line1, w1, canvas.height*0.30);
+  drawLine(line2, w2, canvas.height*0.72);
 
   const tex=new THREE.CanvasTexture(canvas);
   tex.anisotropy=8;tex.needsUpdate=true;
   const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,side:THREE.DoubleSide});
   const plane=new THREE.Mesh(new THREE.PlaneGeometry(width,height),mat);
 
-  // URDF frame: need plane normal=+X, text-up=+Z, text-right=+Y
   plane.rotation.x=Math.PI/2;
   plane.rotation.y=Math.PI/2;
   plane.position.set(cx,cy,cz);
@@ -463,12 +523,10 @@ async function loadRobot(){
     const meshListData=await(await fetch('/api/meshes')).json();
     const serverFiles=new Set(meshListData.files.map(f=>f.toLowerCase()));
 
-    // Include logo_link.STL too — we use its geometry only for sizing/positioning text
     const needed=new Set();
     for(const l of Object.values(links))
       for(const v of l.visuals){const b=basename(v.fn);if(serverFiles.has(b))needed.add(b);}
 
-    // Identify the logo STL filename
     const logoFn=links['logo_link']?.visuals?.[0]?.fn;
     const logoBase=logoFn?basename(logoFn):null;
 
@@ -490,7 +548,6 @@ async function loadRobot(){
       const grp=new THREE.Group();grp.name='link:'+lname;
 
       if(lname==='logo_link'){
-        // Replace original logo mesh with text plane sized to logo bbox
         const logoGeo=logoBase?geos[logoBase]:null;
         const txt=makeLogoTextMesh(logoGeo);
         txt.userData={linkName:lname};
@@ -498,9 +555,7 @@ async function loadRobot(){
       } else {
         for(const v of link.visuals){
           const b=basename(v.fn),geo=geos[b];if(!geo)continue;
-          //const color=(materials[v.matName]!==undefined)?materials[v.matName]:0xb0b0b0;
           let color=(materials[v.matName]!==undefined)?materials[v.matName]:0xb0b0b0;
-          // 손은 검정으로 오버라이드
           if(/hand|finger|thumb|palm/i.test(lname)) color=0x1a1a1a;
           const isDark=color<0x555555;
           const mat=new THREE.MeshPhongMaterial({color,specular:isDark?0x222222:0x666666,shininess:isDark?55:25});
@@ -687,13 +742,90 @@ window.addEventListener('load',()=>loadRobot());
 </body>
 </html>"""
 
+# ==========================================
+# Dashboard HTML (3D viewer + video + depth)
+# ==========================================
+DASHBOARD_HTML = """<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Robot Streams</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: #111; color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: hidden;
+    padding: 12px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 3fr 2fr;     /* 위 60% / 아래 40% 비율 */
+    gap: 12px;
+    width: 100%;
+    height: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  .panel {
+    background: #1c1c1c; border: 1px solid #2a2a2a;
+    border-radius: 8px; overflow: hidden;
+    display: flex; flex-direction: column;
+    min-height: 0;                   /* grid child가 줄어들 수 있게 */
+  }
+  .panel.full { grid-column: 1 / -1; }
+  .panel h2 {
+    font-size: 14px; font-weight: 500;
+    padding: 8px 14px; background: #232323;
+    border-bottom: 1px solid #2a2a2a; color: #9cf;
+    flex: 0 0 auto;
+  }
+  .panel iframe, .panel img {
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+    border: 0;
+    background: #000;
+    display: block;
+  }
+  .panel img { object-fit: cover; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="panel full">
+      <h2>Robot (3D Viewer + Joint States)</h2>
+      <iframe src="/robot-dashboard"></iframe>
+    </div>
+    <div class="panel">
+      <h2>Video Feed</h2>
+      <img src="/stream/video-feed" alt="video_feed">
+    </div>
+    <div class="panel">
+      <h2>Depth Feed</h2>
+      <img src="/stream/depth-feed" alt="depth_feed">
+    </div>
+  </div>
+</body>
+</html>"""
+
+# ==========================================
+# Pages
+# ==========================================
 @app.get('/')
 def index():
     return HTMLResponse(HTML_PAGE)
 
-@app.get('/robot-only')
-def robot_only():
-    return HTMLResponse(HTML_PAGE.replace('<body>', '<body class="robot-only">', 1))
+@app.get('/robot-dashboard')
+def robot_dashboard():
+    return HTMLResponse(HTML_PAGE.replace('<body>', '<body class="dashboard-mode">', 1))
+
+@app.get('/dashboard')
+def dashboard():
+    return HTMLResponse(DASHBOARD_HTML)
+
 
 if __name__ == '__main__':
-    uvicorn.run(app, host='0.0.0.0', port=50001)
+    uvicorn.run(app, host='0.0.0.0', port=50002, timeout_graceful_shutdown=2)

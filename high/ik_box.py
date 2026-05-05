@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-# Version: 1.44
-# Changes from 1.43:
-#   - 시작 시 자동 모드 ON (AUTO_DEFAULT.enabled = True)
+# Version: 1.47
+# Changes from 1.46:
+#   - uvicorn.run에 timeout_graceful_shutdown=2 추가
+#     -> SIGTERM 후 2초 안에 연결 안 닫혀도 강제로 lifespan shutdown 진입
+#     -> /video_feed 같은 무한 스트림이 hang하는 문제 해결
 """
 Unitree G1 + 원격/로컬 MJPEG 스트림
 ArUco 마커 3D 박스 오버레이 + Start / Release / Home
@@ -38,7 +40,7 @@ except ImportError as e:
 # ==========================================
 # 설정
 # ==========================================
-RS_STREAM_URL = os.environ.get("RS_STREAM_URL", "http://localhost:50002/video_feed")
+RS_STREAM_URL = os.environ.get("RS_STREAM_URL", "http://localhost:50001/video_feed")
 
 # 카메라 캘리브레이션 (camera_calib.py 실행해서 출력된 값을 여기에 붙여넣기)
 CAM_WIDTH  = 640
@@ -57,8 +59,13 @@ CAMERA_Y          = 0.01753
 CAMERA_Z          = 0.42987
 CAMERA_PITCH_URDF = 0.8307767239493009  # 47.6도
 
+# init / 일반 동작용 HOME (작업 대기 자세 — 살짝 앞으로 뻗음)
 HOME_LEFT  = [0.2,  0.2, 0.15]
 HOME_RIGHT = [0.2, -0.2, 0.15]
+
+# 종료용 PARK 자세 (차렷에 가까운 자연스러운 park 자세)
+SHUTDOWN_HOME_LEFT  = [0.2,  0.2, 0.0]
+SHUTDOWN_HOME_RIGHT = [0.2, -0.2, 0.0]
 
 HALF_W     = 0.27 / 2
 HALF_D     = 0.09 / 2
@@ -303,14 +310,56 @@ async def lifespan(app: FastAPI):
 
     # 자동 모니터 스레드 시작
     threading.Thread(target=auto_monitor_loop, daemon=True).start()
-    print("[AUTO] 자동 모니터 스레드 시작 (기본 OFF)")
+    print("[AUTO] 자동 모니터 스레드 시작")
 
     yield
+
+    # ==========================================
+    # 안전 종료 시퀀스 (init 스타일 부드러운 이동)
+    # ==========================================
+    print("[shutdown] 종료 시퀀스 시작")
+    t_shutdown = time.time()
+
+    # 1) 자동 모드 차단 (혹시 모를 grab 트리거 방지)
+    auto_mode["enabled"] = False
+
+    # 2) 진행 중인 grab 끝나길 대기 (최대 3초)
+    busy_deadline = time.time() + 3.0
+    while grab_state.get('busy') and time.time() < busy_deadline:
+        time.sleep(0.1)
+    if grab_state.get('busy'):
+        print("[shutdown] grab 진행 중이지만 시간 초과 — 강제 진행")
+
+    # 3) init과 동일한 스타일로 PARK 자세까지 부드럽게 이동
     if arm:
         try:
-            arm.go_home()
-        except Exception:
-            pass
+            print(f"[shutdown] PARK 자세로 이동 (L:{SHUTDOWN_HOME_LEFT}, R:{SHUTDOWN_HOME_RIGHT})")
+            arm.move_hands(SHUTDOWN_HOME_LEFT, SHUTDOWN_HOME_RIGHT, None, None, 2.0, 100)
+            time.sleep(0.3)
+
+            print("[shutdown] waist 0으로 리셋")
+            arm.move_waist_smooth(yaw=0.0, roll=0.0, pitch=0.0, duration=1.5)
+            time.sleep(0.3)
+
+            # 4) motion_mode 제어권 반납
+            #    q_target은 PARK 위치 그대로 두고 weight만 1->0 으로 페이드아웃
+            if arm.arm_ctrl and arm.arm_ctrl.motion_mode:
+                from ctrl.robot_arm import G1_29_JointIndex
+                print("[shutdown] 제어권 반납 (weight 1->0, 1초)")
+                for weight in np.linspace(1.0, 0.0, num=50):
+                    arm.arm_ctrl.msg.motor_cmd[G1_29_JointIndex.kNotUsedJoint0].q = weight
+                    time.sleep(0.02)
+                print("[shutdown] 제어권 반납 완료")
+
+        except Exception as e:
+            print(f"[shutdown] 종료 시퀀스 실패: {e}")
+
+    # 5) 마지막 DDS 메시지 flush
+    time.sleep(0.3)
+
+    # 6) C++/DDS 스레드 무시하고 즉시 종료 (SIGKILL 회피로 모터 급락 방지)
+    print(f"[shutdown] 프로세스 종료 (총 {time.time()-t_shutdown:.2f}초 소요)")
+    os._exit(0)
 
 
 app = FastAPI(title="G1 Box Grab", lifespan=lifespan)
@@ -1055,4 +1104,4 @@ async def set_auto_mode(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=50000)
+    uvicorn.run(app, host="0.0.0.0", port=50000, timeout_graceful_shutdown=2)

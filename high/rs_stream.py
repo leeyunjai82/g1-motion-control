@@ -177,4 +177,4 @@ async def depth_feed():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=50002)
+    uvicorn.run(app, host="0.0.0.0", port=50001, timeout_graceful_shutdown=2)
