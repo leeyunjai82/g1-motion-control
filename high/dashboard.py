@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-G1 URDF Live Motor Visualization Server (Live-only, integrated)
+G1 URDF Live Motor Visualization Server (Live-only, integrated, offline-ready)
 
 Routes:
   /            -> Full UI (3D viewer)
   /robot-only  -> Bare 3D viewport only
   /dashboard   -> 통합 대시보드 (3D viewer + video + depth)
   /api/*       -> URDF / mesh / SSE 등
+  /vendor/three.min.js -> 로컬 Three.js (오프라인 동작용)
   /stream/video-feed -> localhost:50000/video_feed 프록시
-  /stream/depth-feed -> localhost:50002/depth_feed 프록시
+  /stream/depth-feed -> localhost:50001/depth_feed 프록시
 """
 
 import os
@@ -27,6 +28,7 @@ sys.path.append(current_dir)
 ASSETS_DIR = os.path.join(current_dir, 'assets', 'g1')
 URDF_PATH  = os.path.join(ASSETS_DIR, 'g1_29dof_rev_1_0.urdf')
 MESH_DIR   = os.path.join(ASSETS_DIR, 'meshes')
+VENDOR_DIR = os.path.join(current_dir, 'assets', 'vendor')   # three.min.js 등 로컬 라이브러리
 
 # ===== Stream upstreams =====
 VIDEO_FEED = "http://localhost:50000/video_feed"
@@ -127,6 +129,22 @@ def status():
     return {'connected': ROBOT_AVAILABLE}
 
 # ==========================================
+# Local vendor (Three.js 등)
+# ==========================================
+@app.get('/vendor/three.min.js')
+def vendor_three():
+    path = os.path.join(VENDOR_DIR, 'three.min.js')
+    if not os.path.exists(path):
+        return Response(
+            content=f"// three.min.js not found at {path}\n"
+                    f"// 다음 명령으로 다운로드:\n"
+                    f"//   curl -o {path} https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+            media_type='application/javascript',
+            status_code=404,
+        )
+    return FileResponse(path, media_type='application/javascript')
+
+# ==========================================
 # MJPEG proxy (video / depth)
 # ==========================================
 async def _stream_proxy(upstream_url: str):
@@ -177,7 +195,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>G1 URDF Live Viewer</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/vendor/three.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0a0a0f;color:#d0d0d8;font-family:'Segoe UI',system-ui,sans-serif;display:flex;flex-direction:column;height:100vh;overflow:hidden;font-size:13px}
