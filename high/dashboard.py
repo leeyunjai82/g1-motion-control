@@ -20,7 +20,10 @@ import numpy as np
 import httpx
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse, Response
+from fastapi import Request
+#from starlette.middleware.base import BaseHTTPMiddleware
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
@@ -80,6 +83,24 @@ JOINT_TO_MOTOR = {
 }
 
 app = FastAPI(title="G1 URDF Viewer")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+#class IframeSecurityMiddleware(BaseHTTPMiddleware):
+#    async def dispatch(self, request: Request, call_next):
+#        response = await call_next(request)
+#        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+#        response.headers["Content-Security-Policy"] = "frame-ancestors 'self';"
+#        return response
+
+# 미들웨어 등록
+#app.add_middleware(IframeSecurityMiddleware)
+
 
 # ==========================================
 # API

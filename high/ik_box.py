@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-# Version: 1.47
-# Changes from 1.46:
-#   - uvicorn.run에 timeout_graceful_shutdown=2 추가
-#     -> SIGTERM 후 2초 안에 연결 안 닫혀도 강제로 lifespan shutdown 진입
-#     -> /video_feed 같은 무한 스트림이 hang하는 문제 해결
+# Version: 1.51
+# Changes from 1.50:
+#   - 멘트를 더 쉬운 영어 단어로 다듬음
+#   - 줄임말(I'll, who's 등) → 풀어쓰기 (I will, who is)
+#   - "hand out/grab/takers" 같은 어휘 → "give/pick up/nobody" 같은 일상어
 """
 Unitree G1 + 원격/로컬 MJPEG 스트림
-ArUco 마커 3D 박스 오버레이 + Start / Release / Home
+ArUco 마커 3D 박스 오버레이 + Start / Release / Home + TTS
 """
 
 import os
 import sys
 import threading
 import time
+import random
 import urllib.request
 import numpy as np
 import cv2
@@ -37,6 +38,18 @@ except ImportError as e:
     ROBOT_AVAILABLE = False
     print(f"[경고] 시뮬레이션 모드: {e}")
 
+# TTS 로드 (실패해도 동작 계속 — speak가 더미 함수가 됨)
+try:
+    from ctrl.text_to_speech import TextToSpeech
+    tts = TextToSpeech()
+    def speak(text):
+        tts.speak(text)
+    print("[시스템] TTS 로드 성공")
+except Exception as e:
+    print(f"[경고] TTS 로드 실패 (조용히 진행): {e}")
+    def speak(text):
+        print(f"[TTS-DUMMY] {text}")
+
 # ==========================================
 # 설정
 # ==========================================
@@ -45,10 +58,10 @@ RS_STREAM_URL = os.environ.get("RS_STREAM_URL", "http://localhost:50001/video_fe
 # 카메라 캘리브레이션 (camera_calib.py 실행해서 출력된 값을 여기에 붙여넣기)
 CAM_WIDTH  = 640
 CAM_HEIGHT = 480
-CAM_FX     = 615.000000
-CAM_FY     = 615.000000
-CAM_PPX    = 320.000000
-CAM_PPY    = 240.000000
+CAM_FX     = 606.756104
+CAM_FY     = 606.583374
+CAM_PPX    = 316.739441
+CAM_PPY    = 258.982391
 CAM_DIST   = [0.0, 0.0, 0.0, 0.0, 0.0]
 
 ARUCO_DICT_TYPE = cv2.aruco.DICT_4X4_50
@@ -76,6 +89,33 @@ GRAB_Z_OFFSET = 0.05
 GRAB_X_OFFSET = -0.15
 
 HANDOVER_X = 0.40
+
+# ==========================================
+# TTS 멘트 (영어 - 쉬운 단어)
+# ==========================================
+MSG_INIT     = "Hi, Red Hat Summit! I have gifts for you."
+MSG_TRIGGER  = "A box! Let me pick it up."
+MSG_PICKED   = "I got it."
+MSG_HANDOVER = "This is for you! Please grab the top of the box."
+MSG_RECEIVED = "Enjoy your gift!"
+MSG_TIMEOUT  = "Nobody? I will put it back."
+MSG_HOME     = "Who is next? Bring me another box."
+
+# 대기 잡소리 (Red Hat 6 + Intel 2 + Circulus 2)
+IDLE_CHATTER = [
+    "Welcome to Red Hat Summit 2026!",
+    "Free Owala tumbler! Come and get one.",
+    "Bring me a box, and I will give you a gift.",
+    "I run on RHEL.",
+    "I run on open source.",
+    "I am faster than OpenShift.",
+    "I run on Intel Panther Lake.",
+    "I have Intel inside.",
+    "My software is from Circulus, Korea.",
+    "Circulus from Korea made my software.",
+]
+IDLE_INTERVAL_MIN = 30.0
+IDLE_INTERVAL_MAX = 60.0
 
 MARKER_OBJ_PTS = np.array([
     [-MARKER_SIZE/2,  MARKER_SIZE/2, 0],
@@ -135,7 +175,7 @@ AUTO_DEFAULT = {
     "dwell_sec": 2.0,
 }
 auto_mode = dict(AUTO_DEFAULT)
-auto_state = {"in_zone_since": None}  # 영역 진입 시각 (None이면 영역 밖)
+auto_state = {"in_zone_since": None}
 
 wrist_params = {
     'left':  {'roll': 0.0, 'pitch': -15.0, 'yaw': -10.0},
@@ -180,7 +220,6 @@ def init_aruco():
 # MJPEG 스트림 수신 (별도 스레드)
 # ==========================================
 def stream_reader_loop():
-    """RS_STREAM_URL에서 MJPEG 받아 latest_image 갱신. 끊기면 재연결."""
     global latest_image, stream_started
 
     while True:
@@ -197,7 +236,6 @@ def stream_reader_loop():
                     break
                 buf += chunk
 
-                # JPEG SOI/EOI 마커로 프레임 추출
                 while True:
                     soi = buf.find(b'\xff\xd8')
                     eoi = buf.find(b'\xff\xd9', soi + 2) if soi >= 0 else -1
@@ -273,7 +311,6 @@ def auto_monitor_loop():
             auto_state["in_zone_since"] = None
             continue
 
-        # 영역 안
         if auto_state["in_zone_since"] is None:
             auto_state["in_zone_since"] = time.time()
             print(f"[AUTO] 영역 진입: torso=[{mx:.3f},{my:.3f},{mz:.3f}]")
@@ -282,7 +319,39 @@ def auto_monitor_loop():
         elapsed = time.time() - auto_state["in_zone_since"]
         if elapsed >= auto_mode["dwell_sec"]:
             print(f"[AUTO] {auto_mode['dwell_sec']}초 머무름 → 자동 잡기 트리거")
+            speak(MSG_TRIGGER)
             launch_grab(tvec)
+
+
+def idle_chatter_loop():
+    """대기 상태에서 잡소리 로테이션. 박스 보이거나 동작 중이면 침묵."""
+    # 셔플 큐
+    queue = list(IDLE_CHATTER)
+    random.shuffle(queue)
+    idx = 0
+
+    # 시작 시 첫 잡소리까지 잠깐 대기 (init 멘트 끝나고 나오게)
+    time.sleep(15.0)
+
+    while True:
+        # 잡소리 조건: 마커 안 보임 + busy 아님 + grab_active 아님
+        can_speak = (
+            not is_marker_visible(threshold_sec=0.5) and
+            not grab_state.get('busy') and
+            not grab_state.get('active')
+        )
+
+        if can_speak:
+            text = queue[idx]
+            idx += 1
+            if idx >= len(queue):
+                random.shuffle(queue)
+                idx = 0
+            speak(text)
+
+        # 30~60초 랜덤 대기
+        wait = random.uniform(IDLE_INTERVAL_MIN, IDLE_INTERVAL_MAX)
+        time.sleep(wait)
 
 
 @asynccontextmanager
@@ -290,11 +359,9 @@ async def lifespan(app: FastAPI):
     setup_camera_matrix()
     init_aruco()
 
-    # 스트림 reader 스레드 시작
     t = threading.Thread(target=stream_reader_loop, daemon=True)
     t.start()
 
-    # 첫 프레임 도착 대기 (최대 10초)
     print("[STREAM] 첫 프레임 대기...")
     for _ in range(100):
         with image_lock:
@@ -308,29 +375,31 @@ async def lifespan(app: FastAPI):
 
     init_robot()
 
-    # 자동 모니터 스레드 시작
     threading.Thread(target=auto_monitor_loop, daemon=True).start()
     print("[AUTO] 자동 모니터 스레드 시작")
+
+    threading.Thread(target=idle_chatter_loop, daemon=True).start()
+    print("[CHATTER] 잡소리 스레드 시작")
+
+    # 시작 인사
+    speak(MSG_INIT)
 
     yield
 
     # ==========================================
-    # 안전 종료 시퀀스 (init 스타일 부드러운 이동)
+    # 안전 종료 시퀀스
     # ==========================================
     print("[shutdown] 종료 시퀀스 시작")
     t_shutdown = time.time()
 
-    # 1) 자동 모드 차단 (혹시 모를 grab 트리거 방지)
     auto_mode["enabled"] = False
 
-    # 2) 진행 중인 grab 끝나길 대기 (최대 3초)
     busy_deadline = time.time() + 3.0
     while grab_state.get('busy') and time.time() < busy_deadline:
         time.sleep(0.1)
     if grab_state.get('busy'):
         print("[shutdown] grab 진행 중이지만 시간 초과 — 강제 진행")
 
-    # 3) init과 동일한 스타일로 PARK 자세까지 부드럽게 이동
     if arm:
         try:
             print(f"[shutdown] PARK 자세로 이동 (L:{SHUTDOWN_HOME_LEFT}, R:{SHUTDOWN_HOME_RIGHT})")
@@ -341,8 +410,6 @@ async def lifespan(app: FastAPI):
             arm.move_waist_smooth(yaw=0.0, roll=0.0, pitch=0.0, duration=1.5)
             time.sleep(0.3)
 
-            # 4) motion_mode 제어권 반납
-            #    q_target은 PARK 위치 그대로 두고 weight만 1->0 으로 페이드아웃
             if arm.arm_ctrl and arm.arm_ctrl.motion_mode:
                 from ctrl.robot_arm import G1_29_JointIndex
                 print("[shutdown] 제어권 반납 (weight 1->0, 1초)")
@@ -354,10 +421,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[shutdown] 종료 시퀀스 실패: {e}")
 
-    # 5) 마지막 DDS 메시지 flush
     time.sleep(0.3)
 
-    # 6) C++/DDS 스레드 무시하고 즉시 종료 (SIGKILL 회피로 모터 급락 방지)
     print(f"[shutdown] 프로세스 종료 (총 {time.time()-t_shutdown:.2f}초 소요)")
     os._exit(0)
 
@@ -373,7 +438,7 @@ app.add_middleware(
 
 
 # ==========================================
-# 좌표 변환 (카메라 pitch 47.6° 정적)
+# 좌표 변환
 # ==========================================
 def camera_to_torso(cx, cy, cz):
     cos_p, sin_p = np.cos(CAMERA_PITCH_URDF), np.sin(CAMERA_PITCH_URDF)
@@ -425,33 +490,29 @@ def rpy_to_quat(roll_deg, pitch_deg, yaw_deg):
 # 3D 박스 그리기
 # ==========================================
 def draw_box_3d(frame, rvec, tvec):
-    """박스 와이어프레임. 윗면은 녹색, 나머지(측면+밑면)는 노랑."""
     pts, _ = cv2.projectPoints(BOX_CORNERS_3D, rvec, tvec, camera_matrix, dist_coeffs)
     pts = pts.reshape(-1, 2).astype(int)
 
-    # 윗면 반투명 녹색 채움
     overlay = frame.copy()
     cv2.fillPoly(overlay, [pts[:4].reshape((-1,1,2))], (0, 255, 0))
     cv2.addWeighted(overlay, 0.25, frame, 0.75, 0, frame)
 
-    # edge 색 분리: 윗면(0-1, 1-2, 2-3, 3-0)은 녹색, 나머지는 노랑
     TOP_EDGES = {(0,1),(1,2),(2,3),(3,0)}
     for i, j in BOX_EDGES:
         if (i,j) in TOP_EDGES or (j,i) in TOP_EDGES:
-            color = (0, 255, 0)      # 윗면 = 녹색
+            color = (0, 255, 0)
             thickness = 3
         else:
-            color = (0, 255, 255)    # 측면/밑면 = 노랑
+            color = (0, 255, 255)
             thickness = 2
         cv2.line(frame, tuple(pts[i]), tuple(pts[j]), color, thickness)
 
-    # 윗면 코너 점 (강조용, 녹색)
     for pt in pts[:4]:
         cv2.circle(frame, tuple(pt), 5, (0, 255, 0), -1)
 
 
 # ==========================================
-# ArUco 감지 (이미지만 입력 — 카메라 의존 없음)
+# ArUco 감지
 # ==========================================
 def detect_and_draw_aruco(image):
     global latest_markers, latest_marker_pose, marker_last_seen_time
@@ -505,7 +566,7 @@ def is_marker_visible(threshold_sec=0.5):
 
 
 # ==========================================
-# 비디오 출력 (latest_image 처리해서 클라에 송출)
+# 비디오 출력
 # ==========================================
 def generate_frames():
     while True:
@@ -613,6 +674,9 @@ def grab_sequence(tvec_orig):
     if not robot_move(L, R, 2.5, "⑥ 잡기", l_rot, r_rot): return False, None, None
     time.sleep(1.0)
 
+    # ⑥ 잡기 완료 멘트
+    speak(MSG_PICKED)
+
     sym_L = [grab_x_base, +grp_off, grab_z]
     sym_R = [grab_x_base, -grp_off, grab_z]
     if not robot_move(sym_L, sym_R, 1.5, "⑥' 좌우 대칭 정렬", l_rot, r_rot): return False, None, None
@@ -633,6 +697,9 @@ def grab_sequence(tvec_orig):
     if not robot_move(hl, hr, 1.5, "⑧ 건네기", l_rot, r_rot): return False, None, None
     time.sleep(0.3)
 
+    # ⑧ 건네기 완료 → 사용자 행동 유도 멘트
+    speak(MSG_HANDOVER)
+
     print("[HANDOVER] 10초 대기 (마커 가려지면 받음, 안 가려지면 내려놓음)")
     start = time.time()
     received = False
@@ -644,11 +711,13 @@ def grab_sequence(tvec_orig):
         time.sleep(0.1)
 
     if received:
+        speak(MSG_RECEIVED)
         robot_move([HANDOVER_X, +grp_off+0.10, lift_z],
                    [HANDOVER_X, -grp_off-0.10, lift_z],
                    1.0, "⑩ 손 벌림 (수령)", l_rot, r_rot)
     else:
         print("[HANDOVER] 타임아웃 → 박스 내려놓기")
+        speak(MSG_TIMEOUT)
         robot_move([HANDOVER_X, +grp_off, grab_z],
                    [HANDOVER_X, -grp_off, grab_z],
                    1.5, "⑩a 내려놓기", l_rot, r_rot)
@@ -662,6 +731,9 @@ def grab_sequence(tvec_orig):
     print("[HANDOVER] 홈 복귀")
     reset_waist()
     robot_move(HOME_LEFT, HOME_RIGHT, 2.0, "⑪ Home")
+
+    # ⑪ 홈 복귀 완료 멘트
+    speak(MSG_HOME)
 
     return False, None, None
 
@@ -820,7 +892,6 @@ HTML_PAGE = """<!DOCTYPE html>
                 else if (d.grab_active) setSt('박스 들고 있음', 'holding');
                 else setSt('대기 중', '');
 
-                // 자동 모드 표시
                 const cb = document.getElementById('auto-enabled');
                 if (cb.checked !== d.auto_enabled) cb.checked = d.auto_enabled;
                 document.getElementById('auto-label').textContent = d.auto_enabled ? 'ON' : 'OFF';
@@ -958,14 +1029,12 @@ async def status():
 
 
 def launch_grab(tvec):
-    """grab_sequence를 백그라운드 스레드로 시작. busy 중이면 무시."""
     if grab_state.get('busy'):
         return False
 
     def run():
         global grab_state
         grab_state['busy'] = True
-        # 자동 모드 타이머 리셋 (잡기 중 트리거 안 되게)
         auto_state['in_zone_since'] = None
         try:
             ok, ll, rl = grab_sequence(tvec)
@@ -980,7 +1049,6 @@ def launch_grab(tvec):
                 print("[GRAB] 실패")
         finally:
             grab_state['busy'] = False
-            # 잡기 끝나면 영역 타이머 리셋
             auto_state['in_zone_since'] = None
 
     threading.Thread(target=run, daemon=True).start()
@@ -989,7 +1057,6 @@ def launch_grab(tvec):
 
 @app.get("/start_grab")
 async def start_grab():
-    # 3초 동안 마커 찾기
     print("[START] 마커 탐색 (최대 3초)...")
     deadline = time.time() + 3.0
     pose = None
@@ -1006,6 +1073,7 @@ async def start_grab():
         return JSONResponse({"success": False, "error": "마커가 감지되지 않았습니다 (3초 대기)"})
 
     print(f"[START] 마커 발견: ID {pose['id']}")
+    speak(MSG_TRIGGER)
     if not launch_grab(pose['tvec']):
         return JSONResponse({"success": False, "error": "이미 동작 중입니다"})
     return JSONResponse({"success": True, "marker_id": pose['id']})
@@ -1070,7 +1138,6 @@ async def set_wrist(
 
 @app.get("/auto_mode")
 async def get_auto_mode():
-    """현재 자동 모드 설정/상태 반환"""
     in_zone_since = auto_state.get("in_zone_since")
     elapsed = (time.time() - in_zone_since) if in_zone_since else 0.0
     return {
@@ -1088,7 +1155,6 @@ async def set_auto_mode(
     z_min: float = None, z_max: float = None,
     dwell_sec: float = None,
 ):
-    """자동 모드 설정. None은 변경 안 함"""
     global auto_mode
     for k, v in [("enabled", enabled),
                  ("x_min", x_min), ("x_max", x_max),
@@ -1097,7 +1163,6 @@ async def set_auto_mode(
                  ("dwell_sec", dwell_sec)]:
         if v is not None:
             auto_mode[k] = v
-    # 상태 변경 시 타이머 리셋
     auto_state["in_zone_since"] = None
     print(f"[AUTO] 설정 변경: {auto_mode}")
     return {"success": True, "config": auto_mode}
