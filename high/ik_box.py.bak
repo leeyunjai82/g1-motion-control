@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-# Version: 1.54
-# Changes from 1.53:
-#   - LEFT_HAND_Y_OFFSET = 0.0 (비활성). 카메라 좌표 변환 보정 우선.
-#   - /status에 cam tvec / torso 좌표 디버그 로그 추가
+# Version: 1.52
+# Changes from 1.51:
+#   - align_waist_yaw 가 카메라 좌표(cx,cz) 대신 torso 좌표(my,mx) 기준으로
+#     yaw 계산하도록 수정. CAMERA_Y 오프셋이 yaw 계산에 반영됨.
+#   - /status 응답의 yaw_deg도 동일하게 torso 기준
 """
 Unitree G1 + 원격/로컬 MJPEG 스트림
 ArUco 마커 3D 박스 오버레이 + Start / Release / Home + TTS
@@ -67,7 +68,7 @@ ARUCO_DICT_TYPE = cv2.aruco.DICT_4X4_50
 MARKER_SIZE     = 0.045
 
 CAMERA_X          = 0.0576235
-CAMERA_Y          = 0.05003 #0.01753 + 0.0175 + 0.015
+CAMERA_Y          = 0.01753
 CAMERA_Z          = 0.42987
 CAMERA_PITCH_URDF = 0.8307767239493009  # 47.6도
 
@@ -86,10 +87,6 @@ GRIP_EXTRA = -0.015
 APPROACH_EXTRA = 0.10
 GRAB_Z_OFFSET = 0.05
 GRAB_X_OFFSET = -0.15
-
-# 왼손 Y 추가 오프셋 (양수 = 왼손이 박스에서 더 멀리 = 박스가 좌측으로 치우치는 거 보정)
-# 0.0이면 비활성. 카메라 좌표 보정 우선 시도 중이라 일단 0.
-LEFT_HAND_Y_OFFSET = 0.0
 
 HANDOVER_X = 0.40
 
@@ -657,7 +654,7 @@ def grab_sequence(tvec_orig):
 
     def offset_point(base_x, base_y, z, offset):
         lx = base_x + grip_dir[0] * offset
-        ly = base_y + grip_dir[1] * offset + LEFT_HAND_Y_OFFSET
+        ly = base_y + grip_dir[1] * offset
         rx = base_x - grip_dir[0] * offset
         ry = base_y - grip_dir[1] * offset
         return [lx, ly, z], [rx, ry, z]
@@ -682,12 +679,12 @@ def grab_sequence(tvec_orig):
     # ⑥ 잡기 완료 멘트
     speak(MSG_PICKED)
 
-    sym_L = [grab_x_base, +grp_off + LEFT_HAND_Y_OFFSET, grab_z]
+    sym_L = [grab_x_base, +grp_off, grab_z]
     sym_R = [grab_x_base, -grp_off, grab_z]
     if not robot_move(sym_L, sym_R, 1.5, "⑥' 좌우 대칭 정렬", l_rot, r_rot): return False, None, None
     time.sleep(0.3)
 
-    ll = [grab_x_base, +grp_off + LEFT_HAND_Y_OFFSET, lift_z]
+    ll = [grab_x_base, +grp_off, lift_z]
     rl = [grab_x_base, -grp_off, lift_z]
     if not robot_move(ll, rl, 1.5, "⑦ 들기", l_rot, r_rot): return False, None, None
     time.sleep(0.2)
@@ -697,7 +694,7 @@ def grab_sequence(tvec_orig):
         arm.move_waist_smooth(yaw=0.0, roll=0.0, pitch=0.0, duration=1.5)
         time.sleep(0.5)
 
-    hl = [HANDOVER_X, +grp_off + LEFT_HAND_Y_OFFSET, lift_z]
+    hl = [HANDOVER_X, +grp_off, lift_z]
     hr = [HANDOVER_X, -grp_off, lift_z]
     if not robot_move(hl, hr, 1.5, "⑧ 건네기", l_rot, r_rot): return False, None, None
     time.sleep(0.3)
@@ -1012,7 +1009,6 @@ async def status():
     if visible:
         tvec = pose['tvec']
         mx, my, mz = camera_to_torso(tvec[0], tvec[1], tvec[2])
-        print(f"[DEBUG] cam tvec=[{tvec[0]:+.3f},{tvec[1]:+.3f},{tvec[2]:+.3f}]  torso=[{mx:+.3f},{my:+.3f},{mz:+.3f}]")
         torso   = {"x": round(mx,3), "y": round(my,3), "z": round(mz,3)}
         yaw_deg = float(np.degrees(np.arctan2(my, mx)))
 
