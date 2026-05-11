@@ -17,3 +17,6 @@ time.sleep(5)
 setfsmid(4)
 time.sleep(10)
 setfsmid(501)
+
+#setfsmid(3)
+#time.sleep(3)

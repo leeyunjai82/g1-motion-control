@@ -33,12 +33,12 @@ def create_command(fingers, ratio):
              각 원소는 0/1 (선택 비트)
     """
     position = [
-        f1_pos(ratio),   # B4: Thumb Flexion
-        f24_pos(ratio),  # B5: Index Flexion
-        f24_pos(ratio),  # B6: Middle Flexion
-        f24_pos(ratio),  # B7: Ring Flexion
-        f24_pos(ratio),  # B8: Little Flexion
-        f6_pos(ratio),   # B9: Thumb Abduction
+        f1_pos(ratio)  if fingers[0] else 0,  # B4: Thumb Flexion
+        f24_pos(ratio) if fingers[1] else 0,  # B5: Index Flexion
+        f24_pos(ratio) if fingers[2] else 0,  # B6: Middle Flexion
+        f24_pos(ratio) if fingers[3] else 0,  # B7: Ring Flexion
+        f24_pos(ratio) if fingers[4] else 0,  # B8: Little Flexion
+        f6_pos(ratio)  if fingers[5] else 0,  # B9: Thumb Abduction
     ]
 
     # fingers[0]=Thumb(bit 1) ... fingers[5]=ThumbAbd(bit 32)
@@ -46,7 +46,7 @@ def create_command(fingers, ratio):
 
     command = [0xFF]                  # B0 : left(0xFD), right(0xFE), both(0xFF)
     command.append(finger_sel)        # B1 : 손가락 선택 비트마스크 (6 bits)
-    command.extend([0x90, 0xC8])      # B2 speed=144 (RPM/200, spec 30~150), B3 current=1200mA
+    command.extend([0x80, 0xA0])      # B2 speed=144 (RPM/200, spec 30~150), B3 current=1200mA
     command.extend(position)          # B4-B9 : 6개 손가락 위치값
     command.append(0x1)               # B10: 방향 (0:Idle, 1:Forward, 2:Reverse, 3:Reset)
 
@@ -66,10 +66,6 @@ motions = {
         create_command([1, 0, 0, 0, 0, 1], 1.0),   # 엄지 + 외전 접기
         create_command([0, 1, 1, 1, 1, 0], 1.0),   # 4지 접기
     ],
-    "test": [
-        create_command([1, 0, 0, 0, 0, 1], 1.0),
-        create_command([0, 1, 1, 1, 1, 0], 0.3),
-    ],
     "fold_ha": [
         create_command([1, 0, 0, 0, 0, 1], 0.5),
         create_command([0, 1, 1, 1, 1, 0], 0.5),
@@ -87,6 +83,7 @@ motions = {
         create_command([0, 1, 0, 0, 0, 0], 0.9),   # 검지 접어 동그라미
     ],
     "thumbup": [
+        create_command([0, 0, 0, 0, 0, 1], 1.0),   # 엄지만 펴고 나머지 접기
         create_command([0, 1, 1, 1, 1, 0], 1.0),   # 엄지만 펴고 나머지 접기
     ],
     "victory": [
@@ -115,7 +112,7 @@ class HandController:
                  tx_repeat=3,            # ACK 미수신 시 최대 재시도 횟수
                  tx_repeat_interval=0.05,   # 재시도 사이 간격(초)
                  inter_packet_delay=0.02,   # 서로 다른 명령 사이 최소 간격(초)
-                 ack_timeout=0.1):          # ACK(응답) 대기 시간(초)
+                 ack_timeout=0.3):          # ACK(응답) 대기 시간(초)
         # 타임아웃 설정으로 무한 대기 방지
         self.ser = serial.Serial(
             port=port,
