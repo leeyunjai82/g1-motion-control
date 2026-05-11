@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Version: 1.54
-# Changes from 1.53:
-#   - LEFT_HAND_Y_OFFSET = 0.0 (비활성). 카메라 좌표 변환 보정 우선.
-#   - /status에 cam tvec / torso 좌표 디버그 로그 추가
+# Version: 1.58
+# Changes from 1.57:
+#   - 손목 yaw 값 변경: ±10 → ±15 (더 안쪽으로 회전)
+#   - lift_z: mz + 0.22 → mz + 0.15 (들기/건네기 높이 7cm 낮춤)
 """
 Unitree G1 + 원격/로컬 MJPEG 스트림
 ArUco 마커 3D 박스 오버레이 + Start / Release / Home + TTS
@@ -79,19 +79,19 @@ HOME_RIGHT = [0.2, -0.2, 0.15]
 SHUTDOWN_HOME_LEFT  = [0.2,  0.2, 0.0]
 SHUTDOWN_HOME_RIGHT = [0.2, -0.2, 0.0]
 
-HALF_W     = 0.27 / 2
+HALF_W     = 0.28 / 2
 HALF_D     = 0.09 / 2
 HEIGHT_BOX = 0.09
-GRIP_EXTRA = -0.015
+GRIP_EXTRA = -0.040
 APPROACH_EXTRA = 0.10
-GRAB_Z_OFFSET = 0.05
+GRAB_Z_OFFSET = 0.10
 GRAB_X_OFFSET = -0.15
 
 # 왼손 Y 추가 오프셋 (양수 = 왼손이 박스에서 더 멀리 = 박스가 좌측으로 치우치는 거 보정)
 # 0.0이면 비활성. 카메라 좌표 보정 우선 시도 중이라 일단 0.
 LEFT_HAND_Y_OFFSET = 0.0
 
-HANDOVER_X = 0.40
+HANDOVER_X = 0.30   # 건네기 X 거리 (작을수록 가까이, 이전 0.40)
 
 # ==========================================
 # TTS 멘트 (영어 - 쉬운 단어)
@@ -181,8 +181,8 @@ auto_mode = dict(AUTO_DEFAULT)
 auto_state = {"in_zone_since": None}
 
 wrist_params = {
-    'left':  {'roll': 0.0, 'pitch': -15.0, 'yaw': -10.0},
-    'right': {'roll': 0.0, 'pitch': -15.0, 'yaw':  10.0},
+    'left':  {'roll': -10.0, 'pitch': -10.0, 'yaw': -15.0},
+    'right': {'roll':  10.0, 'pitch': -10.0, 'yaw':  15.0},
 }
 
 
@@ -649,7 +649,7 @@ def grab_sequence(tvec_orig):
     grab_x_base = mx + GRAB_X_OFFSET
     grab_z = mz - HEIGHT_BOX / 2 + GRAB_Z_OFFSET
     above_z = mz + 0.10
-    lift_z = mz + 0.22
+    lift_z = mz + 0.15
     app_off = HALF_W + GRIP_EXTRA + APPROACH_EXTRA
     grp_off = HALF_W + GRIP_EXTRA
 
@@ -827,15 +827,15 @@ HTML_PAGE = """<!DOCTYPE html>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                     <div>
                         <div style="color:#4CAF50; font-size:11px; margin-bottom:4px;">왼손 L</div>
-                        <div class="rpy-row"><span class="rpy-label">R</span><input class="rpy-input" id="l-roll"  type="number" value="0" step="5"></div>
-                        <div class="rpy-row"><span class="rpy-label">P</span><input class="rpy-input" id="l-pitch" type="number" value="-15"   step="5"></div>
-                        <div class="rpy-row"><span class="rpy-label">Y</span><input class="rpy-input" id="l-yaw"   type="number" value="-10" step="5"></div>
+                        <div class="rpy-row"><span class="rpy-label">R</span><input class="rpy-input" id="l-roll"  type="number" value="-10" step="5"></div>
+                        <div class="rpy-row"><span class="rpy-label">P</span><input class="rpy-input" id="l-pitch" type="number" value="-10"   step="5"></div>
+                        <div class="rpy-row"><span class="rpy-label">Y</span><input class="rpy-input" id="l-yaw"   type="number" value="-15" step="5"></div>
                     </div>
                     <div>
                         <div style="color:#FF9800; font-size:11px; margin-bottom:4px;">오른손 R</div>
-                        <div class="rpy-row"><span class="rpy-label">R</span><input class="rpy-input" id="r-roll"  type="number" value="0" step="5"></div>
-                        <div class="rpy-row"><span class="rpy-label">P</span><input class="rpy-input" id="r-pitch" type="number" value="-15"  step="5"></div>
-                        <div class="rpy-row"><span class="rpy-label">Y</span><input class="rpy-input" id="r-yaw"   type="number" value="10" step="5"></div>
+                        <div class="rpy-row"><span class="rpy-label">R</span><input class="rpy-input" id="r-roll"  type="number" value="10" step="5"></div>
+                        <div class="rpy-row"><span class="rpy-label">P</span><input class="rpy-input" id="r-pitch" type="number" value="-10"  step="5"></div>
+                        <div class="rpy-row"><span class="rpy-label">Y</span><input class="rpy-input" id="r-yaw"   type="number" value="15" step="5"></div>
                     </div>
                 </div>
                 <button class="btn btn-apply" onclick="applyWrist()" style="margin-top:10px; width:100%; padding:8px;">적용</button>
