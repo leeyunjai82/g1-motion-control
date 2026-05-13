@@ -96,7 +96,7 @@ python -u ik_box.py    > "$LOG_DIR/ik_box.log"    2>&1 &
 PIDS+=($!); NAMES+=("ik_box")
 sleep 3
 
-echo "[start] dashboard  (50002) ..."
+echo "[start] dashboard  (50003) ..."
 python -u dashboard.py > "$LOG_DIR/dashboard.log" 2>&1 &
 PIDS+=($!); NAMES+=("dashboard")
 sleep 1
@@ -104,7 +104,8 @@ sleep 1
 cat <<EOF
 
   ✓ 3개 서버 실행 중
-    - Dashboard:  http://localhost:50002/dashboard
+    - Dashboard:  http://localhost:50003/dashboard
+    - Robot viewer:  http://localhost:50003/robot-only
     - rs_stream:  http://localhost:50001/video_feed
     - ik_box:     http://localhost:50000
 

@@ -8,8 +8,8 @@ Routes:
   /dashboard   -> 통합 대시보드 (3D viewer + video + depth)
   /api/*       -> URDF / mesh / SSE 등
   /vendor/three.min.js -> 로컬 Three.js (오프라인 동작용)
-  /stream/video-feed -> localhost:50000/video_feed 프록시
-  /stream/depth-feed -> localhost:50001/depth_feed 프록시
+  /stream/video_feed -> localhost:50001/video_feed 프록시
+  /stream/depth_feed -> localhost:50001/depth_feed 프록시
 """
 
 import os
@@ -34,7 +34,7 @@ MESH_DIR   = os.path.join(ASSETS_DIR, 'meshes')
 VENDOR_DIR = os.path.join(current_dir, 'assets', 'vendor')   # three.min.js 등 로컬 라이브러리
 
 # ===== Stream upstreams =====
-VIDEO_FEED = "http://localhost:50000/video_feed"
+VIDEO_FEED = "http://localhost:50001/video_feed"
 DEPTH_FEED = "http://localhost:50001/depth_feed"
 
 # ==========================================
@@ -199,11 +199,11 @@ async def _stream_proxy(upstream_url: str):
         media_type=ctype,
     )
 
-@app.get("/stream/video-feed")
+@app.get("/video_feed")
 async def video_feed():
     return await _stream_proxy(VIDEO_FEED)
 
-@app.get("/stream/depth-feed")
+@app.get("/depth_feed")
 async def depth_feed():
     return await _stream_proxy(DEPTH_FEED)
 
@@ -836,15 +836,15 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="grid">
     <div class="panel full">
       <h2>Robot (3D Viewer + Joint States)</h2>
-      <iframe src="/robot-dashboard"></iframe>
+      <iframe src="/robot-only"></iframe>
     </div>
     <div class="panel">
       <h2>Video Feed</h2>
-      <img src="/stream/video-feed" alt="video_feed">
+      <img src="/video_feed" alt="video_feed">
     </div>
     <div class="panel">
       <h2>Depth Feed</h2>
-      <img src="/stream/depth-feed" alt="depth_feed">
+      <img src="/depth_feed" alt="depth_feed">
     </div>
   </div>
 </body>
@@ -857,7 +857,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 def index():
     return HTMLResponse(HTML_PAGE)
 
-@app.get('/robot-dashboard')
+@app.get('/robot-only')
 def robot_dashboard():
     return HTMLResponse(HTML_PAGE.replace('<body>', '<body class="dashboard-mode">', 1))
 
@@ -867,4 +867,4 @@ def dashboard():
 
 
 if __name__ == '__main__':
-    uvicorn.run(app, host='0.0.0.0', port=50002, timeout_graceful_shutdown=2)
+    uvicorn.run(app, host='0.0.0.0', port=50003, timeout_graceful_shutdown=2)

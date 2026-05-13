@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-# Version: 1.62
-# Changes from 1.61:
-#   - USE_ARM_CONTROLLER / USE_TTS 상단 토글 추가
-#     · False면 해당 모듈을 import 자체를 건너뜀 (의존성 없는 환경에서 실행 가능)
-#     · True면 기존 동작 그대로 (import 실패 시 자동 fallback)
-# Changes from 1.60:
-#   - detect를 전용 스레드로 분리 (30fps 유지)
-#     · generate_frames는 송신만 (5fps로 떨어뜨려도 검출은 계속 30fps)
-#     · latest_annotated 변수에 그려진 이미지 저장
-#     · 검출 주기와 웹 송신 주기 완전 독립
+# Version: 1.60
 # Changes from 1.59:
 #   - 웹 스트림 성능 최적화
 #     · 출력 해상도 640x480 → 320x240 (브라우저에서 2배 확대 표시)
-#     · 출력 FPS 상한 5fps (송신만 — 검출은 30fps 유지)
+#     · 출력 FPS 상한 15fps (detect 스레드는 영향 없음 — 화면 송신만)
 #     · JPEG 품질 80 → 70
+#     · detect/IK는 원본 640x480 그대로 사용
 # Changes from 1.58:
 #   - 마커 pose 1초 윈도우 중앙값 안정화 (튀는 값 outlier 제거)
 #     · pose_history deque에 매 프레임 raw pose 저장
@@ -44,44 +36,29 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # ==========================================
-# 모듈 활성화 토글 (False면 import 자체를 건너뜀)
-# ==========================================
-USE_ARM_CONTROLLER = True    # False = arm_controller import 안 함 (순수 시뮬)
-USE_TTS            = True    # False = TTS import 안 함 (조용히 더미)
-
-# ==========================================
 # 로봇 라이브러리 로드
 # ==========================================
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir  = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-if USE_ARM_CONTROLLER:
-    try:
-        from ctrl.arm_controller_wrapper import ArmControllerWrapper
-        ROBOT_AVAILABLE = True
-        print("[시스템] 로봇 라이브러리 로드 성공")
-    except ImportError as e:
-        ROBOT_AVAILABLE = False
-        print(f"[경고] 시뮬레이션 모드: {e}")
-else:
+try:
+    from ctrl.arm_controller_wrapper import ArmControllerWrapper
+    ROBOT_AVAILABLE = True
+    print("[시스템] 로봇 라이브러리 로드 성공")
+except ImportError as e:
     ROBOT_AVAILABLE = False
-    print("[시스템] arm_controller 비활성화 (USE_ARM_CONTROLLER=False)")
+    print(f"[경고] 시뮬레이션 모드: {e}")
 
 # TTS 로드 (실패해도 동작 계속 — speak가 더미 함수가 됨)
-if USE_TTS:
-    try:
-        from ctrl.text_to_speech import TextToSpeech
-        tts = TextToSpeech()
-        def speak(text):
-            tts.speak(text)
-        print("[시스템] TTS 로드 성공")
-    except Exception as e:
-        print(f"[경고] TTS 로드 실패 (조용히 진행): {e}")
-        def speak(text):
-            print(f"[TTS-DUMMY] {text}")
-else:
-    print("[시스템] TTS 비활성화 (USE_TTS=False)")
+try:
+    from ctrl.text_to_speech import TextToSpeech
+    tts = TextToSpeech()
+    def speak(text):
+        tts.speak(text)
+    print("[시스템] TTS 로드 성공")
+except Exception as e:
+    print(f"[경고] TTS 로드 실패 (조용히 진행): {e}")
     def speak(text):
         print(f"[TTS-DUMMY] {text}")
 
@@ -119,7 +96,7 @@ HALF_W     = 0.28 / 2
 HALF_D     = 0.09 / 2
 HEIGHT_BOX = 0.09
 GRIP_EXTRA = -0.040
-APPROACH_EXTRA = 0.10
+APPROACH_EXTRA = 0.13
 GRAB_Z_OFFSET = 0.10
 GRAB_X_OFFSET = -0.15
 
@@ -140,8 +117,8 @@ AVERAGING_MIN_SAMPLES = 3     # 최소 N개 모이면 평균 적용 (미달 시 
 # ==========================================
 WEB_STREAM_WIDTH   = 320   # 출력 너비 (브라우저에서 2배 확대해서 표시)
 WEB_STREAM_HEIGHT  = 240
-WEB_STREAM_FPS_MAX = 5     # 출력 프레임율 상한 (시연용 — 검출에도 충분)
-WEB_STREAM_QUALITY = 50    # JPEG 품질 (기존 80 → 70)
+WEB_STREAM_FPS_MAX = 15    # 출력 프레임율 상한 (기존 30 → 15)
+WEB_STREAM_QUALITY = 70    # JPEG 품질 (기존 80 → 70)
 
 # ==========================================
 # TTS 멘트 (영어 - 쉬운 단어)
@@ -203,7 +180,6 @@ image_width   = 640
 image_height  = 480
 
 latest_image       = None
-latest_annotated   = None      # detect/오버레이가 그려진 이미지 (송신용)
 latest_markers     = []
 latest_marker_pose = None
 marker_last_seen_time = 0.0
@@ -211,10 +187,9 @@ marker_last_seen_time = 0.0
 # 마커 pose 히스토리 (1초 윈도우 중앙값 계산용)
 pose_history = deque(maxlen=120)   # 30fps × 4초 여유
 
-lock           = threading.Lock()
-pose_lock      = threading.Lock()
-image_lock     = threading.Lock()
-annotated_lock = threading.Lock()
+lock        = threading.Lock()
+pose_lock   = threading.Lock()
+image_lock  = threading.Lock()
 
 stream_started = False
 arm            = None
@@ -433,9 +408,6 @@ async def lifespan(app: FastAPI):
 
     init_robot()
 
-    threading.Thread(target=detect_loop, daemon=True).start()
-    print("[DETECT] 검출 스레드 시작 (30fps)")
-
     threading.Thread(target=auto_monitor_loop, daemon=True).start()
     print("[AUTO] 자동 모니터 스레드 시작")
 
@@ -650,16 +622,17 @@ def is_marker_visible(threshold_sec=0.5):
 
 
 # ==========================================
-# 검출 전용 스레드 (30fps로 detect, latest_marker_pose 갱신)
+# 비디오 출력
 # ==========================================
-DETECT_LOOP_INTERVAL = 1.0 / 30.0   # 약 30fps
-
-def detect_loop():
-    """latest_image → detect_and_draw_aruco → latest_annotated 저장.
-    웹 송신 FPS와 무관하게 검출 주기 유지."""
-    global latest_annotated
+def generate_frames():
+    frame_interval = 1.0 / WEB_STREAM_FPS_MAX
+    next_send = 0.0
     while True:
-        loop_start = time.time()
+        # 출력 주기 제한 (detect 스레드는 별개 — 여기는 웹 송신만)
+        now = time.time()
+        if now < next_send:
+            time.sleep(max(0.0, next_send - now))
+        next_send = time.time() + frame_interval
 
         with image_lock:
             img = None if latest_image is None else latest_image.copy()
@@ -668,37 +641,7 @@ def detect_loop():
             time.sleep(0.05)
             continue
 
-        # detect + 오버레이 (img가 in-place로 그려짐)
-        detect_and_draw_aruco(img)
-
-        with annotated_lock:
-            latest_annotated = img
-
-        # 30fps 페이싱
-        elapsed = time.time() - loop_start
-        if elapsed < DETECT_LOOP_INTERVAL:
-            time.sleep(DETECT_LOOP_INTERVAL - elapsed)
-
-
-# ==========================================
-# 비디오 출력 (송신만 — detect는 별도 스레드)
-# ==========================================
-def generate_frames():
-    frame_interval = 1.0 / WEB_STREAM_FPS_MAX
-    next_send = 0.0
-    while True:
-        # 출력 주기 제한 (검출 주기와 독립)
-        now = time.time()
-        if now < next_send:
-            time.sleep(max(0.0, next_send - now))
-        next_send = time.time() + frame_interval
-
-        with annotated_lock:
-            img = None if latest_annotated is None else latest_annotated.copy()
-
-        if img is None:
-            time.sleep(0.05)
-            continue
+        img = detect_and_draw_aruco(img)
 
         # 다운스케일 후 인코딩
         small = cv2.resize(img, (WEB_STREAM_WIDTH, WEB_STREAM_HEIGHT),

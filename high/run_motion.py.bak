@@ -3,7 +3,6 @@ G1 Motion Runner Server (Integrated)
 - 관절값 포맷 (simulator.py)  → /run, /run_file
 - IK 포맷     (simulator_ik.py) → /run_ik, /run_ik_file
 - motions/ 폴더 모션 실행    → /motions, /motions/run/{filename}
-- 선물 시퀀스 (TTS + 모션)   → /send_gift
 - Loco 리모컨               → /loco/move, /loco/stop
 - 통합 웹 UI                 → /            (3D viewer + 모션 + 리모컨)
 - 로봇 단독 뷰              → /robot-only  (3D viewer + Joint States)
@@ -56,13 +55,6 @@ try:
 except ImportError:
     HAND_AVAILABLE = False
 
-# TTS
-try:
-    from ctrl.text_to_speech import TextToSpeech
-    TTS_AVAILABLE = True
-except ImportError:
-    TTS_AVAILABLE = False
-
 
 # ==========================================
 # URDF 조인트 ↔ 모터 인덱스 매핑
@@ -106,7 +98,6 @@ JOINT_TO_MOTOR = {
 arm:  Optional[ArmControllerWrapper] = None
 loco: Optional[LocoClientWrapper]    = None
 hand: Optional[object]               = None
-tts:  Optional[object]               = None
 
 is_running = False
 STOP_FLAG  = False
@@ -203,7 +194,7 @@ def _read_motor_state():
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global arm, loco, hand, tts
+    global arm, loco, hand
 
     print("[Motion Runner] 시작")
     ChannelFactoryInitialize(0)
@@ -228,13 +219,6 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"⚠️ 손 초기화 실패: {e}")
 
-    if TTS_AVAILABLE:
-        try:
-            tts = TextToSpeech(verbose=False)
-            print("✅ TTS 초기화 성공")
-        except Exception as e:
-            print(f"⚠️ TTS 초기화 실패: {e}")
-
     print("[Motion Runner] 준비 완료")
     print(f"  웹:        http://localhost:50003/")
     print(f"  로봇만:    http://localhost:50003/robot-only")
@@ -253,7 +237,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="G1 Motion Runner",
     description="모션 실행 + Loco 리모컨 + 3D Viewer 통합 서버",
-    version="2.1.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -263,6 +247,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+#class IframeSecurityMiddleware(BaseHTTPMiddleware):
+#    async def dispatch(self, request: Request, call_next):
+#        response = await call_next(request)
+#        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+#        response.headers["Content-Security-Policy"] = "frame-ancestors 'self';"
+#        return response
+
+# 미들웨어 등록
+#app.add_middleware(IframeSecurityMiddleware)
 
 # ==========================================
 # 공통 - 걷기 루프
@@ -406,50 +399,6 @@ async def _execute_ik_frames(frames: List[IKMotionFrame]):
 
 
 # ==========================================
-# 선물 시퀀스 (TTS + right_send.json)
-# ==========================================
-async def _execute_send_gift():
-    loop = asyncio.get_running_loop()
-    filepath = MOTIONS_DIR / "right_send.json"
-
-    if not filepath.exists():
-        print("[Send] right_send.json 없음")
-        return
-
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        print(f"[Send] 파싱 오류: {e}")
-        return
-
-    if not data:
-        print("[Send] 빈 모션")
-        return
-
-    # 1) 시작 멘트 (재생 끝까지 대기)
-    if tts:
-        print("[Send] TTS: Here is your gift.")
-        tts.speak("Here is your gift.")
-        await loop.run_in_executor(None, tts.wait_until_done)
-
-    # 2) 모션 실행 (포맷 자동 감지)
-    first = data[0]
-    is_ik = "left_xyz" in first or "right_xyz" in first
-    if is_ik:
-        frames = [IKMotionFrame(**f) for f in data]
-        await _execute_ik_frames(frames)
-    else:
-        frames = [MotionFrame(**f) for f in data]
-        await _execute_frames(frames)
-
-    # 3) 종료 멘트
-    if tts:
-        print("[Send] TTS: Goodbye. Have a great day.")
-        tts.speak("Goodbye. Have a great day.")
-
-
-# ==========================================
 # API: URDF / Mesh / Vendor / Joint States
 # ==========================================
 @app.get('/api/urdf')
@@ -522,7 +471,6 @@ async def status():
         "arm_ready":  arm  is not None,
         "loco_ready": loco is not None,
         "hand_ready": hand is not None,
-        "tts_ready":  tts  is not None,
     }
 
 
@@ -570,22 +518,6 @@ async def run_motion_by_name(filename: str):
         "filename": filename,
         "format":   "ik" if is_ik else "joint"
     }
-
-
-# ==========================================
-# API: 선물 시퀀스 (TTS + right_send.json)
-# ==========================================
-@app.post("/send_gift", summary="선물 모션 + TTS 시퀀스 (right_send.json)")
-async def send_gift():
-    if is_running:
-        raise HTTPException(409, "이미 실행 중. /stop 먼저 호출하세요.")
-
-    filepath = MOTIONS_DIR / "right_send.json"
-    if not filepath.exists():
-        raise HTTPException(404, "right_send.json 파일 없음")
-
-    asyncio.create_task(_execute_send_gift())
-    return {"status": "started"}
 
 
 # ==========================================
@@ -1185,8 +1117,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
 .btn:hover{border-color:#f9c30055;color:#f9c300}
 .btn.danger{border-color:#F8514944;color:#F85149}
 .btn.danger:hover{background:#F85149;color:#0a0a0f;border-color:#F85149}
-.btn.send{background:#f9c300;border-color:#f9c300;color:#0a0a0f;font-weight:700;font-size:14px;padding:13px}
-.btn.send:hover{background:#ffd23a;border-color:#ffd23a;color:#0a0a0f}
 .btn.full{width:100%}
 
 /* 리모컨 */
@@ -1234,12 +1164,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="status-dot" id="connDot"></div>
         <span style="font-size:11px;color:#555" id="connText">Checking...</span>
       </div>
-    </div>
-
-    <div class="sec">
-      <div class="sec-title"><span>🎁 Gift Sequence</span></div>
-      <button class="btn send full" onclick="sendGift()">🎁 Send</button>
-      <div class="hint-mini">TTS "Here is your gift" → right_send.json → TTS "Goodbye"</div>
     </div>
 
     <div class="sec">
@@ -1383,17 +1307,6 @@ async function runMotion(name){
     const d=await r.json();
     if(!r.ok)throw new Error(d.detail||'실행 실패');
     toast(`▶ ${name} (${d.frames} 프레임)`);
-  }catch(e){
-    toast(`오류: ${e.message}`,true);
-  }
-}
-
-async function sendGift(){
-  try{
-    const r=await fetch('/send_gift',{method:'POST'});
-    const d=await r.json();
-    if(!r.ok)throw new Error(d.detail||'실행 실패');
-    toast('🎁 Send 시퀀스 시작');
   }catch(e){
     toast(`오류: ${e.message}`,true);
   }
