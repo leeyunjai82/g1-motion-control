@@ -2,6 +2,9 @@
 
 A step-by-step procedure for installing the Unitree G1 Motion Control project on a Red Hat–family OS. Follow each step in order.
 
+- Usage : [`README.md`](./README.md)
+- Internals (architecture, motion JSON schema, IK, DDS, FSM) : [`TECH.md`](./TECH.md)
+
 ---
 
 ## 1. System Requirements
@@ -172,7 +175,7 @@ python -c "import cv2, torch, pyrealsense2, unitree_sdk2py; print('OK')"
 python -c "import pyrealsense2 as rs; print(rs.context().devices[0].get_info(rs.camera_info.name))"
 ```
 
-If everything is OK, continue with [`README.md`](./README.md) for usage instructions.
+If everything is OK, continue with [`README.md`](./README.md) for usage instructions, or [`TECH.md`](./TECH.md) for the internal architecture.
 
 ---
 
@@ -195,6 +198,9 @@ If everything is OK, continue with [`README.md`](./README.md) for usage instruct
 # 설치 가이드 (한국어)
 
 Unitree G1 Motion Control 프로젝트를 Red Hat 계열 OS에 설치하는 절차입니다. 처음부터 끝까지 순서대로 따라가시면 됩니다.
+
+- 사용법 : [`README.md`](./README.md)
+- 내부 구조 (아키텍처, 모션 JSON 스키마, IK, DDS, FSM) : [`TECH.md`](./TECH.md)
 
 ---
 
@@ -366,7 +372,7 @@ python -c "import cv2, torch, pyrealsense2, unitree_sdk2py; print('OK')"
 python -c "import pyrealsense2 as rs; print(rs.context().devices[0].get_info(rs.camera_info.name))"
 ```
 
-이상이 없으면 [`README.md`](./README.md) 의 사용 방법으로 이동하세요.
+이상이 없으면 [`README.md`](./README.md) 의 사용 방법으로 이동하거나, 내부 구조가 궁금하다면 [`TECH.md`](./TECH.md) 를 참고하세요.
 
 ---
 

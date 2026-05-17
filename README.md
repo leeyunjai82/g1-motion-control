@@ -4,7 +4,8 @@
 
 This project provides posture control (stand/sit), box grasping based on ArUco markers, keyboard-driven motion execution, and a web-based motion simulator — all in a single package.
 
-For installation, refer to [**INSTALL.md**](./INSTALL.md).
+- Installation : [**INSTALL.md**](./INSTALL.md)
+- Internals (joint map, motion JSON schema, IK pipeline, DDS, FSM) : [**TECH.md**](./TECH.md)
 
 ---
 
@@ -43,7 +44,11 @@ g1-motion-control/
 ├── vision/              # Vision modules (YOLO, MediaPipe, etc.)
 ├── docs/                # Additional documentation
 ├── high.org             # Development notes (org-mode)
-└── logs/                # Runtime logs (auto-generated)
+├── logs/                # Runtime logs (auto-generated)
+│
+├── README.md            # This file (usage overview)
+├── INSTALL.md           # Step-by-step installation
+└── TECH.md              # Technical deep-dive (architecture, JSON schema, DDS, IK, FSM)
 ```
 
 ---
@@ -113,6 +118,23 @@ cd high
 python simulator.py
 ```
 
+**Workflow** — design a motion in the simulator, export the JSON, drop it into `high/motions/`, then play it from `start_motion.sh`:
+
+```bash
+# 1) author the motion → downloads my_motion.json
+python high/simulator.py        # http://localhost:8000/
+
+# 2) save it next to the bundled motions
+mv ~/Downloads/my_motion.json   high/motions/
+
+# 3) run it
+./start_motion.sh               # http://localhost:50003/  (web UI)
+#   or directly via REST:
+curl -X POST http://localhost:50003/motions/run/my_motion.json
+```
+
+Both joint-angle (`simulator.py`) and IK (`simulator_ik.py`) JSON formats coexist in `high/motions/`; `run_motion.py` auto-detects which one each file uses. See [`TECH.md §5`](./TECH.md) for the schema.
+
 ---
 
 ### 🔧 `activate_tv.sh` — Environment Activation
@@ -180,7 +202,8 @@ tail -f logs/run_motion.log     # Motion runner only
 
 본 프로젝트는 G1 로봇의 자세 제어(서기/앉기), 박스 파지(ArUco 마커 기반), 키보드 기반 동작 실행, 그리고 웹 기반 모션 시뮬레이터를 하나의 패키지로 제공합니다.
 
-설치 절차는 [**INSTALL.md**](./INSTALL.md) 를 참고하세요.
+- 설치 절차 : [**INSTALL.md**](./INSTALL.md)
+- 내부 구조 (관절 매핑, 모션 JSON 스키마, IK, DDS, FSM 등) : [**TECH.md**](./TECH.md)
 
 ---
 
@@ -219,7 +242,11 @@ g1-motion-control/
 ├── vision/              # 비전 모듈 (YOLO, MediaPipe 등)
 ├── docs/                # 추가 문서
 ├── high.org             # 개발 노트 (org-mode)
-└── logs/                # 실행 로그 (자동 생성)
+├── logs/                # 실행 로그 (자동 생성)
+│
+├── README.md            # 본 문서 (사용 개요)
+├── INSTALL.md           # 단계별 설치 절차
+└── TECH.md              # 기술 문서 (아키텍처, JSON 스키마, DDS, IK, FSM)
 ```
 
 ---
@@ -287,6 +314,23 @@ source activate_tv.sh
 cd high
 python simulator.py
 ```
+
+**작업 흐름** — 시뮬레이터에서 모션을 설계해 JSON으로 내보낸 뒤, `high/motions/` 폴더에 넣으면 `start_motion.sh` 가 그대로 실행할 수 있습니다.
+
+```bash
+# 1) 모션 제작 → my_motion.json 다운로드
+python high/simulator.py        # http://localhost:8000/
+
+# 2) motions 폴더로 이동
+mv ~/Downloads/my_motion.json   high/motions/
+
+# 3) 실행
+./start_motion.sh               # http://localhost:50003/ (웹 UI)
+#   또는 REST 로 직접 호출:
+curl -X POST http://localhost:50003/motions/run/my_motion.json
+```
+
+`simulator.py` (관절각 포맷) 와 `simulator_ik.py` (IK 포맷) 가 만든 JSON 은 같은 폴더에 섞여 있어도 됩니다. `run_motion.py` 가 포맷을 자동 판별합니다. 자세한 스키마는 [`TECH.md §5`](./TECH.md) 참고.
 
 ---
 
