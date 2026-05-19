@@ -403,7 +403,8 @@ function makeLogoTextMesh(logoGeo){
   }
 
   // Shift logo 5cm down (Z is vertical in logo_link local frame)
-  cz -= 0.05;
+  cx += 0.005;
+  cz -= 0.04;
 
   // Scale logo plane (text gets bigger by the same factor)
   const SCALE = 3.0;
