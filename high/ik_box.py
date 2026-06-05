@@ -121,8 +121,8 @@ CAMERA_Z          = 0.42987
 CAMERA_PITCH_URDF = 0.8307767239493009  # 47.6도
 
 # init / 일반 동작용 HOME (작업 대기 자세 — 살짝 앞으로 뻗음)
-HOME_LEFT  = [0.2,  0.2, 0.15]
-HOME_RIGHT = [0.2, -0.2, 0.15]
+HOME_LEFT  = [0.15,  0.25, 0.20]
+HOME_RIGHT = [0.15, -0.25, 0.20]
 
 # 종료용 PARK 자세 (차렷에 가까운 자연스러운 park 자세)
 SHUTDOWN_HOME_LEFT  = [0.2,  0.2, 0.0]
