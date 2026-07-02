@@ -19,7 +19,9 @@ A step-by-step procedure for installing the Unitree G1 Motion Control project on
 | Camera | Intel RealSense D435i (USB 3.0) |
 | Privileges | An account with sudo access |
 
-Default install path: `/home/circulus/project/g1-motion-control/`
+Default install path: `/home/<user>/project/g1-motion-control/`
+
+> ℹ️ Replace `<user>` with your actual account name (e.g. `pion`). Do **not** hard-code an account name into scripts or sudoers — see step 8 and the Troubleshooting section on account migration.
 
 > ℹ️ The RealSense apt repository officially supports 20.04 / 22.04. On 24.04 you may need to build librealsense from source.
 
@@ -68,6 +70,8 @@ After installation, connect the camera to a USB 3.0 port and verify:
 realsense-viewer
 ```
 
+> ℹ️ `realsense-viewer` and `rs-enumerate-devices` are provided by `librealsense2-utils`. If those commands are missing, that package was not installed. You can still verify the camera from Python with `pyrealsense2` (see step 11).
+
 ---
 
 ## 4. Miniconda Installation
@@ -108,8 +112,8 @@ conda activate tv
 ## 6. Clone the Project
 
 ```bash
-mkdir -p /home/circulus/project
-cd /home/circulus/project
+mkdir -p $HOME/project
+cd $HOME/project
 git clone https://github.com/leeyunjai82/g1-motion-control.git
 cd g1-motion-control
 ```
@@ -140,18 +144,33 @@ pip install -r requirements.txt
 > ⚠️ `unitree_sdk2py` is installed directly from GitHub (`-e git+...`).
 > If the network is restricted, you will need an internal mirror or an offline wheel package.
 
+> ⚠️ **NumPy must stay on the 1.x line.** OpenCV 4.10 wheels are built against the NumPy 1.x ABI. If NumPy 2.x is pulled in, `cv2.imencode` (and other OpenCV calls) will raise
+> `error: (-5:Bad argument) ... img is not a numpy array`
+> even for a valid array. After installing requirements, verify and pin if needed:
+> ```bash
+> python -c "import numpy; print(numpy.__version__)"   # must be < 2
+> pip install "numpy<2"                                 # if it shows 2.x
+> ```
+
 ---
 
 ## 8. Sudo Configuration (for FSM Script)
 
-`start_fsm.sh` runs Python with `sudo` because motor control requires elevated privileges. To avoid typing a password each time, add the following line via `visudo`:
+`start_fsm.sh` runs Python with `sudo` because motor control requires elevated privileges. To avoid typing a password each time, add a NOPASSWD rule via `visudo`.
 
 ```bash
 sudo visudo
 ```
-Add:
+Add (replace `<user>` with your account name):
 ```
-circulus ALL=(ALL) NOPASSWD: /home/circulus/miniconda3/envs/tv/bin/python
+<user> ALL=(ALL) NOPASSWD: /home/<user>/miniconda3/envs/tv/bin/python
+```
+
+> ⚠️ **The command path in this rule must match exactly** the interpreter the scripts run. The NOPASSWD rule only applies when the full path matches; if the username or path differs (e.g. left over from a previous account), sudo will silently prompt for a password and the FSM script will hang or fail. See the account-migration note in Troubleshooting.
+
+Verify:
+```bash
+sudo /home/<user>/miniconda3/envs/tv/bin/python -c "print('ok')"   # should NOT prompt for a password
 ```
 
 ---
@@ -174,16 +193,57 @@ ping 192.168.123.161
 
 ---
 
-## 10. Grant Execute Permissions
+## 10. Performance: Pin BLAS Threads (Important)
+
+The dual-arm IK (pinocchio + CasADi, 14 DOF) solves small linear systems. On multi-threaded OpenBLAS builds, thread synchronization overhead **dominates** these small problems and can slow a single IK solve from ~1.5 ms to ~40 ms (roughly 28x). Forcing a single BLAS thread fixes this.
+
+Set the thread limits **before NumPy is imported**. Two complementary places:
+
+**(a) conda environment activation hook** — applies whenever the `tv` env is activated:
 
 ```bash
-cd /home/circulus/project/g1-motion-control
-chmod +x start_fsm.sh start_box.sh start_motion.sh activate_tv.sh
+mkdir -p $HOME/miniconda3/envs/tv/etc/conda/activate.d
+cat > $HOME/miniconda3/envs/tv/etc/conda/activate.d/threads.sh << 'EOF'
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+EOF
+```
+
+**(b) start scripts** — so the limit applies no matter which environment launches them. Add near the top of `start_*.sh` (after `set -u`):
+
+```bash
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+```
+
+> ⚠️ `sudo` resets the environment, so exports in a shell do **not** reach a `sudo python ...` child. For FSM/motor processes launched with sudo, set the variables inline on the sudo line:
+> ```bash
+> sudo OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+>     /home/<user>/miniconda3/envs/tv/bin/python "$SCRIPT_DIR/utils/init_fsm.py" "$1"
+> ```
+
+Confirm after activation:
+```bash
+conda activate tv
+echo $OMP_NUM_THREADS   # should print 1
 ```
 
 ---
 
-## 11. Verify the Installation
+## 11. Grant Execute Permissions
+
+```bash
+cd $HOME/project/g1-motion-control
+chmod +x start_fsm.sh start_box.sh start_grab.sh start_motion.sh activate_tv.sh
+```
+
+---
+
+## 12. Verify the Installation
 
 If the following all succeed, installation is complete.
 
@@ -191,11 +251,32 @@ If the following all succeed, installation is complete.
 # (1) Activate environment
 source activate_tv.sh
 
-# (2) Check Python packages
-python -c "import cv2, torch, pyrealsense2, unitree_sdk2py; print('OK')"
+# (2) Check core Python packages (including pinocchio for IK)
+python -c "import numpy, cv2, torch, pyrealsense2, pinocchio, unitree_sdk2py; print('OK')"
 
-# (3) Check RealSense
+# (3) Confirm NumPy is on the 1.x line and OpenCV encode works
+python -c "
+import numpy as np, cv2
+assert np.__version__ < '2', f'NumPy {np.__version__} — must be < 2'
+ok, _ = cv2.imencode('.jpg', np.zeros((480,640,3), np.uint8))
+print('numpy', np.__version__, 'imencode', ok)
+"
+
+# (4) Check RealSense
 python -c "import pyrealsense2 as rs; print(rs.context().devices[0].get_info(rs.camera_info.name))"
+
+# (5) (Optional) Benchmark IK — expect a few ms with threads pinned
+python -c "
+import time, numpy as np, pinocchio as pin
+from high.ctrl.robot_arm_ik import G1_29_ArmIK
+ik = G1_29_ArmIK(); q=np.zeros(14); dq=np.zeros(14)
+L=pin.SE3(pin.Quaternion(1,0,0,0),np.array([0.3, 0.2,0.1])).homogeneous
+R=pin.SE3(pin.Quaternion(1,0,0,0),np.array([0.3,-0.2,0.1])).homogeneous
+ik.solve_ik(L,R,q,dq)
+t=time.time()
+for _ in range(50): ik.solve_ik(L,R,q,dq)
+print(f'IK avg: {(time.time()-t)/50*1000:.1f} ms')
+"
 ```
 
 If everything is OK, continue with [`README.md`](./README.md) for usage instructions, or [`TECH.md`](./TECH.md) for the internal architecture.
@@ -209,10 +290,30 @@ If everything is OK, continue with [`README.md`](./README.md) for usage instruct
 | `CondaToSNonInteractiveError` | Accept channel ToS (see step 5) and retry |
 | `cyclonedds` build fails | Install `libssl-dev`, `bison`, `flex` and retry |
 | `scikit-sparse` fails: `cholmod.h not found` | Install `libsuitesparse-dev`, or `conda install -c conda-forge scikit-sparse` |
-| RealSense not detected | Use a USB 3.0 port; verify with `realsense-viewer` first |
-| `Permission denied` (FSM) | Check sudoers entry (step 8) |
-| Cannot reach the robot | Check IP subnet and firewall (`ufw`) rules |
+| `cv2.imencode` / OpenCV: `img is not a numpy array` (valid array) | NumPy 2.x vs OpenCV 4.10 ABI mismatch. `pip install "numpy<2"` (see step 7) |
+| IK / motion very slow (tens of ms per solve) | Multi-threaded BLAS overhead. Pin threads to 1 (see step 10) |
+| RealSense not detected | Use a USB 3.0 port; verify with `realsense-viewer` (or `pyrealsense2`) first |
+| `rs-enumerate-devices: command not found` | `librealsense2-utils` not installed; verify via `pyrealsense2` in Python instead |
+| `Permission denied` / sudo keeps prompting (FSM) | sudoers path does not match the interpreter. Check the NOPASSWD rule path (step 8) |
+| `RuntimeError: class version St6vector...basic_string` on `pickle.load` | Stale pinocchio model cache from a different pinocchio version. Delete/rename the cache (e.g. `high/ctrl/g1_29_model_cache.pkl`) and let it regenerate |
 | Zombie processes remain | Clean up with `pkill -9 -f rs_stream.py` (etc.) and restart |
+
+### Account / Path Migration (e.g. moving from one user to another)
+
+If the project was set up under a different account and the home directory changed (for example `/home/olduser` → `/home/newuser`), check for leftover hard-coded paths:
+
+```bash
+# Find any remaining references to the old account name
+grep -rn "/home/<olduser>" $HOME/project/g1-motion-control/
+```
+
+Things that commonly break after a home-directory change:
+
+1. **sudoers NOPASSWD rule** — still points at the old path, so sudo silently prompts for a password and FSM/motor scripts fail. Fix with `visudo` (step 8) using the new path.
+2. **pinocchio model cache (`*.pkl`)** — a cache built under the old environment can fail to unpickle if the pinocchio version also changed (`class version ...` error). Delete it and let it rebuild.
+3. **Comments / docs** — references in `INSTALL.md` and `# location:` header comments in `start_*.sh` are harmless, but update them to avoid confusion.
+
+Scripts that use `$HOME`, `$SCRIPT_DIR`, or `$(dirname "$0")` adapt automatically to the new account and do not need editing.
 
 
 ---
@@ -241,7 +342,9 @@ Unitree G1 Motion Control 프로젝트를 **Ubuntu (22.04 LTS 권장)** 에 설�
 | 카메라 | Intel RealSense D435i (USB 3.0) |
 | 권한 | sudo 권한이 있는 계정 |
 
-설치 기본 경로는 `/home/circulus/project/g1-motion-control/` 입니다.
+설치 기본 경로는 `/home/<사용자>/project/g1-motion-control/` 입니다.
+
+> ℹ️ `<사용자>` 는 실제 계정명(예: `pion`)으로 바꿔서 사용하세요. 계정명을 스크립트나 sudoers 에 **하드코딩하지 마세요** — 8번 단계와 문제 해결의 계정 이관 항목을 참고하세요.
 
 > ℹ️ RealSense apt 저장소는 20.04 / 22.04 를 공식 지원합니다. 24.04 에서는 librealsense 를 소스에서 직접 빌드해야 할 수 있습니다.
 
@@ -290,6 +393,8 @@ sudo apt install -y librealsense2-dkms librealsense2-utils librealsense2-dev
 realsense-viewer
 ```
 
+> ℹ️ `realsense-viewer`, `rs-enumerate-devices` 는 `librealsense2-utils` 패키지에 포함됩니다. 명령이 없다면 해당 패키지가 설치되지 않은 것입니다. 이 경우 Python 의 `pyrealsense2` 로도 카메라를 확인할 수 있습니다(11번 단계).
+
 ---
 
 ## 4. Miniconda 설치
@@ -330,8 +435,8 @@ conda activate tv
 ## 6. 프로젝트 클론
 
 ```bash
-mkdir -p /home/circulus/project
-cd /home/circulus/project
+mkdir -p $HOME/project
+cd $HOME/project
 git clone https://github.com/leeyunjai82/g1-motion-control.git
 cd g1-motion-control
 ```
@@ -362,18 +467,33 @@ pip install -r requirements.txt
 > ⚠️ `unitree_sdk2py` 는 GitHub 에서 직접 설치됩니다(`-e git+...`).
 > 네트워크가 차단된 환경이라면 사내 미러 또는 오프라인 wheel 패키지가 별도로 필요합니다.
 
+> ⚠️ **NumPy 는 반드시 1.x 대를 유지해야 합니다.** OpenCV 4.10 wheel 은 NumPy 1.x ABI 로 빌드되어 있어, NumPy 2.x 가 설치되면 정상 배열에 대해서도 `cv2.imencode` 등 OpenCV 호출이
+> `error: (-5:Bad argument) ... img is not a numpy array`
+> 오류를 냅니다. requirements 설치 후 확인하고 필요하면 고정하세요.
+> ```bash
+> python -c "import numpy; print(numpy.__version__)"   # 반드시 < 2
+> pip install "numpy<2"                                 # 2.x 로 나오면 실행
+> ```
+
 ---
 
 ## 8. sudo 권한 설정 (FSM 스크립트용)
 
-`start_fsm.sh` 는 모터 권한 때문에 `sudo` 로 Python 을 실행합니다. 매번 비밀번호 입력을 피하려면 sudoers 에 다음 한 줄을 추가합니다.
+`start_fsm.sh` 는 모터 권한 때문에 `sudo` 로 Python 을 실행합니다. 매번 비밀번호 입력을 피하려면 sudoers 에 NOPASSWD 규칙을 추가합니다.
 
 ```bash
 sudo visudo
 ```
-추가 내용:
+추가 내용 (`<사용자>` 를 실제 계정명으로 교체):
 ```
-circulus ALL=(ALL) NOPASSWD: /home/circulus/miniconda3/envs/tv/bin/python
+<사용자> ALL=(ALL) NOPASSWD: /home/<사용자>/miniconda3/envs/tv/bin/python
+```
+
+> ⚠️ **이 규칙의 명령 경로는 스크립트가 실행하는 인터프리터 경로와 정확히 일치해야 합니다.** 경로가 조금이라도 다르면(예: 이전 계정에서 넘어온 경로) NOPASSWD 가 적용되지 않아 sudo 가 조용히 비밀번호를 요구하고, FSM 스크립트가 멈추거나 실패합니다. 문제 해결의 계정 이관 항목을 참고하세요.
+
+확인:
+```bash
+sudo /home/<사용자>/miniconda3/envs/tv/bin/python -c "print('ok')"   # 비밀번호를 묻지 않아야 정상
 ```
 
 ---
@@ -396,16 +516,57 @@ ping 192.168.123.161
 
 ---
 
-## 10. 실행 권한 부여
+## 10. 성능: BLAS 스레드 고정 (중요)
+
+양팔 IK(pinocchio + CasADi, 14 DOF)는 작은 선형계를 풉니다. 멀티스레드 OpenBLAS 빌드에서는 이런 작은 문제에 스레드 동기화 오버헤드가 **지배적**으로 작용해, IK 1회 풀이가 약 1.5 ms 에서 약 40 ms 로(약 28배) 느려질 수 있습니다. BLAS 스레드를 1개로 고정하면 해결됩니다.
+
+스레드 제한은 **NumPy import 이전**에 설정해야 합니다. 상호 보완적인 두 위치에 넣습니다.
+
+**(a) conda 환경 활성화 훅** — `tv` 환경을 activate 할 때마다 자동 적용:
 
 ```bash
-cd /home/circulus/project/g1-motion-control
-chmod +x start_fsm.sh start_box.sh start_motion.sh activate_tv.sh
+mkdir -p $HOME/miniconda3/envs/tv/etc/conda/activate.d
+cat > $HOME/miniconda3/envs/tv/etc/conda/activate.d/threads.sh << 'EOF'
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+EOF
+```
+
+**(b) start 스크립트** — 어떤 환경에서 실행하든 제한이 걸리도록. `start_*.sh` 상단(`set -u` 다음)에 추가:
+
+```bash
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+```
+
+> ⚠️ `sudo` 는 환경을 초기화하므로, 셸의 export 는 `sudo python ...` 자식 프로세스에 **전달되지 않습니다.** sudo 로 실행하는 FSM/모터 프로세스는 sudo 줄에 변수를 직접 지정하세요.
+> ```bash
+> sudo OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+>     /home/<사용자>/miniconda3/envs/tv/bin/python "$SCRIPT_DIR/utils/init_fsm.py" "$1"
+> ```
+
+활성화 후 확인:
+```bash
+conda activate tv
+echo $OMP_NUM_THREADS   # 1 이 출력되어야 정상
 ```
 
 ---
 
-## 11. 설치 검증
+## 11. 실행 권한 부여
+
+```bash
+cd $HOME/project/g1-motion-control
+chmod +x start_fsm.sh start_box.sh start_grab.sh start_motion.sh activate_tv.sh
+```
+
+---
+
+## 12. 설치 검증
 
 다음이 정상 동작하면 설치 완료입니다.
 
@@ -413,11 +574,32 @@ chmod +x start_fsm.sh start_box.sh start_motion.sh activate_tv.sh
 # (1) 환경 활성화
 source activate_tv.sh
 
-# (2) Python 패키지 확인
-python -c "import cv2, torch, pyrealsense2, unitree_sdk2py; print('OK')"
+# (2) 핵심 Python 패키지 확인 (IK용 pinocchio 포함)
+python -c "import numpy, cv2, torch, pyrealsense2, pinocchio, unitree_sdk2py; print('OK')"
 
-# (3) RealSense 확인
+# (3) NumPy 1.x 및 OpenCV 인코딩 동작 확인
+python -c "
+import numpy as np, cv2
+assert np.__version__ < '2', f'NumPy {np.__version__} — 반드시 < 2'
+ok, _ = cv2.imencode('.jpg', np.zeros((480,640,3), np.uint8))
+print('numpy', np.__version__, 'imencode', ok)
+"
+
+# (4) RealSense 확인
 python -c "import pyrealsense2 as rs; print(rs.context().devices[0].get_info(rs.camera_info.name))"
+
+# (5) (선택) IK 벤치마크 — 스레드 고정 시 수 ms 예상
+python -c "
+import time, numpy as np, pinocchio as pin
+from high.ctrl.robot_arm_ik import G1_29_ArmIK
+ik = G1_29_ArmIK(); q=np.zeros(14); dq=np.zeros(14)
+L=pin.SE3(pin.Quaternion(1,0,0,0),np.array([0.3, 0.2,0.1])).homogeneous
+R=pin.SE3(pin.Quaternion(1,0,0,0),np.array([0.3,-0.2,0.1])).homogeneous
+ik.solve_ik(L,R,q,dq)
+t=time.time()
+for _ in range(50): ik.solve_ik(L,R,q,dq)
+print(f'IK avg: {(time.time()-t)/50*1000:.1f} ms')
+"
 ```
 
 이상이 없으면 [`README.md`](./README.md) 의 사용 방법으로 이동하거나, 내부 구조가 궁금하다면 [`TECH.md`](./TECH.md) 를 참고하세요.
@@ -431,7 +613,27 @@ python -c "import pyrealsense2 as rs; print(rs.context().devices[0].get_info(rs.
 | `CondaToSNonInteractiveError` | 채널 ToS 승인 후 재시도 (5번 단계) |
 | `cyclonedds` 빌드 실패 | `libssl-dev`, `bison`, `flex` 설치 후 재시도 |
 | `scikit-sparse` 실패: `cholmod.h 없음` | `libsuitesparse-dev` 설치, 또는 `conda install -c conda-forge scikit-sparse` |
-| RealSense 인식 안 됨 | USB 3.0 포트 사용, `realsense-viewer` 로 먼저 확인 |
-| `Permission denied` (FSM) | sudoers 설정 확인 (8번 단계) |
-| 로봇과 통신 불가 | IP 대역 및 방화벽(`ufw`) 확인 |
+| `cv2.imencode` / OpenCV: `img is not a numpy array` (정상 배열인데도) | NumPy 2.x ↔ OpenCV 4.10 ABI 불일치. `pip install "numpy<2"` (7번 단계) |
+| IK / 모션이 매우 느림 (풀이당 수십 ms) | 멀티스레드 BLAS 오버헤드. 스레드를 1로 고정 (10번 단계) |
+| RealSense 인식 안 됨 | USB 3.0 포트 사용, `realsense-viewer`(또는 `pyrealsense2`)로 먼저 확인 |
+| `rs-enumerate-devices: command not found` | `librealsense2-utils` 미설치. Python `pyrealsense2` 로 확인 |
+| `Permission denied` / sudo 가 계속 비밀번호 요구 (FSM) | sudoers 경로가 인터프리터와 불일치. NOPASSWD 규칙 경로 확인 (8번 단계) |
+| `pickle.load` 시 `RuntimeError: class version St6vector...basic_string` | pinocchio 버전이 다른 환경에서 만든 모델 캐시. 캐시(예: `high/ctrl/g1_29_model_cache.pkl`)를 삭제/이름변경 후 재생성 |
 | 좀비 프로세스 잔존 | `pkill -9 -f rs_stream.py` 등으로 정리 후 재시작 |
+
+### 계정 / 경로 이관 (예: 사용자 계정 변경)
+
+다른 계정에서 설정한 프로젝트를 옮겨 홈 디렉토리가 바뀐 경우(예: `/home/olduser` → `/home/newuser`), 남아있는 하드코딩 경로를 점검하세요.
+
+```bash
+# 이전 계정명이 남아있는 곳 찾기
+grep -rn "/home/<olduser>" $HOME/project/g1-motion-control/
+```
+
+홈 디렉토리 변경 후 흔히 깨지는 것들:
+
+1. **sudoers NOPASSWD 규칙** — 이전 경로를 가리켜 sudo 가 조용히 비밀번호를 요구하고 FSM/모터 스크립트가 실패합니다. `visudo` 로 새 경로로 수정 (8번 단계).
+2. **pinocchio 모델 캐시(`*.pkl`)** — 이전 환경에서 만든 캐시는 pinocchio 버전이 바뀌었을 때 언피클에 실패할 수 있습니다(`class version ...` 오류). 삭제하면 재생성됩니다.
+3. **주석 / 문서** — `INSTALL.md` 나 `start_*.sh` 의 `# 위치:` 헤더 주석은 동작에 영향 없지만, 혼동을 줄이려면 갱신하세요.
+
+`$HOME`, `$SCRIPT_DIR`, `$(dirname "$0")` 를 쓰는 스크립트는 새 계정에 자동으로 맞춰지므로 수정할 필요가 없습니다.
