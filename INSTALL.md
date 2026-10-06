@@ -43,36 +43,31 @@ sudo apt install -y wget curl
 
 ---
 
-## 3. Intel RealSense (D435i)
+## 3. Intel RealSense (D435i) — pip `pyrealsense2` 만
 
-Python 은 pip 의 `pyrealsense2` (requirements.txt, `2.55.1.6486`) 를 씁니다.
-시스템 쪽에는 **장치 권한(udev 규칙)** 과 확인용 도구만 설치합니다.
+코드는 Python `pyrealsense2` 만 씁니다. `requirements.txt` 의 `pyrealsense2==2.55.1.6486` 이 7단계에서 **`tv` 가상환경 안에 설치**되며
+(PyPI 바이너리 휠 `cp310 manylinux1_x86_64`, librealsense 라이브러리 포함), **apt 로 RealSense SDK 를 깔 필요는 없습니다.**
 
-> ⚠️ **24.04 에서는 `librealsense2-dkms` 를 설치하지 마세요.** 공식 문서상 DKMS 패키지는 HWE 커널 5.15 / 5.19 / 6.5 만 지원하고, 24.04 커널(6.8 이상)은 대상이 아닙니다.
-> 출처: <https://github.com/IntelRealSense/librealsense/blob/master/doc/distribution_linux.md>
-
-공식 저장소 등록 (2026 기준 주소가 `librealsense.realsenseai.com` 으로 바뀌었습니다):
+카메라는 USB 3.0 포트에 연결하고, 7단계 후 확인:
 
 ```bash
-sudo mkdir -p /etc/apt/keyrings
-curl -sSf https://librealsense.realsenseai.com/Debian/librealsenseai.asc | \
-    gpg --dearmor | sudo tee /etc/apt/keyrings/librealsenseai.gpg > /dev/null
-
-echo "deb [signed-by=/etc/apt/keyrings/librealsenseai.gpg] https://librealsense.realsenseai.com/Debian/apt-repo $(lsb_release -cs) main" | \
-    sudo tee /etc/apt/sources.list.d/librealsense.list
-sudo apt update
-sudo apt install -y librealsense2-utils     # librealsense2-udev-rules 같이 설치됨
+source $HOME/miniconda3/bin/activate tv
+python -c "import pyrealsense2 as rs; d=rs.context().devices; print([x.get_info(rs.camera_info.name)+' '+x.get_info(rs.camera_info.usb_type_descriptor) for x in d])"
+# ['Intel RealSense D435I 3.2'] 처럼 나오면 정상 (3.x = USB3)
+conda deactivate
 ```
 
-카메라를 USB 3.0 포트에 연결하고 확인:
+장치가 안 잡히거나 권한 오류가 나면 (일반 계정 USB 접근) — 같은 버전(v2.55.1)의 udev 규칙 파일만 시스템에 넣습니다:
 
 ```bash
-rs-enumerate-devices | head -20     # "Usb Type Descriptor : 3.2" 확인
-realsense-viewer                    # 컬러/깊이 영상 확인
+sudo wget -O /etc/udev/rules.d/99-realsense-libusb.rules \
+    https://raw.githubusercontent.com/IntelRealSense/librealsense/v2.55.1/config/99-realsense-libusb.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+# 카메라 USB 를 뺐다 다시 꽂기
 ```
 
-- 확인 필요: 24.04 기본 커널 드라이버(uvcvideo)만으로 D435i 의 color/depth 는 동작하지만, **IMU(HID) 와 프레임 메타데이터** 는 커널 패치 없이 나오지 않을 수 있습니다. 현재 코드는 IMU 를 쓰지 않습니다(`CAM_TILT_DEG` 고정값). D435i IMU 로 중력 보정을 넣을 때 다시 확인합니다.
-- apt 저장소 접근이 막힌 환경이면 udev 규칙만 수동 설치해도 됩니다: librealsense 소스의 `config/99-realsense-libusb.rules` 를 `/etc/udev/rules.d/` 에 복사 → `sudo udevadm control --reload-rules && sudo udevadm trigger`.
+- `librealsense2-dkms` (커널 패치) 는 설치하지 않습니다 — 공식 문서상 HWE 커널 5.15/5.19/6.5 만 지원, 24.04 커널(6.8 이상) 비대상.
+- `realsense-viewer` 같은 GUI 도구가 필요할 때만 apt 저장소(librealsense.realsenseai.com)의 `librealsense2-utils` 를 설치합니다 (선택).
 
 ---
 
@@ -286,8 +281,7 @@ python utils/check_robot_id.py
 | `scikit-sparse`: `cholmod.h` 없음 | pip 로 빌드하려 한 것 — 5단계 conda-forge `scikit-sparse` 로 설치 |
 | OpenCV `img is not a numpy array` | NumPy 2.x. `pip install "numpy<2"` |
 | IK 가 수십 ms | BLAS 스레드 고정 (11단계) |
-| `librealsense2-dkms` 설치/빌드 실패 | 24.04 커널 미지원 — 설치하지 않음 (3단계) |
-| RealSense 인식 안 됨 / 권한 오류 | USB 3.0 포트, udev 규칙(`librealsense2-udev-rules`) 설치 후 재연결 |
+| RealSense 인식 안 됨 / 권한 오류 | USB 3.0 포트, 3단계 udev 규칙 파일 설치 후 재연결 |
 | 손 `/dev/ttyACM0` 열기 실패 | `dialout` 그룹, ModemManager (10단계) |
 | `pickle.load` 시 `class version ...` | 다른 pinocchio 버전의 캐시 → `robots/g1/g1_29_model_cache.pkl` 삭제 후 재생성 |
 | 서버가 남아 있음 | `ROBOT=g1 ./start_robot.sh` 가 시작 시 TERM → 대기 → KILL 로 정리. 수동: `pgrep -af "python.*(rs_stream|arm_server|robot_server)"` 확인 후 `kill` |
