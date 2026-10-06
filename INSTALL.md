@@ -282,6 +282,7 @@ python utils/check_robot_id.py
 | OpenCV `img is not a numpy array` | NumPy 2.x. `pip install "numpy<2"` |
 | IK 가 수십 ms | BLAS 스레드 고정 (11단계) |
 | RealSense 인식 안 됨 / 권한 오류 | USB 3.0 포트, 3단계 udev 규칙 파일 설치 후 재연결 |
+| RealSense 가 `2.1` (USB2) 로 잡힘 | **케이블 교체** (USB2 전용 케이블이면 2.1 — 운영 PC 에서 케이블 교체로 3.2 확인), 카메라 C 커넥터 끝까지, 허브 없이 파란(SS) 포트 |
 | 손 `/dev/ttyACM0` 열기 실패 | `dialout` 그룹, ModemManager (10단계) |
 | `pickle.load` 시 `class version ...` | 다른 pinocchio 버전의 캐시 → `robots/g1/g1_29_model_cache.pkl` 삭제 후 재생성 |
 | 서버가 남아 있음 | `ROBOT=g1 ./start_robot.sh` 가 시작 시 TERM → 대기 → KILL 로 정리. 수동: `pgrep -af "python.*(rs_stream|arm_server|robot_server)"` 확인 후 `kill` |
