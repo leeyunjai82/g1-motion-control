@@ -38,23 +38,7 @@ class G1_29_ArmIK:
             logger_mp.info("[G1_29_ArmIK] >>> Loading URDF (slow)...")
             self.robot = pin.RobotWrapper.BuildFromURDF(self.urdf_path, self.model_dir)
 
-            self.mixed_jointsToLockIDs = [
-                                            "left_hip_pitch_joint" ,
-                                            "left_hip_roll_joint" ,
-                                            "left_hip_yaw_joint" ,
-                                            "left_knee_joint" ,
-                                            "left_ankle_pitch_joint" ,
-                                            "left_ankle_roll_joint" ,
-                                            "right_hip_pitch_joint" ,
-                                            "right_hip_roll_joint" ,
-                                            "right_hip_yaw_joint" ,
-                                            "right_knee_joint" ,
-                                            "right_ankle_pitch_joint" ,
-                                            "right_ankle_roll_joint" ,
-                                            "waist_yaw_joint" ,
-                                            "waist_roll_joint" ,
-                                            "waist_pitch_joint" ,
-                                        ]
+            self.mixed_jointsToLockIDs = list(robot_env.CFG["ik"]["lock_joints"])   # robot.yaml ik.lock_joints
 
             self.reduced_robot = self.robot.buildReducedRobot(
                 list_of_joints_to_lock=self.mixed_jointsToLockIDs,
@@ -63,16 +47,16 @@ class G1_29_ArmIK:
 
             self.reduced_robot.model.addFrame(
                 pin.Frame('L_ee',
-                          self.reduced_robot.model.getJointId('left_wrist_yaw_joint'),
+                          self.reduced_robot.model.getJointId(robot_env.CFG["ik"]["ee_joints"][0]),
                           pin.SE3(np.eye(3),
-                                  np.array([0.05,0,0]).T),
+                                  np.array(robot_env.CFG["ik"]["ee_offset"], dtype=float).T),
                           pin.FrameType.OP_FRAME)
             )
             self.reduced_robot.model.addFrame(
                 pin.Frame('R_ee',
-                          self.reduced_robot.model.getJointId('right_wrist_yaw_joint'),
+                          self.reduced_robot.model.getJointId(robot_env.CFG["ik"]["ee_joints"][1]),
                           pin.SE3(np.eye(3),
-                                  np.array([0.05,0,0]).T),
+                                  np.array(robot_env.CFG["ik"]["ee_offset"], dtype=float).T),
                           pin.FrameType.OP_FRAME)
             )
             # Save cache (only after everything is built)

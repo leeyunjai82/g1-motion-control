@@ -16,7 +16,18 @@ kTopicLowCommand_Debug  = "rt/lowcmd"
 kTopicLowCommand_Motion = "rt/arm_sdk"
 kTopicLowState = "rt/lowstate"
 
-G1_29_Num_Motors = 35
+# ---- 로봇별 값 (robots/<ROBOT>/robot.yaml joints / gains) ----
+import robot_env
+_J = robot_env.JOINTS
+_G = robot_env.CFG["gains"]
+G1_29_Num_Motors = int(_J["motor_slots"])           # 이름은 기존 호환용 (H2 도 같은 값을 쓴다)
+ARM_SLOTS    = [int(i) for i in _J["arm"]]          # 팔 14축, IK q 순서
+WAIST_SLOTS  = [int(i) for i in _J["waist"]]        # yaw, roll, pitch
+HEAD_SLOTS   = {int(i) for i in (_J.get("head") or [])}
+WEIGHT_SLOT  = int(_J["weight_slot"])               # arm_sdk weight (motor_cmd[WEIGHT_SLOT].q)
+INIT_SLOTS   = [int(i) for i in _J["init_slots"]]   # 시작 시 mode/kp/kd/q 설정 슬롯
+WRIST_SLOTS  = {int(i) for i in _J["wrist"]}
+WEAK_SLOTS   = {int(i) for i in _J["weak"]}
 
 class MotorState:
     def __init__(self):
@@ -52,15 +63,17 @@ class G1_29_ArmController:
         self.motion_mode = motion_mode
         self.simulation_mode = simulation_mode
 
-        # 게인 설정
-        self.kp_high = 300.0
-        self.kd_high = 3.0
-        self.kp_low = 80.0
-        self.kd_low = 3.0
-        self.kp_wrist = 40.0
-        self.kd_wrist = 1.5
-        self.kp_waist = 150.0
-        self.kd_waist = 3.0
+        # 게인 설정 (robot.yaml gains)
+        self.kp_high = float(_G["kp_high"])
+        self.kd_high = float(_G["kd_high"])
+        self.kp_low = float(_G["kp_low"])
+        self.kd_low = float(_G["kd_low"])
+        self.kp_wrist = float(_G["kp_wrist"])
+        self.kd_wrist = float(_G["kd_wrist"])
+        self.kp_waist = float(_G["kp_waist"])
+        self.kd_waist = float(_G["kd_waist"])
+        self.kp_head = _G.get("kp_head")
+        self.kd_head = _G.get("kd_head")
 
         self.arm_velocity_limit = 20.0
         self.control_dt = 1.0 / 250.0 # 250Hz
@@ -93,6 +106,7 @@ class G1_29_ArmController:
         self.lowstate_subscriber = ChannelSubscriber(kTopicLowState, hg_LowState)
         self.lowstate_subscriber.Init()
         self.lowstate_buffer = DataBuffer()
+        self._last_lowstate_msg = None
 
         # 수신 스레드 시작
         self.subscribe_thread = threading.Thread(target=self._subscribe_motor_state)
@@ -105,6 +119,12 @@ class G1_29_ArmController:
             logger_mp.warning("DDS 데이터 수신 대기 중...")
         logger_mp.info("DDS 연결 성공.")
 
+        # 연결된 로봇 확인 (robot.yaml identity) — 다르면 송신 스레드를 띄우기 전에 중단
+        ok, why = robot_env.check_identity(self._last_lowstate_msg)
+        logger_mp.warning(why) if ok else logger_mp.error(why)
+        if not ok:
+            raise RuntimeError(why)
+
         # 메시지 객체 생성
         self.crc = CRC()
         self.msg = unitree_hg_msg_dds__LowCmd_()
@@ -114,22 +134,25 @@ class G1_29_ArmController:
         # 현재 상태 읽기 및 초기 타겟 설정
         current_all_q = self.get_current_motor_q()
         self.q_target = self.get_current_dual_arm_q()
-        self.waist_q_target = current_all_q[12:15] # 12, 13, 14번
+        self.waist_q_target = current_all_q[WAIST_SLOTS]   # robot.yaml joints.waist (G1: 12, 13, 14번)
 
         logger_mp.info("모든 관절 고정 설정 중 (팔/허리 제외)...")
-        arm_indices = set(member.value for member in G1_29_JointArmIndex)
-        waist_indices = {12, 13, 14}
+        arm_indices = set(ARM_SLOTS)
+        waist_indices = set(WAIST_SLOTS)
 
-        for id in G1_29_JointIndex:
+        for id in INIT_SLOTS:
             self.msg.motor_cmd[id].mode = 1
-            if id.value in arm_indices:
+            if id in HEAD_SLOTS:
+                self.msg.motor_cmd[id].kp = float(self.kp_head)
+                self.msg.motor_cmd[id].kd = float(self.kd_head)
+            elif id in arm_indices:
                 if self._Is_wrist_motor(id):
                     self.msg.motor_cmd[id].kp = self.kp_wrist
                     self.msg.motor_cmd[id].kd = self.kd_wrist
                 else:
                     self.msg.motor_cmd[id].kp = self.kp_low
                     self.msg.motor_cmd[id].kd = self.kd_low
-            elif id.value in waist_indices:
+            elif id in waist_indices:
                 self.msg.motor_cmd[id].kp = self.kp_waist
                 self.msg.motor_cmd[id].kd = self.kd_waist
             else:
@@ -156,6 +179,7 @@ class G1_29_ArmController:
         while True:
             msg = self.lowstate_subscriber.Read()
             if msg is not None:
+                self._last_lowstate_msg = msg   # 로봇 확인용 (mode_machine)
                 # 관절 상태 저장
                 lowstate = G1_29_LowState()
                 for id in range(G1_29_Num_Motors):
@@ -184,7 +208,7 @@ class G1_29_ArmController:
 
             # weight 매 주기 반영 (hold/release 램프가 이 값을 바꾼다)
             if self.motion_mode:
-                self.msg.motor_cmd[G1_29_JointIndex.kNotUsedJoint0].q = self.arm_weight
+                self.msg.motor_cmd[WEIGHT_SLOT].q = self.arm_weight
 
             with self.ctrl_lock:
                 arm_q_target     = self.q_target
@@ -197,13 +221,13 @@ class G1_29_ArmController:
             else:
                 cliped_arm_q_target = self.clip_arm_q_target(arm_q_target, velocity_limit=self.arm_velocity_limit)
 
-            for idx, id in enumerate(G1_29_JointArmIndex):
+            for idx, id in enumerate(ARM_SLOTS):
                 self.msg.motor_cmd[id].q   = cliped_arm_q_target[idx]
                 self.msg.motor_cmd[id].dq  = 0
                 self.msg.motor_cmd[id].tau = arm_tauff_target[idx]
 
-            # 2. 허리 제어 업데이트 (12, 13, 14번)
-            for i, joint_idx in enumerate([12, 13, 14]):
+            # 2. 허리 제어 업데이트 (robot.yaml joints.waist, G1: 12, 13, 14번)
+            for i, joint_idx in enumerate(WAIST_SLOTS):
                 self.msg.motor_cmd[joint_idx].q   = waist_q_target[i]
                 self.msg.motor_cmd[joint_idx].dq  = 0
                 self.msg.motor_cmd[joint_idx].tau = 0
@@ -255,7 +279,7 @@ class G1_29_ArmController:
         with self.ctrl_lock:
             self.q_target = self.get_current_dual_arm_q()
             self.tauff_target = np.zeros(14)
-            self.waist_q_target = all_q[12:15].copy()
+            self.waist_q_target = all_q[WAIST_SLOTS].copy()
 
     def ramp_weight(self, dst, duration=2.0):
         """weight 를 현재값에서 dst 까지 duration 초 동안 선형 램프 (블로킹)."""
@@ -273,10 +297,10 @@ class G1_29_ArmController:
         return np.array([self.lowstate_buffer.GetData().motor_state[id].q for id in range(G1_29_Num_Motors)])
 
     def get_current_dual_arm_q(self):
-        return np.array([self.lowstate_buffer.GetData().motor_state[id].q for id in G1_29_JointArmIndex])
+        return np.array([self.lowstate_buffer.GetData().motor_state[id].q for id in ARM_SLOTS])
 
     def get_current_dual_arm_dq(self):
-        return np.array([self.lowstate_buffer.GetData().motor_state[id].dq for id in G1_29_JointArmIndex])
+        return np.array([self.lowstate_buffer.GetData().motor_state[id].dq for id in ARM_SLOTS])
 
     # ==================== IMU 조회 메서드 ====================
 
@@ -307,7 +331,7 @@ class G1_29_ArmController:
     def get_waist_q(self):
         """현재 허리 관절각 [yaw, roll, pitch] (rad)"""
         q = self.get_current_motor_q()
-        return q[12:15].copy()
+        return q[WAIST_SLOTS].copy()
 
     # ==================== 유틸리티 ====================
 
@@ -328,14 +352,13 @@ class G1_29_ArmController:
         self._speed_gradual_max = True
 
     def _Is_weak_motor(self, motor_index):
-        weak_motors = [4, 10, 15, 16, 17, 18, 22, 23, 24, 25]
-        return motor_index.value in weak_motors
+        return int(motor_index) in WEAK_SLOTS          # robot.yaml joints.weak
 
     def _Is_wrist_motor(self, motor_index):
-        wrist_motors = [19, 20, 21, 26, 27, 28]
-        return motor_index.value in wrist_motors
+        return int(motor_index) in WRIST_SLOTS         # robot.yaml joints.wrist
 
 
+# ---- G1 참고용 관절 번호 (제어 코드는 위 robot.yaml 값만 사용 — 이 enum 은 참고/하위 호환용) ----
 class G1_29_JointArmIndex(IntEnum):
     kLeftShoulderPitch = 15
     kLeftShoulderRoll  = 16

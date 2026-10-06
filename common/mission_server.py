@@ -187,8 +187,9 @@ P = {
 # ==========================================
 # 카메라 → torso (robot_server 와 동일 상수)
 # ==========================================
-CAMERA_X, CAMERA_Y, CAMERA_Z = 0.0576235, 0.03003, 0.42987
-CAMERA_PITCH = 0.8307767239493009   # 47.6도
+# D435i 장착값 — robots/<ROBOT>/robot.yaml camera (G1: 0.0576235, 0.03003, 0.42987, 47.6도)
+CAMERA_X, CAMERA_Y, CAMERA_Z = robot_env.CAMERA_X, robot_env.CAMERA_Y, robot_env.CAMERA_Z
+CAMERA_PITCH = robot_env.CAMERA_PITCH
 
 
 def camera_to_torso(cx, cy, cz):

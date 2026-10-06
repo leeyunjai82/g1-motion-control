@@ -99,14 +99,32 @@ g1-motion-control/
 └── low/                    # G1 저수준 테스트 (rt/lowcmd 송신 — 일반 운용에서 사용 금지)
 ```
 
-## G1 전용 값 (3단계에서 `robots/g1/robot.yaml` 로 분리 예정)
+## 로봇별 설정 — `robots/<ROBOT>/robot.yaml`
 
-아직 코드에 상수로 남아 있습니다. **값은 기존과 동일**합니다.
+로봇마다 다른 값은 모두 여기서 읽습니다 (`common/robot_env.py` → `CFG`).
 
-| 항목 | 위치 |
+| 항목 | 키 |
 | --- | --- |
-| 관절 수/순서, weight 슬롯(29), `unitree_hg` | `common/ctrl/robot_arm.py`, `common/ctrl/arm_controller_wrapper.py` |
-| FSM ID / 전이 규칙 (1, 4, 501, 3) | `run_launcher.py` (`FSM_NAME`, `allowed()`), `utils/init_fsm.py` |
-| `PELVIS_TO_TORSO`, `GRAB_Z_OFFSET`, `DEFAULT_ARM_DEG` | `common/robot_server.py` (`DEFAULT_ARM_DEG` 는 `arm_server.py` 에도 사본) |
-| 카메라 장착 (`CAMERA_X/Y/Z`, `CAM_TILT_DEG = 47.6`) | `robot_server.py`, `mission_server.py`, `ctrl/detect_box.py`, `ctrl/detect_box_conv.py`, `ctrl/detect_marker.py` |
-| IK 체인 (잠금 관절, `L_ee`/`R_ee`) | `common/ctrl/robot_arm_ik.py` |
+| 관절 맵(URDF 이름→슬롯), 팔/허리/헤드 슬롯, weight 슬롯, 이득 | `joints`, `gains` |
+| FSM ID / 전이 규칙 / launcher 문구 | `fsm` |
+| IK 잠금 관절, 손끝(L_ee/R_ee) | `ik` |
+| 기본 팔 자세 | `default_arm_deg` |
+| pelvis→torso, 잡기 z 오프셋 | `frames`, `grab` |
+| **D435i 장착 위치** | `camera` (x, y, z [m, torso_link 기준], pitch_deg [아래로 숙인 각]) |
+| 연결 로봇 확인 | `identity.mode_machine` (`utils/check_robot_id.py` 로 측정) |
+| 실행 허용 | `enabled` (false 면 모든 스크립트/서버가 거부) |
+
+- **G1**: `.red` 731075b 상수 그대로 — `python utils/check_g1_equiv.py <red> .` 로 원본과 동일함을 확인 (상수, LowCmd 35 슬롯, launcher HTML, FSM 규칙).
+- **H2**: `enabled: false`. 근거·확인 필요 항목은 [`robots/h2/FACTS.md`](./robots/h2/FACTS.md).
+
+### D435i 를 실제로 장착한 뒤
+
+`robots/<ROBOT>/robot.yaml` 의 `camera:` **4개 값만** 실측값으로 고칩니다. 코드 수정 없음.
+
+```yaml
+camera:
+  x: 0.10          # torso_link 원점 → 카메라 (앞 +) [m]
+  y: 0.0           # (왼쪽 +) [m]
+  z: 0.35          # (위 +) [m]
+  pitch_deg: 50.0  # 아래로 숙인 각 [deg] — 박스 윗면 기울기 보정(중력 방향)에도 같이 쓰임
+```

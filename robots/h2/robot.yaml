@@ -1,0 +1,130 @@
+# ============================================================
+# Unitree H2 — 로봇별 설정
+#   근거는 robots/h2/FACTS.md (출처·커밋 명시). 추측값 없음.
+#   ⚠️ enabled: false — 아래 "확인 필요" 가 채워지고 실기 확인이 끝나기 전에는 실행 거부.
+#
+#   범위 (2026-10 결정): 제자리에 서서 박스 잡아 옆으로 옮기기만.
+#                        허리 0 고정, 손바닥 마주보기, 보행/추종 없음, 외부 D435i (mini PC USB).
+# ============================================================
+name: h2
+enabled: false
+disabled_reason: "H2 확인 필요 항목 미완료 (FACTS.md) — mode_machine, D435i 실장착 위치, 기본 팔 자세, SDK 업그레이드"
+urdf: H2.urdf                 # unitree_ros 5994d4f robots/h2_description (h2-motion-control.red 와 동일)
+ik_cache: h2_model_cache.pkl  # 첫 실행 시 URDF 에서 생성
+
+sdk:
+  # unitree_sdk2_python master 에만 있음 — requirements 의 고정 커밋 f559291 에는 없음 (업그레이드 필요)
+  loco_module: unitree_sdk2py.h2.loco.h2_loco_client
+
+identity:
+  mode_machine: null          # 확인 필요 — utils/check_robot_id.py 로 측정해 기입
+  required: true              # enabled: true 로 바꿀 때 mode_machine 이 null 이면 거부
+
+joints:
+  motor_slots: 35             # unitree_hg LowState_ 고정 길이 (SDK, xr_teleoperate)
+  # URDF 관절 이름 → 모터 슬롯
+  #   어깨·팔꿈치·헤드·weight : SDK / xr_teleoperate / h2-motion-control.red 일치
+  #   허리 · 손목 순서        : h2-motion-control.red simulator 실기 동작 기준 (사용자 확인 2026-10)
+  #   발목 4/5               : h2-motion-control.red 기준 (이번 범위에서 사용 안 함)
+  map:
+    left_hip_pitch_joint:        0
+    left_hip_roll_joint:         1
+    left_hip_yaw_joint:          2
+    left_knee_joint:             3
+    left_ankle_roll_joint:       4
+    left_ankle_pitch_joint:      5
+    right_hip_pitch_joint:       6
+    right_hip_roll_joint:        7
+    right_hip_yaw_joint:         8
+    right_knee_joint:            9
+    right_ankle_roll_joint:     10
+    right_ankle_pitch_joint:    11
+    waist_yaw_joint:            12
+    waist_roll_joint:           13
+    waist_pitch_joint:          14
+    left_shoulder_pitch_joint:  15
+    left_shoulder_roll_joint:   16
+    left_shoulder_yaw_joint:    17
+    left_elbow_joint:           18
+    left_wrist_roll_joint:      19
+    left_wrist_pitch_joint:     20
+    left_wrist_yaw_joint:       21
+    right_shoulder_pitch_joint: 22
+    right_shoulder_roll_joint:  23
+    right_shoulder_yaw_joint:   24
+    right_elbow_joint:          25
+    right_wrist_roll_joint:     26
+    right_wrist_pitch_joint:    27
+    right_wrist_yaw_joint:      28
+    head_pitch_joint:           29
+    head_yaw_joint:             30
+  arm: [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+  waist: [12, 13, 14]         # yaw, roll, pitch — 이번 범위에서는 0 고정
+  head: [29, 30]              # arm_sdk 동안 현재각 유지 (kp_head/kd_head)
+  weight_slot: 31             # SDK arm_sdk 예제 / xr_teleoperate / h2 repo 실기
+  # 시작 시 mode/kp/kd/q 설정 슬롯 — weight 슬롯(31) 제외 (h2-motion-control.red robot_arm.py 실기 동작 그대로)
+  init_slots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+               15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+  wrist: [19, 20, 21, 26, 27, 28]
+  weak: [4, 10, 15, 16, 17, 18, 22, 23, 24, 25]  # h2-motion-control.red 값 그대로 (G1 에서 복사된 목록 — 다리 슬롯 의미는 확인 필요)
+
+gains:                        # h2-motion-control.red robot_arm.py (실기 동작)
+  kp_high: 300.0
+  kd_high: 3.0
+  kp_low: 80.0
+  kd_low: 3.0
+  kp_wrist: 40.0
+  kd_wrist: 1.5
+  kp_waist: 150.0
+  kd_waist: 3.0
+  kp_head: 30.0               # SDK arm_sdk 예제도 head kp 30 / kd 1
+  kd_head: 1.0
+
+ik:                           # xr_teleoperate / h2 repo robot_arm_ik.py 와 같은 축소 모델
+  lock_joints: [left_hip_pitch_joint, left_hip_roll_joint, left_hip_yaw_joint,
+                left_knee_joint, left_ankle_pitch_joint, left_ankle_roll_joint,
+                right_hip_pitch_joint, right_hip_roll_joint, right_hip_yaw_joint,
+                right_knee_joint, right_ankle_pitch_joint, right_ankle_roll_joint,
+                waist_yaw_joint, waist_roll_joint, waist_pitch_joint,
+                head_pitch_joint, head_yaw_joint]
+  ee_joints: [left_wrist_yaw_joint, right_wrist_yaw_joint]
+  ee_offset: [0.05, 0.0, 0.0]
+
+default_arm_deg: null         # 확인 필요 — FSM 601 기립 상태에서 dashboard 로 실측해 기입 (14개)
+
+frames:
+  # torso_link 위치 (pelvis 기준, 허리 0) — URDF FK: waist_yaw 0.090537 + waist_roll 0.0325
+  # (G1 값 -0.0039635, 0, 0.044 도 G1 URDF FK 와 정확히 같음)
+  pelvis_to_torso: [0.0, 0.0, 0.123037]
+
+# ------------------------------------------------------------
+# D435i 장착 — torso_link 기준 [m], 아래로 숙인 각 [deg]
+# ⚠️ 임시값 (PLACEHOLDER) — 실제 장착 후 이 4개 값만 실측값으로 고치면 된다.
+#   가정: 가슴 앞 중앙 고정, 박스 윗면 pelvis+0.20 m · 앞 0.30–0.35 m 를 내려다보도록
+#   (카메라→박스 약 0.35 m, 아래로 약 50°). 머리에 달면 목 관절 때문에 값이 변하므로 비권장.
+# ------------------------------------------------------------
+camera:
+  x: 0.10
+  y: 0.0
+  z: 0.35
+  pitch_deg: 50.0
+  placeholder: true           # 실측값으로 바꾼 뒤 false 로
+
+grab:
+  z_offset: 0.08              # 시작값 = G1 실험값. H2 는 실험으로 다시 맞춘다
+
+fsm:                          # unitree_sdk2py h2_loco_client.py + h2-motion-control.red init_fsm.py (실기)
+  names: {0: "Zero Torque", 1: "Damp", 2: "Squat", 3: "Sit", 4: "StandUp", 601: "Start (balance)"}
+  balance: [601]
+  standing: [4, 601]
+  damp: 1
+  lock: 4
+  run: 601                    # start_fsm stand = 1 → 4 → 601, 이 상태에서 arm_sdk 실기 동작
+  sit: 3
+  labels:
+    lock_button: "StandUp"
+    run_button: "Start (balance)"
+    run_enter: "Start(601)"
+
+features:
+  locomotion: false           # 보행/마커 추종 비활성 (이번 범위) — 4단계에서 /follow, /loco 차단에 사용

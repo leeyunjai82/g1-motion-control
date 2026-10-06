@@ -102,37 +102,42 @@ def _logfile(name):
 # ==========================================
 # FSM (자세) — LocoClient 직접 호출, 단계별
 # ==========================================
-# Unitree G1 FSM ID (ai_sport)
-FSM_NAME = {0: "Zero Torque", 1: "Damping", 2: "Squat (위치제어)", 3: "Sit Down (위치제어)",
-            4: "Lock Standing", 500: "Walk", 501: "Walk (3DoF waist)",
-            702: "Lie Down ↔ Stand Up", 801: "Run"}
-FSM_BAL = {500: True, 501: True, 702: True, 801: True}   # 밸런스 제어 여부 (나머지 없음)
-STANDING = {4, 500, 501}
+# FSM ID — robots/<ROBOT>/robot.yaml fsm (G1: 1 Damping / 4 Lock Standing / 501 Walk 3DoF waist / 3 Sit)
+_F = robot_env.FSM
+FSM_NAME = {int(k): str(v) for k, v in _F["names"].items()}
+FSM_BAL = {int(k): True for k in _F["balance"]}   # 밸런스 제어 여부 (나머지 없음)
+STANDING = {int(k) for k in _F["standing"]}
+FSM_DAMP, FSM_LOCK, FSM_RUN, FSM_SIT = int(_F["damp"]), int(_F["lock"]), int(_F["run"]), int(_F["sit"])
+_LBL = _F["labels"]
+# 화면(HTML) 버튼 id/onclick 이 1 / 4 / 3 을 직접 쓴다 — 다른 값이면 화면을 같이 고쳐야 하므로 거부
+if (FSM_DAMP, FSM_LOCK, FSM_SIT) != (1, 4, 3):
+    raise SystemExit(f"[launcher] ❌ robot.yaml fsm damp/lock/sit = {(FSM_DAMP, FSM_LOCK, FSM_SIT)} — "
+                     "launcher 화면은 1/4/3 기준. run_launcher.py HTML 수정 필요")
 POLL_SEC = 1.0
 DELAY_SEC = 5.0                   # 버튼 → 전송 지연
 API_GET_FSM_ID = 7001             # ROBOT_API_ID_LOCO_GET_FSM_ID (g1_loco_api.py)
-STEPS = (1, 4, 501, 3)
+STEPS = (FSM_DAMP, FSM_LOCK, FSM_RUN, FSM_SIT)
 ROBOT_BUSY = "Robot 서버 실행 중 — 먼저 [Robot 정지]"
 
 
 def allowed(target, cur, robot_running):
     """(허용 여부, 거부 사유). UI 버튼 활성화와 서버 검사에 같은 규칙을 쓴다."""
-    if target == 1:
+    if target == FSM_DAMP:
         return True, ""
     if cur is None:
         # FSM 조회 불가(펌웨어/SDK 미지원) — 순서 제한 없이 허용, Robot 실행 중 차단만 유지
-        if robot_running and target in (3, 4):
+        if robot_running and target in (FSM_SIT, FSM_LOCK):
             return False, ROBOT_BUSY
         return True, ""
-    if target == 4:
-        if cur == 1:
+    if target == FSM_LOCK:
+        if cur == FSM_DAMP:
             return True, ""
-        if cur == 501:
+        if cur == FSM_RUN:
             return (False, ROBOT_BUSY) if robot_running else (True, "")
-        return False, f"4 는 FSM 1(Damping) 또는 501 에서만 (현재 {cur})"
-    if target == 501:
-        return (True, "") if cur == 4 else (False, f"501 은 FSM 4(Lock Standing) 에서만 (현재 {cur})")
-    if target == 3:
+        return False, f"{FSM_LOCK} 는 FSM {FSM_DAMP}(Damping) 또는 {FSM_RUN} 에서만 (현재 {cur})"
+    if target == FSM_RUN:
+        return (True, "") if cur == FSM_LOCK else (False, f"{FSM_RUN} 은 FSM {FSM_LOCK}({_LBL['lock_button']}) 에서만 (현재 {cur})")
+    if target == FSM_SIT:
         if robot_running:
             return False, ROBOT_BUSY
         return (True, "") if cur in STANDING else (False, f"Sit 은 서 있을 때만 (현재 {cur})")
@@ -171,10 +176,23 @@ class FsmCtl:
             return True
         try:
             from unitree_sdk2py.core.channel import ChannelFactoryInitialize
-            from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
+            LocoClient = robot_env.loco_client_class()   # robot.yaml sdk.loco_module
             if not self._dds_inited:          # 프로세스당 1회만
                 ChannelFactoryInitialize(0)
                 self._dds_inited = True
+            # 연결된 로봇 확인 (robot.yaml identity.mode_machine) — 다르면 FSM 명령을 보내지 않는다
+            if (robot_env.CFG.get("identity") or {}).get("mode_machine") is not None:
+                from unitree_sdk2py.core.channel import ChannelSubscriber
+                from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as hg_LowState
+                sub = ChannelSubscriber("rt/lowstate", hg_LowState)
+                sub.Init()
+                msg = sub.Read(2.0)
+                if msg is None:
+                    raise RuntimeError("rt/lowstate 수신 없음 — 로봇 확인 불가, FSM 명령 거부")
+                ok, why = robot_env.check_identity(msg)
+                self.log(why)
+                if not ok:
+                    raise RuntimeError(why)
             c = LocoClient()
             c.Init()
             c.SetTimeout(10.0)            # init_fsm.py 와 동일
@@ -408,11 +426,11 @@ def robot_start():
     if fsm.busy is not None:
         raise HTTPException(409, f"FSM {fsm.busy} 대기/전송 중")
     cur = fsm.read_fsm()
-    if cur is not None and cur != 501:
-        raise HTTPException(409, f"FSM {cur} ({FSM_NAME.get(cur, '')}) — 1 → 4 → 501 로 Walk(3DoF waist) 진입 후 시작")
+    if cur is not None and cur != FSM_RUN:
+        raise HTTPException(409, f"FSM {cur} ({FSM_NAME.get(cur, '')}) — {FSM_DAMP} → {FSM_LOCK} → {FSM_RUN} 로 {_LBL['run_enter']} 진입 후 시작")
     robot.start(["bash", os.path.join(ROOT, "start_robot.sh")], "start_robot.sh", as_user=True)
     if cur is None:
-        robot.lines.append(f"[launcher] ⚠️ FSM 확인 불가({fsm.cur_err}) — 501 상태인지 직접 확인할 것")
+        robot.lines.append(f"[launcher] ⚠️ FSM 확인 불가({fsm.cur_err}) — {FSM_RUN} 상태인지 직접 확인할 것")
     return {"ok": True}
 
 
@@ -622,6 +640,33 @@ async function poll(){try{const d=await(await fetch('/status')).json();
 }catch(e){setState('fsm-s','err','launcher 연결 끊김');}}
 poll();setInterval(poll,500);
 </script></body></html>"""
+
+
+
+def _render_html(h):
+    """HTML 의 G1 FSM 값을 robot.yaml 값으로 바꾼다 (G1 이면 원문 그대로).
+    목록 → 임시 표식 → 단독 '501' → 표식을 실제 값으로 (G1 목록 안의 501 이 두 번 바뀌지 않게)."""
+    js = lambda xs: "[" + ",".join(str(x) for x in xs) + "]"
+    lists = [
+        ("[4,500,501]", js(sorted(STANDING))),
+        ("[500,501]", js(sorted(STANDING & set(FSM_BAL)))),
+        ("{1:4,4:501}", f"{{{FSM_DAMP}:{FSM_LOCK},{FSM_LOCK}:{FSM_RUN}}}"),
+        ("[1,4,501,3]", js(STEPS)),                       # 순서 유지 (정렬 안 함)
+    ]
+    reps = [(old, f"@@L{k}@@", 1) for k, (old, _) in enumerate(lists)] + [
+        ("<b>G1 Launcher</b>", f"<b>{robot_env.ROBOT.upper()} Launcher</b>", 1),
+        ("Lock Standing<small>", f"{_LBL['lock_button']}<small>", 1),
+        ("Walk 3DoF waist<small>", f"{_LBL['run_button']}<small>", 1),
+        ("501", str(FSM_RUN), 10),
+    ] + [(f"@@L{k}@@", new, 1) for k, (_, new) in enumerate(lists)]
+    for old, new, n in reps:
+        if h.count(old) != n:
+            raise SystemExit(f"[launcher] HTML 치환 대상 '{old}' 개수 {h.count(old)} ≠ {n}")
+        h = h.replace(old, new)
+    return h
+
+
+HTML = _render_html(HTML)
 
 
 if __name__ == "__main__":

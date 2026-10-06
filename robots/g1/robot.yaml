@@ -1,0 +1,128 @@
+# ============================================================
+# Unitree G1 (29 DOF) — 로봇별 설정
+#   값은 g1-motion-control.red 731075b 의 상수를 그대로 옮긴 것 (변경 없음).
+#   각 항목 옆 주석 = 원래 위치.
+# ============================================================
+name: g1
+enabled: true                 # false 면 robot_env 가 실행 거부
+urdf: g1_29dof_rev_1_0.urdf
+ik_cache: g1_29_model_cache.pkl
+
+sdk:
+  # LocoClient 가 들어 있는 모듈 (arm_controller_wrapper / run_launcher / init_fsm)
+  loco_module: unitree_sdk2py.g1.loco.g1_loco_client
+
+# 연결된 로봇 확인 (rt/lowstate.mode_machine). null = 기준값 미측정 → 검사 생략 + 경고.
+# utils/check_robot_id.py 로 측정 후 기입하면 다를 때 arm_sdk / FSM 명령을 거부한다.
+identity:
+  mode_machine: null
+  required: false             # G1 은 기준값 측정 전까지 검사 생략 (기존 동작 유지)
+
+joints:
+  motor_slots: 35             # unitree_hg LowState_.motor_state 고정 길이 (robot_arm.py G1_29_Num_Motors)
+  # URDF 관절 이름 → 모터 슬롯 (dashboard.py / urdf_sim.py JOINT_TO_MOTOR)
+  map:
+    left_hip_pitch_joint:        0
+    left_hip_roll_joint:         1
+    left_hip_yaw_joint:          2
+    left_knee_joint:             3
+    left_ankle_pitch_joint:      4
+    left_ankle_roll_joint:       5
+    right_hip_pitch_joint:       6
+    right_hip_roll_joint:        7
+    right_hip_yaw_joint:         8
+    right_knee_joint:            9
+    right_ankle_pitch_joint:    10
+    right_ankle_roll_joint:     11
+    waist_yaw_joint:            12
+    waist_roll_joint:           13
+    waist_pitch_joint:          14
+    left_shoulder_pitch_joint:  15
+    left_shoulder_roll_joint:   16
+    left_shoulder_yaw_joint:    17
+    left_elbow_joint:           18
+    left_wrist_roll_joint:      19
+    left_wrist_pitch_joint:     20
+    left_wrist_yaw_joint:       21
+    right_shoulder_pitch_joint: 22
+    right_shoulder_roll_joint:  23
+    right_shoulder_yaw_joint:   24
+    right_elbow_joint:          25
+    right_wrist_roll_joint:     26
+    right_wrist_pitch_joint:    27
+    right_wrist_yaw_joint:      28
+  # 팔 14축 — 순서 = IK q 순서 (robot_arm.py G1_29_JointArmIndex)
+  arm: [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
+  waist: [12, 13, 14]         # yaw, roll, pitch 순 (ctrl_waist 입력 순서)
+  head: []                    # G1 은 목 관절 없음
+  weight_slot: 29             # rt/arm_sdk weight = motor_cmd[29].q (kNotUsedJoint0)
+  # arm_sdk 시작 시 mode=1 / kp / kd / 현재각을 넣는 슬롯 (G1_29_JointIndex 전체 = 0~29)
+  init_slots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+               15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]
+  wrist: [19, 20, 21, 26, 27, 28]               # _Is_wrist_motor
+  weak: [4, 10, 15, 16, 17, 18, 22, 23, 24, 25] # _Is_weak_motor
+
+gains:                        # robot_arm.py G1_29_ArmController.__init__
+  kp_high: 300.0
+  kd_high: 3.0
+  kp_low: 80.0
+  kd_low: 3.0
+  kp_wrist: 40.0
+  kd_wrist: 1.5
+  kp_waist: 150.0
+  kd_waist: 3.0
+  kp_head: null
+  kd_head: null
+
+ik:                           # robot_arm_ik.py
+  lock_joints: [left_hip_pitch_joint, left_hip_roll_joint, left_hip_yaw_joint,
+                left_knee_joint, left_ankle_pitch_joint, left_ankle_roll_joint,
+                right_hip_pitch_joint, right_hip_roll_joint, right_hip_yaw_joint,
+                right_knee_joint, right_ankle_pitch_joint, right_ankle_roll_joint,
+                waist_yaw_joint, waist_roll_joint, waist_pitch_joint]
+  ee_joints: [left_wrist_yaw_joint, right_wrist_yaw_joint]   # L_ee, R_ee 부모 관절
+  ee_offset: [0.05, 0.0, 0.0]                                 # 손목 → L_ee/R_ee [m]
+
+# 기본 팔 자세 [deg] — 좌 7 + 우 7 (shoulder P/R/Y, elbow, wrist R/P/Y)
+# robot_server.py DEFAULT_ARM_DEG / arm_server.py DEFAULT_ARM_DEG (같은 값)
+default_arm_deg: [16.6,  11.7, -0.1, 56.2,  4.3, -0.9, 1.5,
+                  16.3, -12.0,  1.6, 56.4, -7.6,  1.6, 0.7]
+
+frames:
+  # 카메라→torso_link 좌표와 IK(pelvis 기준, 허리 0) 기준 차이 (robot_server.py PELVIS_TO_TORSO)
+  pelvis_to_torso: [-0.0039635, 0.0, 0.044]
+
+# ------------------------------------------------------------
+# D435i 장착 — torso_link 기준 [m], 아래로 숙인 각 [deg]
+#   camera_to_torso(): 카메라 광학축(z 전방, y 아래) 을 pitch 만큼 숙인 뒤 (x, y, z) 평행이동.
+#   pitch_deg 는 박스 윗면 기울기 보정(중력 방향, CAM_TILT_DEG) 에도 같이 쓰인다.
+#   (robot_server / mission_server / detect_box / detect_box_conv / detect_marker 공통)
+# ------------------------------------------------------------
+camera:
+  x: 0.0576235
+  y: 0.03003
+  z: 0.42987
+  pitch_deg: 47.6             # = 0.8307767239493009 rad (CAMERA_PITCH_URDF 와 비트 단위 동일)
+
+grab:
+  z_offset: 0.08              # robot_server.py GRAB_Z_OFFSET (G1 실험값)
+
+# FSM (run_launcher.py FSM_NAME / FSM_BAL / STANDING / STEPS, init_fsm.py)
+fsm:
+  names: {0: "Zero Torque", 1: "Damping", 2: "Squat (위치제어)", 3: "Sit Down (위치제어)",
+          4: "Lock Standing", 500: "Walk", 501: "Walk (3DoF waist)",
+          702: "Lie Down ↔ Stand Up", 801: "Run"}
+  balance: [500, 501, 702, 801]   # 밸런스 제어 FSM
+  standing: [4, 500, 501]
+  damp: 1
+  lock: 4                     # 밸런스 없는 기립
+  run: 501                    # Robot(start_robot.sh) 실행 FSM — arm_sdk 사용 상태
+  sit: 3
+  # launcher 화면 문구 (run_launcher.py HTML / 메시지 — G1 원문 그대로)
+  labels:
+    lock_button: "Lock Standing"
+    run_button: "Walk 3DoF waist"
+    run_enter: "Walk(3DoF waist)"
+
+features:
+  locomotion: true            # 보행 / 마커 추종 사용

@@ -66,13 +66,13 @@ CAM_PPX, CAM_PPY = 316.739441, 258.982391
 camera_K = np.array([[CAM_FX,0,CAM_PPX],[0,CAM_FY,CAM_PPY],[0,0,1]], dtype=np.float32)
 
 # 카메라 tilt 고정 (G1, 47.6도)
-CAM_TILT_DEG = 47.6
+CAM_TILT_DEG = robot_env.CAMERA_PITCH_DEG   # robot.yaml camera.pitch_deg (G1 47.6)
 _t = np.radians(CAM_TILT_DEG)
 GRAVITY_CAM = np.array([0.0, np.cos(_t), np.sin(_t)], dtype=np.float64)
 
 # camera_to_torso (영역 판정용)
-CAMERA_X, CAMERA_Y, CAMERA_Z = 0.0576235, 0.03003, 0.42987
-CAMERA_PITCH_URDF = 0.8307767239493009
+CAMERA_X, CAMERA_Y, CAMERA_Z = robot_env.CAMERA_X, robot_env.CAMERA_Y, robot_env.CAMERA_Z   # robot.yaml camera
+CAMERA_PITCH_URDF = robot_env.CAMERA_PITCH
 
 _OV_DIR = os.path.join(_HIGH_DIR, "models", "box_openvino_model")
 _PT     = os.path.join(_HIGH_DIR, "models", "box.pt")

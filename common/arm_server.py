@@ -45,9 +45,8 @@ from ctrl.arm_controller_wrapper import ArmControllerWrapper
 
 PORT = 50022
 
-# 기본 자세 (robot_server 와 동일 값 유지)
-DEFAULT_ARM_DEG = [16.6,  11.7, -0.1, 56.2,  4.3, -0.9, 1.5,
-                   16.3, -12.0,  1.6, 56.4, -7.6,  1.6, 0.7]
+# 기본 자세 (robot_server 와 같은 값 — robot.yaml default_arm_deg 한 곳에서 읽음)
+DEFAULT_ARM_DEG = [float(v) for v in robot_env.CFG["default_arm_deg"]]
 PARK_WAIST_DEG = [0.0, 0.0, 0.0]   # yaw, roll, pitch
 
 arm: Optional[ArmControllerWrapper] = None

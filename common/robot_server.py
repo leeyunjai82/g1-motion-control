@@ -81,10 +81,11 @@ from ctrl.arm_http import ArmHttpClient
 # ==========================================
 # 카메라 → torso 좌표 변환 (ik_box와 동일 상수)
 # ==========================================
-CAMERA_X          = 0.0576235
-CAMERA_Y          = 0.03003
-CAMERA_Z          = 0.42987
-CAMERA_PITCH_URDF = 0.8307767239493009  # 47.6도
+# D435i 장착값 — robots/<ROBOT>/robot.yaml camera (G1: 0.0576235, 0.03003, 0.42987, 47.6도)
+CAMERA_X          = robot_env.CAMERA_X
+CAMERA_Y          = robot_env.CAMERA_Y
+CAMERA_Z          = robot_env.CAMERA_Z
+CAMERA_PITCH_URDF = robot_env.CAMERA_PITCH
 
 
 def camera_to_torso(cx, cy, cz):
@@ -130,7 +131,7 @@ def marker_x_axis_in_torso(rvec):
 # ==========================================
 GRIP_EXTRA     = -0.050
 APPROACH_EXTRA = 0.10
-GRAB_Z_OFFSET  = 0.08
+GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_offset (G1 0.08)
 # ↑ 실험으로 맞춘 값. grab_z = 박스 윗면 - h/2 + GRAB_Z_OFFSET.
 #   아래를 함께 흡수하고 있다 (h=9cm 예: IK 목표 윗면+3.5cm → 실제 손 윗면 약 -0.9cm):
 #   · 카메라→torso_link 좌표 vs IK(pelvis 기준, 허리 0 고정) 기준 차이 z 4.4cm (PELVIS_TO_TORSO)
@@ -156,7 +157,7 @@ GRAB_STAGES = ["허리 정렬", "재검출", "위쪽 접근", "측면 하강", "
 # IK 목표 좌표계 = pelvis 기준(허리 0 가정 축소모델). 카메라 좌표는 torso_link 기준.
 # torso_link 원점은 pelvis 에서 (-0.0039635, 0, 0.044) (URDF waist_roll_joint, 허리 0일 때).
 # /viz 는 모두 torso_link 기준으로 내보낸다 (dashboard 가 torso_link 에 붙여 그림).
-PELVIS_TO_TORSO = (-0.0039635, 0.0, 0.044)
+PELVIS_TO_TORSO = tuple(float(v) for v in robot_env.CFG["frames"]["pelvis_to_torso"])   # robot.yaml (G1 -0.0039635, 0, 0.044)
 
 
 def ik_to_torso(p):
@@ -802,8 +803,7 @@ WALK_YAW_TOL_DEG = 3.0
 # ---- 기본 자세 팔 각도 (Home / Stop / Grab OFF 공통) ----
 # loco 기본 자세 실측값. dashboard 에서 읽은 각도를 그대로 박아둔다.
 # 순서: shoulder P/R/Y, elbow, wrist R/P/Y  → 좌 7 + 우 7
-DEFAULT_ARM_DEG = [16.6,  11.7, -0.1, 56.2,  4.3, -0.9, 1.5,
-                   16.3, -12.0,  1.6, 56.4, -7.6,  1.6, 0.7]
+DEFAULT_ARM_DEG = [float(v) for v in robot_env.CFG["default_arm_deg"]]   # robot.yaml default_arm_deg
 
 # True  : 기동 시점 실측각을 캡처해 그 자세로 복귀 (재기동 자세에 따라 달라짐)
 # False : 위 DEFAULT_ARM_DEG 고정 (항상 같은 자세 — 권장)

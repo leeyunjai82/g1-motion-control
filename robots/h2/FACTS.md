@@ -3,8 +3,11 @@
 H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요한 값**을 나눠 기록합니다.
 추측한 값은 넣지 않습니다. 실기에서 확인하면 이 표를 갱신한 뒤 config(`robot.yaml`)로 옮깁니다.
 
-> 현재 `ROBOT=h2` 는 `common/robot_env.py` 에서 **실행 거부** 상태입니다 (명령 경로 닫힘).
+> 현재 `robots/h2/robot.yaml` 은 `enabled: false` — 모든 스크립트/서버가 **실행 거부** (명령 경로 닫힘).
 > 아래 "확인 필요" 항목이 모두 정리되기 전에는 열지 않습니다.
+>
+> **오프라인 검증 (2026-10):** `robot.yaml` 값으로 공통 `robot_arm.py` 를 가짜 DDS 로 초기화한 LowCmd 35 슬롯
+> (mode/q/dq/tau/kp/kd, weight 31, head 이득, 초기화 슬롯 0–30) 이 **h2-motion-control.red `robot_arm.py`(실기 동작)와 완전히 동일**.
 
 ## 작업 범위 (2026-10 결정)
 
@@ -44,12 +47,12 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | 메시 | ROS `5994d4f` (H2R 대비 `head_pitch_link.stl`, `head_yaw_link.stl` 만 갱신 — 시각용) | ROS |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
-## 공식 자료끼리 충돌 — 실기 확인 필요
+## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)
 
 | 항목 | SDK-arm | SDK-low | XR | H2R |
 | --- | --- | --- | --- | --- |
-| 손목 19/20/21 (오른 26/27/28) | Roll/Pitch/Yaw | **Yaw/Pitch/Roll** | Roll/Pitch/Yaw | Roll/Pitch/Yaw |
-| 허리 12/13/14 | Yaw/Roll/Pitch | Roll/Pitch/Yaw | Roll/Pitch/Yaw | **Yaw/Roll/Pitch** |
+| 손목 19/20/21 (오른 26/27/28) | Roll/Pitch/Yaw | **Yaw/Pitch/Roll** | Roll/Pitch/Yaw | Roll/Pitch/Yaw ← 채택 (사용자 실기 확인) |
+| 허리 12/13/14 | Yaw/Roll/Pitch | Roll/Pitch/Yaw | Roll/Pitch/Yaw | **Yaw/Roll/Pitch** ← 채택 (사용자 실기 확인) |
 | 발목 4/5 (우리 기능 무관) | Pitch/Roll | Roll/Pitch | Roll/Pitch | Roll/Pitch |
 | arm_sdk 허용 FSM | {4, 703} + `EnableArmSDK()` 필요 | — | (검사 없음) | 601 에서 동작 (실기) |
 
@@ -65,7 +68,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | `LowState_.mode_machine` 값 | 로봇 식별 안전장치 기준값. `python utils/check_robot_id.py` 로 측정 (SDK-low 가 이 값을 "H2 type" 으로 출력) |
 | 펌웨어 버전 | 7109(EnableArmSDK) 필요 여부가 펌웨어에 따라 달라질 수 있음 |
 | 손 종류 / SDK | H2R 는 G1 과 같은 `mandro3.py` 포함 — 실제 장착 손 확인 |
-| D435i 장착 위치·외부 파라미터 | 목 관절이 있으므로 **torso 고정 장착 권장**. 머리 장착이면 목을 arm_sdk 로 고정해야 함 |
+| D435i 장착 위치·외부 파라미터 | **외부 D435i 를 mini PC USB 에 연결** (G1 과 같은 방식, 헤드 내장 카메라 미사용). `robot.yaml camera` 는 **임시값**(가슴 고정 가정: x 0.10, z 0.35, 아래 50°) — 실장착 후 4개 값만 수정. 목 관절이 있으므로 torso 고정 권장 |
 | H2 기본(헤드) 카메라 | 2차 자료상 140° 광각 **바이노큘러 RGB** (unitree.com 직접 확인 못 함). 깊이 출력·공장 intrinsics API 근거 없음. teleimager(`f883d6a`)는 컬러 JPEG 만 전송 (depth/intrinsics 는 RealSense 백엔드에서만 읽고 전송 안 함). 일부 판매처 상품명의 "depth camera" 는 실체 미확인 → H2 PC 에서 `lsusb` / `rs-enumerate-devices` 로 RealSense 존재 여부 확인 필요 |
 | 테이블 높이 | 아래 시퀀스 IK 가능 범위 + 실측 pelvis 높이로 결정 |
 | 서 있을 때 pelvis 높이 | H2R `GROUND_TO_PELVIS = 0.782` 는 G1 값 복사. URDF 다리 편 자세 ankle_roll_link = pelvis −0.985 m |

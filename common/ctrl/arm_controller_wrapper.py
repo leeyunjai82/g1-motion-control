@@ -21,7 +21,8 @@ from ctrl.robot_arm_ik import G1_29_ArmIK
 # Locomotion 관련 임포트
 try:
     from unitree_sdk2py.core.channel import ChannelFactoryInitialize # dds
-    from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
+    import robot_env
+    LocoClient = robot_env.loco_client_class()   # robot.yaml sdk.loco_module (G1: unitree_sdk2py.g1.loco.g1_loco_client)
     LOCO_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Locomotion 라이브러리 로드 실패: {e}")
