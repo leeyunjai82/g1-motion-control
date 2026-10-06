@@ -25,24 +25,21 @@
 
 ---
 
-## 2. OS 기본 패키지
+## 2. OS 기본 패키지 (시스템 — 최소)
+
+Python 쪽은 전부 `tv` 가상환경에 넣고, 시스템에는 꼭 필요한 것만 설치합니다.
 
 ```bash
 sudo apt update
-sudo apt install -y \
-    build-essential git wget curl \
-    cmake pkg-config \
-    libusb-1.0-0-dev \
-    libgl1-mesa-dev libglu1-mesa-dev libglvnd-dev \
-    libglfw3 libglfw3-dev \
-    python3-dev \
-    iproute2
+sudo apt install -y wget curl
 ```
 
-- `curl` : `start_simulator.sh` 가 arm_server 상태 확인에 사용.
-- `iproute2`(`ss`) : `launcher.sh` 의 포트 80 점유 확인에 사용.
+- `curl` : `start_sim.sh` / `start_simulator.sh` 가 서버 응답 확인에 사용 (가상환경 활성화 전에 호출).
+- 빌드 도구(build-essential, libssl-dev, libsuitesparse-dev 등)는 **필요 없습니다** — cyclonedds 는 pip 바이너리 휠,
+  scikit-sparse 는 conda-forge 패키지로 설치합니다.
+- OpenCV 가 `libGL.so.1` 을 찾지 못하면 (서버판 Ubuntu 등): `sudo apt install -y libgl1 libglib2.0-0`
 - 로그 타임스탬프(`awk strftime`) : 24.04 기본 `mawk 1.3.4 20240123` 에서 동작 확인.
-  단 mawk 는 파이프 입력을 블록 단위로 모아 읽어 **로그가 몇 KB 씩 늦게 기록**된다 → `robot_env.sh` 의 `stamp()` 가 mawk 면 `-W interactive` 로 줄 단위 처리 (확인함). gawk 가 있으면 그대로 사용.
+  mawk 는 파이프 입력을 블록 단위로 모아 읽어 로그가 늦게 기록되므로 `robot_env.sh` 의 `stamp()` 가 `-W interactive` 로 줄 단위 처리.
 
 ---
 
@@ -79,37 +76,37 @@ realsense-viewer                    # 컬러/깊이 영상 확인
 
 ---
 
-## 4. Miniconda
+## 4. Miniconda — `.bashrc` 를 건드리지 않고 설치
+
+로봇을 돌리는 계정 하나에만 설치합니다. **`conda init` 을 하지 않으므로** 다른 계정과 이 계정의 평소 셸에는 영향이 없습니다.
 
 ```bash
 cd ~
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda3
-source $HOME/miniconda3/bin/activate
-conda init bash
+bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda3     # -b: 묻지 않음, .bashrc 수정 없음
+rm Miniconda3-latest-Linux-x86_64.sh
+$HOME/miniconda3/bin/conda --version
 ```
 
-새 터미널에서 `conda --version` 확인.
-
-> 다른 위치(`~/anaconda3`, `~/miniforge3`, `/opt/conda`)에 설치해도 스크립트가 자동으로 찾습니다. 그 외 위치면 `export CONDA_BASE=<경로>`.
+> `conda init` 을 실행하지 마세요. 필요할 때만 활성화합니다 (아래 5단계 · "평소 사용").
+> 다른 위치(예: `/opt/miniconda3`)에 설치했다면 `export CONDA_BASE=/opt/miniconda3` — 스크립트가 이 값을 씁니다.
 
 ---
 
-## 5. `tv` 환경 생성
-
-스크립트가 `tv` 라는 이름을 씁니다. 이름을 바꾸지 마세요.
+## 5. `tv` 가상환경 생성 (conda-forge 만 사용)
 
 ```bash
-# xr_teleoperate 공식 절차와 같은 구성 (pinocchio 는 반드시 conda-forge — 7-1 참고)
-conda create -n tv python=3.10 pinocchio=3.1.0 numpy=1.26.4 -c conda-forge -y
+source $HOME/miniconda3/bin/activate          # 이 터미널에서만 conda 사용
+conda create -y -n tv --override-channels -c conda-forge \
+    python=3.10 pinocchio=3.1.0 numpy=1.24.4 scikit-sparse=0.4.16 git
 conda activate tv
 ```
 
-> `CondaToSNonInteractiveError` 가 나오면:
-> ```bash
-> conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-> conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
-> ```
+- `--override-channels -c conda-forge` : Anaconda 기본 채널을 쓰지 않으므로 약관(ToS) 승인 절차가 없습니다 (conda 26.7.1 확인).
+- `pinocchio=3.1.0` : xr_teleoperate 공식 절차와 같은 버전. **pip 의 `pin` 패키지는 `pinocchio.casadi` 가 없어 쓰면 안 됩니다.**
+- `numpy=1.24.4` : requirements.txt 와 같은 값 (pip 가 numpy 를 다시 바꾸지 않게). OpenCV 4.10 때문에 2.x 금지.
+- `scikit-sparse` : conda-forge 바이너리 → 시스템 `libsuitesparse-dev` 불필요.
+- `git` : 가상환경 안의 git (unitree_sdk2py 를 GitHub 에서 받을 때 사용).
 
 ---
 
@@ -117,59 +114,48 @@ conda activate tv
 
 ```bash
 mkdir -p $HOME/project && cd $HOME/project
-git clone https://github.com/leeyunjai82/g1-motion-control.git
+git clone https://github.com/leeyunjai82/g1-motion-control.git      # tv 활성화 상태 → 가상환경의 git
 cd g1-motion-control
 ```
 
 ---
 
-## 7. Python 패키지
-
-네이티브 빌드용 시스템 라이브러리 먼저:
+## 7. Python 패키지 (전부 `tv` 안)
 
 ```bash
-sudo apt install -y libssl-dev bison flex     # cyclonedds
-sudo apt install -y libsuitesparse-dev        # scikit-sparse (cholmod.h)
-```
-
-```bash
-conda activate tv
+# (tv 활성화 상태, 프로젝트 폴더에서)
 pip install --upgrade pip
-pip install -r requirements.txt
+
+# PyTorch 는 CPU 판 (Intel mini PC — CUDA 판은 수 GB 의 nvidia 패키지가 같이 깔림)
+pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu
+
+# 나머지 — unitree_sdk2py 소스는 가상환경 안($CONDA_PREFIX/src)에 받는다
+pip install -r requirements.txt --src "$CONDA_PREFIX/src"
+
+# requirements.txt 에 없는 것
+pip install meshcat==0.3.2 logging-mp openvino
 ```
 
-### 7-1. requirements.txt 에 없는 패키지 (확인 필요)
-
-코드는 아래 패키지를 import 하지만 `requirements.txt` 에는 들어 있지 않습니다 (기준 소스 그대로).
-**버전은 기존 G1 운영 PC 에서 확인해 같은 버전으로 맞추세요:**
-
+확인:
 ```bash
-# 기존 운영 PC 에서
-pip freeze | grep -iE "^(pin|pinocchio|casadi|meshcat|logging.mp|openvino)"
+python -c "import numpy, torch, cv2, pinocchio, sksparse, unitree_sdk2py, openvino; from pinocchio import casadi; print('numpy', numpy.__version__, '| torch', torch.__version__)"
+# numpy 1.24.4 | torch 2.4.1+cpu 가 나와야 정상
 ```
 
-| import | 사용처 | 설치 |
-| --- | --- | --- |
-| `pinocchio`, `pinocchio.casadi` | IK (`common/ctrl/robot_arm_ik.py`), arm_server, robot_server | 5단계 `conda create ... pinocchio=3.1.0 -c conda-forge` |
-| `casadi` | IK 최적화 | conda-forge pinocchio 와 함께 설치됨 (버전 확인 필요) |
-| `meshcat` | IK 시각화 (import 는 항상 함) | `pip install meshcat==0.3.2` (xr_teleoperate requirements 값) |
-| `logging_mp` | IK 로거 | `pip install logging-mp` (unitreerobotics/logging-mp, 운영 PC 버전 확인 필요) |
-| `openvino` | 박스 인식 (ultralytics `intel:cpu`), `utils/get_dev.py` | `pip install openvino` (운영 PC 버전 확인 필요) |
+- 검증 (2026-10, Ubuntu 24.04): 위 순서로 설치 후 `ROBOT=h2 ./start_sim.sh` 잡기 시퀀스 10단계 완료.
+  단, 검증 환경에서는 `download.pytorch.org` 접근이 막혀 CPU 판 대신 CUDA 판 torch 로 확인했습니다 (CPU 판 설치 명령은 확인 필요 — 위 확인 명령에서 `+cpu` 인지 보세요).
+- `openvino`, `logging-mp` 는 버전을 고정하지 않았습니다 — 기존 G1 운영 PC 의 `pip freeze` 값과 맞추는 것을 권장 (확인 필요).
+- `unitree_sdk2py` 는 requirements 의 고정 커밋 `f559291` (G1). 이 커밋에는 `unitree_sdk2py.h2` 가 없습니다 — H2 실기 FSM 은 SDK 업그레이드 후.
 
-> ⚠️ **pip 의 `pin` 패키지는 쓰지 마세요.** PyPI `pin` 휠에는 `pinocchio.casadi` 가 들어 있지 않아 `from pinocchio import casadi` 가 `ImportError` 로 실패합니다 (2026-10 확인). conda-forge `pinocchio` 를 쓰세요.
+### 평소 사용 (conda 는 필요할 때만)
 
-> ⚠️ IK 모델 캐시(`robots/g1/g1_29_model_cache.pkl`)는 만든 pinocchio 버전에 묶입니다. 버전이 다르면 `pickle.load` 에서 `class version ...` 오류 → 캐시를 지우면 URDF 에서 다시 만듭니다.
-
-### 7-2. NumPy 1.x 유지
-
-`opencv-python 4.10` 은 NumPy 1.x ABI 입니다. 2.x 가 들어오면 정상 배열에도 `cv2.imencode` 가 `img is not a numpy array` 오류를 냅니다.
-
-```bash
-python -c "import numpy; print(numpy.__version__)"   # 반드시 < 2
-pip install "numpy<2"                                 # 2.x 면
-```
-
-> `unitree_sdk2py` 는 requirements.txt 의 GitHub 고정 커밋(`f559291`)으로 설치됩니다. 이 커밋에는 `unitree_sdk2py/h2` 가 **없습니다** — H2 지원 단계에서 SDK 버전을 올려야 합니다.
+- `start_*.sh` / `launcher.sh` 는 스스로 `tv` 를 활성화합니다 → **그냥 실행하면 됩니다.**
+- 터미널에서 직접 python 을 쓸 때만:
+  ```bash
+  source $HOME/miniconda3/bin/activate tv      # 또는 프로젝트 폴더에서: source activate_tv.sh
+  ...
+  conda deactivate                             # 끝나면
+  ```
 
 ---
 
@@ -295,9 +281,9 @@ python utils/check_robot_id.py
 | `ROBOT 이 지정되지 않았습니다 — 실행 거부` | `export ROBOT=g1` 또는 `ROBOT=g1 ./start_robot.sh` |
 | `conda 를 찾지 못했습니다` | `export CONDA_BASE=<conda 설치 경로>` |
 | sudo 가 계속 비밀번호 요구 (FSM) | sudoers 경로 ≠ `$TV_PY`. 8단계 확인 |
-| `CondaToSNonInteractiveError` | 5단계 ToS 승인 |
-| `cyclonedds` 빌드 실패 | `libssl-dev bison flex` 설치 |
-| `scikit-sparse`: `cholmod.h` 없음 | `libsuitesparse-dev` 설치 |
+| `CondaToSNonInteractiveError` | 기본 채널을 쓴 경우 — 5단계처럼 `--override-channels -c conda-forge` 로 다시 생성 |
+| `cyclonedds` 빌드 실패 | Python 3.10 휠이 안 받아진 경우 — `python -V` 가 3.10 인지(tv 활성화) 확인 |
+| `scikit-sparse`: `cholmod.h` 없음 | pip 로 빌드하려 한 것 — 5단계 conda-forge `scikit-sparse` 로 설치 |
 | OpenCV `img is not a numpy array` | NumPy 2.x. `pip install "numpy<2"` |
 | IK 가 수십 ms | BLAS 스레드 고정 (11단계) |
 | `librealsense2-dkms` 설치/빌드 실패 | 24.04 커널 미지원 — 설치하지 않음 (3단계) |
