@@ -63,6 +63,21 @@ export ROBOT=g1             # 모든 스크립트가 이 값을 요구합니다
 ./launcher.sh
 ```
 
+## 시뮬레이터 (로봇 없이 시험)
+
+```bash
+ROBOT=h2 ./start_sim.sh     # 또는 ROBOT=g1
+#   → 시뮬 화면 : http://<pc-ip>:50010/   (가상 박스 배치 · 잡기→건네기 · 상태 · 가상 카메라 · 3D)
+```
+
+- `sim/fake_robot.py` 가 로봇 역할: `rt/arm_sdk` 를 받아 관절을 움직이고 `rt/lowstate` 를 낸다 (기구학만, 물리·균형 없음).
+- `sim/sim_server.py` 가 detect_box(50010) 자리를 대신: 가상 박스를 robot.yaml `camera` 장착값으로 카메라 좌표로 바꿔
+  `/pose` 로 준다 → **robot_server / arm_server 는 실기와 같은 코드 그대로** 잡기 시퀀스를 돈다 (허리 yaw 정렬·재검출 포함).
+- 화면에 표시: 잡기 단계, 손 목표 오차(IK 도달), 손 높이 − 박스 옆면/윗면, 허리 각, 카메라 시야 안/밖.
+- **안전**: `ROBOT_SIM=1` → DDS 도메인 1. 실기(도메인 0)와 섞이지 않고, fake_robot/sim_server 는 시뮬 모드가 아니면 실행을 거부.
+  실기 스택이 떠 있으면(포트 사용 중) 아무것도 죽이지 않고 시작을 거부한다.
+- `enabled: false` 로봇(H2)도 시뮬에서는 실행된다. 실기 스크립트(`start_robot.sh` 등)는 계속 거부.
+
 로그는 `logs/<name>_<date>.log` 에 타임스탬프와 함께 기록됩니다. 종료는 `Ctrl+C`.
 
 ## 일반 시나리오
@@ -82,6 +97,8 @@ g1-motion-control/
 ├── start_robot.sh          # 전체 스택 (camera, detect, arm, robot, dashboard)
 ├── start_simulator.sh      # 모션 에디터 (+ arm_server 없으면 같이 기동)
 ├── start_mission.sh        # 미션 스택 (marker_nav → mission_server). robot_server 와 동시 사용 금지
+├── start_sim.sh            # 시뮬레이터 (fake_robot + 서버 + 가상 박스, DDS 도메인 1)
+├── sim/                    # fake_robot.py (가짜 로봇), sim_server.py (가짜 detect_box + 시뮬 화면)
 ├── launcher.sh / run_launcher.py   # 웹 런처 (:80)
 ├── common/                 # 로봇 공통 코드
 │   ├── robot_env.py        # ROBOT 선택, robots/<ROBOT>/ 경로
@@ -112,7 +129,9 @@ g1-motion-control/
 | pelvis→torso, 잡기 z 오프셋 | `frames`, `grab` |
 | **D435i 장착 위치** | `camera` (x, y, z [m, torso_link 기준], pitch_deg [아래로 숙인 각]) |
 | 연결 로봇 확인 | `identity.mode_machine` (`utils/check_robot_id.py` 로 측정) |
-| 실행 허용 | `enabled` (false 면 모든 스크립트/서버가 거부) |
+| 실행 허용 | `enabled` (false 면 모든 스크립트/서버가 거부 — 시뮬 제외) |
+| 카메라→IK 좌표 변환 | `frames.exact_ik_frame` (G1 false: 기존대로 / H2 true: pelvis 기준 정확 변환) |
+| 허리 사용 / 보행 | `grab.waist_base_pitch_deg`, `grab.waist_locked`, `features.locomotion` |
 
 - **G1**: `.red` 731075b 상수 그대로 — `python utils/check_g1_equiv.py <red> .` 로 원본과 동일함을 확인 (상수, LowCmd 35 슬롯, launcher HTML, FSM 규칙).
 - **H2**: `enabled: false`. 근거·확인 필요 항목은 [`robots/h2/FACTS.md`](./robots/h2/FACTS.md).

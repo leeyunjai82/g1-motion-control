@@ -55,7 +55,7 @@ class LowStateReader:
     def __init__(self):
         from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
         from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as hg_LowState
-        ChannelFactoryInitialize(0)
+        robot_env.dds_init()
         self._q = np.zeros(NUM_MOTORS)
         self._rpy = np.zeros(3)
         self._temp = None                 # 모터 온도 (°C) — 필드 없으면 None

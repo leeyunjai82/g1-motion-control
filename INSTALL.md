@@ -41,7 +41,8 @@ sudo apt install -y \
 
 - `curl` : `start_simulator.sh` 가 arm_server 상태 확인에 사용.
 - `iproute2`(`ss`) : `launcher.sh` 의 포트 80 점유 확인에 사용.
-- 로그 타임스탬프(`awk strftime`) : 24.04 기본 `mawk 1.3.4 20240123` 에서 동작 확인. 다른 awk 를 쓰는 환경이면 `sudo apt install gawk`.
+- 로그 타임스탬프(`awk strftime`) : 24.04 기본 `mawk 1.3.4 20240123` 에서 동작 확인.
+  단 mawk 는 파이프 입력을 블록 단위로 모아 읽어 **로그가 몇 KB 씩 늦게 기록**된다 → `robot_env.sh` 의 `stamp()` 가 mawk 면 `-W interactive` 로 줄 단위 처리 (확인함). gawk 가 있으면 그대로 사용.
 
 ---
 
@@ -242,7 +243,7 @@ conda deactivate && conda activate tv && echo $OMP_NUM_THREADS   # 1
 ## 12. 실행 권한
 
 ```bash
-chmod +x robot_env.sh activate_tv.sh start_fsm.sh start_robot.sh start_simulator.sh start_mission.sh launcher.sh
+chmod +x robot_env.sh activate_tv.sh start_fsm.sh start_robot.sh start_simulator.sh start_mission.sh start_sim.sh launcher.sh
 ```
 
 ---

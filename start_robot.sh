@@ -18,15 +18,7 @@ DAY="$(date '+%Y%m%d')"
 # 관리 대상 스크립트 (이름 기준 sweep)
 TARGETS=("rs_stream.py" "arm_server.py" "robot_server.py" "dashboard.py" "detect_marker.py" "detect_box.py")
 
-# ==========================================
-# 로그 타임스탬프 필터
-#   - 각 줄 앞에 [YYYY-MM-DD HH:MM:SS] 부착
-#   - awk 한 프로세스로 처리(줄마다 date 호출 안 함) + fflush로 즉시 기록
-#   - gawk의 strftime 사용. mawk만 있으면 'sudo apt install gawk'
-# ==========================================
-stamp() {
-  awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }'
-}
+# 로그 타임스탬프 필터 stamp() 는 robot_env.sh 에 있음 (mawk 줄 단위 처리 포함)
 
 # ==========================================
 # 0) 기존 좀비 프로세스 청소 (시작 전)

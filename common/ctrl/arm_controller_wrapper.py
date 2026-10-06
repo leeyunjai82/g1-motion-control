@@ -15,6 +15,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
+import robot_env
 from ctrl.robot_arm import G1_29_ArmController, G1_29_JointArmIndex
 from ctrl.robot_arm_ik import G1_29_ArmIK
 
@@ -65,7 +66,7 @@ class LocoClientWrapper:
     def __init__(self):
         if not LOCO_AVAILABLE:
             raise RuntimeError("Locomotion library not available")
-        ChannelFactoryInitialize(0)
+        robot_env.dds_init()
         self.client = LocoClient()
         self.client.SetTimeout(0.0001)
         self.client.Init()

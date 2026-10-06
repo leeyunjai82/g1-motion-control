@@ -71,6 +71,12 @@ def load_config(robot):
     return cfg
 
 
+# 시뮬레이션 모드 (ROBOT_SIM=1, start_sim.sh) — sim/fake_robot.py 가 로봇 역할.
+#   DDS 도메인 1 을 써서 실기(도메인 0)와 절대 섞이지 않게 한다.
+#   enabled: false 로봇(H2 등)도 시뮬에서는 실행 허용 (실기 명령 경로는 계속 닫힘).
+SIM = os.environ.get("ROBOT_SIM", "").strip() == "1"
+DDS_DOMAIN = 1 if SIM else 0
+
 ROBOT = os.environ.get("ROBOT", "").strip().lower()
 if not ROBOT:
     _fail("ROBOT 환경변수가 없습니다 — 실행 거부 (기본값 없음)")
@@ -81,8 +87,17 @@ try:
 except Exception as e:  # noqa: BLE001 — 어떤 오류든 실행 거부
     _fail(f"ROBOT='{ROBOT}' 설정 오류 — 실행 거부: {e}")
 if not CFG.get("enabled", False):
-    _fail(f"ROBOT='{ROBOT}' 는 robot.yaml 에서 enabled: false — 실행 거부 "
-          f"({CFG.get('disabled_reason', '사유 미기재')})")
+    if not SIM:
+        _fail(f"ROBOT='{ROBOT}' 는 robot.yaml 에서 enabled: false — 실행 거부 "
+              f"({CFG.get('disabled_reason', '사유 미기재')})")
+    print(f"[robot_env] ⚠️ 시뮬레이션: ROBOT='{ROBOT}' enabled: false 지만 ROBOT_SIM=1 (DDS 도메인 {DDS_DOMAIN}) 로 실행",
+          file=sys.stderr)
+if SIM:
+    # 실기에서 아직 재지 않은 값 — 시뮬 전용 값(robot.yaml sim:)으로 채운다 (실기 경로에는 영향 없음)
+    _sim = CFG.get("sim") or {}
+    if CFG.get("default_arm_deg") is None:
+        CFG["default_arm_deg"] = list(_sim.get("default_arm_deg") or [0.0] * 14)
+        print(f"[robot_env] ⚠️ 시뮬레이션: default_arm_deg 미측정 → sim 값 {CFG['default_arm_deg']}", file=sys.stderr)
 
 URDF_PATH     = os.path.join(ROBOT_DIR, CFG["urdf"])
 MESH_DIR      = os.path.join(ROBOT_DIR, "meshes")
@@ -100,6 +115,27 @@ CAMERA_PITCH = float(np.radians(CAMERA_PITCH_DEG))   # rad (G1 47.6° → 0.8307
 
 JOINTS = CFG["joints"]
 FSM    = CFG["fsm"]
+
+
+_dds_inited = None
+
+
+def dds_init(interface=None):
+    """ChannelFactoryInitialize(DDS_DOMAIN[, interface]).
+
+    실기: 기존과 똑같이 매번 호출한다 (동작 변경 없음).
+    시뮬: 같은 프로세스에서 두 번째 호출은 건너뛴다 — 일부 환경에서 cyclonedds 가 같은 도메인을
+          다시 만들 때 'create domain error' 로 실패하기 때문 (arm_server → robot_arm 이 두 번 부름).
+    """
+    global _dds_inited
+    from unitree_sdk2py.core.channel import ChannelFactoryInitialize
+    if SIM and _dds_inited is not None:
+        return
+    if interface:
+        ChannelFactoryInitialize(DDS_DOMAIN, interface)
+    else:
+        ChannelFactoryInitialize(DDS_DOMAIN)
+    _dds_inited = DDS_DOMAIN
 
 
 def loco_client_class():

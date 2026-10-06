@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# 시뮬레이터 실행 — 로봇 없이 잡기/건네기 시퀀스 시험
+# 사용: ROBOT=h2 ./start_sim.sh      (ROBOT=g1 도 가능)
+# 종료: Ctrl+C
+#
+# 구성 (ROBOT_SIM=1 → DDS 도메인 1, 실기 도메인 0 과 분리):
+#   fake_robot (DDS 가짜 로봇) → arm_server(50022) → robot_server(50000) → dashboard(50003)
+#   → sim_server(50010, 가짜 detect_box + 조작 화면)
+#   rs_stream / detect_box / detect_marker 는 띄우지 않는다 (카메라 없음).
+#   robot.yaml 의 enabled: false 로봇(H2)도 시뮬에서는 실행된다 — 실기 경로(start_robot.sh 등)는 계속 거부.
+set -u
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+source "$ROOT/robot_env.sh" || exit 1
+# 시뮬은 enabled: false 로봇도 허용 → robots/<ROBOT>/robot.yaml 존재만 확인
+if [ -z "${ROBOT:-}" ] || [ ! -f "$ROOT/robots/${ROBOT}/robot.yaml" ]; then
+  echo "❌ ROBOT 을 지정하세요 (robots/<robot>/robot.yaml 필요) — 예: ROBOT=h2 $0" >&2
+  exit 2
+fi
+export ROBOT_SIM=1
+
+LOG_DIR="$ROOT/logs"
+mkdir -p "$LOG_DIR"
+DAY="$(date '+%Y%m%d')"
+# stamp() 는 robot_env.sh (mawk 줄 단위 처리 포함)
+
+# 실기 스택과 같은 포트를 쓰므로, 이미 떠 있으면 아무것도 죽이지 않고 중단
+busy=""
+for p in 50000 50003 50010 50022; do
+  if curl -s -m 1 -o /dev/null "http://localhost:$p/" 2>/dev/null; then busy="$busy $p"; fi
+done
+if [ -n "$busy" ]; then
+  echo "❌ 포트 사용 중:$busy — 실행 중인 start_robot.sh / start_sim.sh 를 먼저 종료하세요" >&2
+  exit 1
+fi
+
+source "$ROOT/activate_tv.sh" || exit 1
+cd "$ROOT/common"
+
+PIDS=(); NAMES=()
+cleanup() {
+  trap '' INT TERM EXIT
+  echo ""; echo "[stop] 종료 중..."
+  for pid in "${PIDS[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
+  for i in $(seq 1 8); do
+    alive=0; for pid in "${PIDS[@]}"; do kill -0 "$pid" 2>/dev/null && alive=1; done
+    [ $alive -eq 0 ] && break; sleep 1
+  done
+  for i in "${!PIDS[@]}"; do
+    if kill -0 "${PIDS[$i]}" 2>/dev/null; then echo "[stop] ${NAMES[$i]} 강제 종료"; kill -9 "${PIDS[$i]}" 2>/dev/null || true; fi
+  done
+  echo "[stop] 완료"; exit 0
+}
+trap cleanup INT TERM EXIT
+
+run() {  # run <이름> <스크립트> <대기초>
+  echo "[sim] $1 ..."
+  python -u "$2" > >(stamp >> "$LOG_DIR/sim_$1_$DAY.log") 2>&1 &
+  PIDS+=($!); NAMES+=("$1")
+  sleep "$3"
+}
+
+wait_http() {  # wait_http <url> <초>
+  for i in $(seq 1 "$2"); do curl -s -m 1 -o /dev/null "$1" && return 0; sleep 1; done
+  echo "[sim] ⚠ 응답 없음: $1 — 로그 확인: $LOG_DIR/sim_*_$DAY.log"; return 1
+}
+
+run "fake_robot"   "$ROOT/sim/fake_robot.py" 2
+run "arm_server"   "arm_server.py"           1
+wait_http "http://localhost:50022/status" 60
+run "robot_server" "robot_server.py"         1
+wait_http "http://localhost:50000/grab_status" 60
+run "dashboard"    "dashboard.py"            1
+run "sim_server"   "$ROOT/sim/sim_server.py" 1
+wait_http "http://localhost:50010/status" 30
+
+cat <<EOF
+
+  ✓ 시뮬레이터 실행 중  (ROBOT=$ROBOT, ROBOT_SIM=1, DDS 도메인 1)
+    - 시뮬 화면    : http://localhost:50010/        (가상 박스 · 잡기 · 상태 · 3D)
+    - 제어 UI      : http://localhost:50000/        (실기와 같은 화면)
+    - 3D 뷰어      : http://localhost:50003/dashboard
+    - arm_server   : http://localhost:50022/status
+  로그: $LOG_DIR/sim_*_$DAY.log
+  종료: Ctrl+C
+EOF
+wait

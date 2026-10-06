@@ -27,7 +27,7 @@ def setfsmid(n):
 
 mode = sys.argv[1]
 
-ChannelFactoryInitialize(0)
+robot_env.dds_init()
 
 # 연결된 로봇 확인 (robot.yaml identity.mode_machine) — 다르면 FSM 명령을 보내지 않는다
 _sub = ChannelSubscriber("rt/lowstate", hg_LowState)

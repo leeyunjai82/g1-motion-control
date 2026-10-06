@@ -209,7 +209,7 @@ async def lifespan(app: FastAPI):
     print("--- G1 Motion Editor 통합본 (v7.0) ---")
     print("  팔/허리: arm_server(50022) 경유 · 걷기: LocoClient · 손: 단일 동글")
 
-    ChannelFactoryInitialize(0)
+    robot_env.dds_init()
 
     try:
         loco = LocoClientWrapper()

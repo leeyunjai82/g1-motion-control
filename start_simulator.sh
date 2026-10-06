@@ -18,9 +18,7 @@ LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 DAY="$(date '+%Y%m%d')"
 
-stamp() {
-  awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }'
-}
+# stamp() 는 robot_env.sh (mawk 줄 단위 처리 포함)
 
 # ==========================================
 # 0) 기존 simulator 좀비 정리 (simulator만 — arm_server는 공용이라 안 죽임)

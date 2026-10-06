@@ -626,7 +626,7 @@ def nav_thread():
 async def lifespan(app):
     global loco, cap, detector
     print("[marker_nav] 시작")
-    ChannelFactoryInitialize(0)
+    robot_env.dds_init()
     loco = LocoClientWrapper()
 
     adict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT_TYPE)

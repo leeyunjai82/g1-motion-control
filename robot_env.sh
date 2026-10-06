@@ -32,6 +32,17 @@ require_robot() {
   export ROBOT="$r"
 }
 
+# 로그 타임스탬프 필터 — 각 줄 앞에 [YYYY-MM-DD HH:MM:SS], 줄마다 즉시 기록
+#   Ubuntu 기본 awk(mawk)는 파이프 입력을 블록 단위로 모아 읽어 로그가 늦게(수 KB 단위) 써진다
+#   → mawk 면 -W interactive (줄 단위 읽기/쓰기). gawk 는 그대로 줄 단위.
+stamp() {
+  if awk -W version 2>&1 | grep -qi mawk; then
+    awk -W interactive '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }'
+  else
+    awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }'
+  fi
+}
+
 _find_conda_base() {
   local c
   for c in "${CONDA_BASE:-}" "$HOME/miniconda3" "$HOME/anaconda3" "$HOME/miniforge3" "/opt/conda"; do

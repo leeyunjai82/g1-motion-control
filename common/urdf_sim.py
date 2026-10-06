@@ -39,7 +39,7 @@ try:
     from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
     from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
 
-    ChannelFactoryInitialize(0, NET_INTERFACE)
+    robot_env.dds_init(NET_INTERFACE)
 
     def _on_lowstate(msg):
         global _last_lowstate

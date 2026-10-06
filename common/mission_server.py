@@ -810,7 +810,7 @@ def mission_thread():
 async def lifespan(app):
     global loco
     print("[mission_server] 시작")
-    ChannelFactoryInitialize(0)
+    robot_env.dds_init()
     loco = LocoClientWrapper()
     # 대기 상태 = release (팔 스윙 보행 가능 상태로 대기)
     try:

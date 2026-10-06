@@ -31,9 +31,7 @@ DAY="$(date '+%Y%m%d')"
 TARGETS=("rs_stream.py" "ctrl/detect_box.py" \
          "arm_server.py" "mission_server.py" "marker_nav.py")
 
-stamp() {
-  awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0; fflush() }'
-}
+# stamp() 는 robot_env.sh (mawk 줄 단위 처리 포함)
 
 # ==========================================
 # 0) 기존 좀비 프로세스 청소

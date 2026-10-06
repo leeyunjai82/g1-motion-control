@@ -94,7 +94,7 @@ class G1_29_ArmController:
         if self.simulation_mode:
             ChannelFactoryInitialize(1)
         else:
-            ChannelFactoryInitialize(0)
+            robot_env.dds_init()
 
         # Publisher / Subscriber 설정
         if self.motion_mode:

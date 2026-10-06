@@ -178,7 +178,7 @@ class FsmCtl:
             from unitree_sdk2py.core.channel import ChannelFactoryInitialize
             LocoClient = robot_env.loco_client_class()   # robot.yaml sdk.loco_module
             if not self._dds_inited:          # 프로세스당 1회만
-                ChannelFactoryInitialize(0)
+                robot_env.dds_init()
                 self._dds_inited = True
             # 연결된 로봇 확인 (robot.yaml identity.mode_machine) — 다르면 FSM 명령을 보내지 않는다
             if (robot_env.CFG.get("identity") or {}).get("mode_machine") is not None:

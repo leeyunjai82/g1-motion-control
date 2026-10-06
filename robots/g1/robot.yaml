@@ -91,6 +91,7 @@ default_arm_deg: [16.6,  11.7, -0.1, 56.2,  4.3, -0.9, 1.5,
 frames:
   # 카메라→torso_link 좌표와 IK(pelvis 기준, 허리 0) 기준 차이 (robot_server.py PELVIS_TO_TORSO)
   pelvis_to_torso: [-0.0039635, 0.0, 0.044]
+  exact_ik_frame: false       # 카메라(torso) 좌표를 그대로 IK 목표로 — 차이 4.4 cm 는 grab.z_offset 이 흡수 (기존 동작)
 
 # ------------------------------------------------------------
 # D435i 장착 — torso_link 기준 [m], 아래로 숙인 각 [deg]

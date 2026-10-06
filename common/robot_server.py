@@ -164,6 +164,21 @@ GRAB_STAGES = ["허리 정렬", "재검출", "위쪽 접근", "측면 하강", "
 # /viz 는 모두 torso_link 기준으로 내보낸다 (dashboard 가 torso_link 에 붙여 그림).
 PELVIS_TO_TORSO = tuple(float(v) for v in robot_env.CFG["frames"]["pelvis_to_torso"])   # robot.yaml (G1 -0.0039635, 0, 0.044)
 
+# 카메라 → IK 목표 좌표 (robot.yaml frames.exact_ik_frame)
+#   false (G1): torso_link 좌표를 그대로 IK(pelvis) 목표로 쓴다. 두 좌표계 차이(z 4.4 cm)는
+#               GRAB_Z_OFFSET 실험값이 흡수 — 기존 동작 그대로.
+#   true  (H2): torso + PELVIS_TO_TORSO 로 정확히 변환. H2 는 차이가 z 12.3 cm 라 흡수 불가
+#               (그대로 쓰면 위쪽 접근 높이가 박스 윗면보다 낮아진다).
+EXACT_IK_FRAME = bool(robot_env.CFG["frames"].get("exact_ik_frame", False))
+
+
+def cam_to_ik(cx, cy, cz):
+    """잡기용: 카메라 좌표 → IK 목표 좌표 (exact_ik_frame 반영)."""
+    x, y, z = camera_to_torso(cx, cy, cz)
+    if not EXACT_IK_FRAME:
+        return x, y, z
+    return (x + PELVIS_TO_TORSO[0], y + PELVIS_TO_TORSO[1], z + PELVIS_TO_TORSO[2])
+
 
 def ik_to_torso(p):
     return [float(p[0] - PELVIS_TO_TORSO[0]), float(p[1] - PELVIS_TO_TORSO[1]),
@@ -408,7 +423,7 @@ class GrabController:
         print("[GRAB-MARKER] 시작")
         self._last_kind = "marker"
         self._reset_waist()
-        mx, my, mz = camera_to_torso(tvec[0], tvec[1], tvec[2])
+        mx, my, mz = cam_to_ik(tvec[0], tvec[1], tvec[2])
         self._align_waist_yaw(mx, my)
 
         # 허리 돌린 후 재감지 (카메라 좌표계 보정) — ik_box와 동일
@@ -418,7 +433,7 @@ class GrabController:
             if d and d.get("tvec"):
                 tvec = d["tvec"]
                 if d.get("rvec"): rvec = d["rvec"]
-                mx, my, mz = camera_to_torso(tvec[0], tvec[1], tvec[2])
+                mx, my, mz = cam_to_ik(tvec[0], tvec[1], tvec[2])
                 print(f"[GRAB-MARKER] 재감지 torso=[{mx:.3f},{my:.3f},{mz:.3f}]")
             else:
                 print("[GRAB-MARKER] 재감지 실패 — 원래 좌표 사용")
@@ -470,12 +485,12 @@ class GrabController:
         self._stage("허리 정렬")
         self._reset_waist()
 
-        Lx, Ly, Lz = camera_to_torso(L_cam[0], L_cam[1], L_cam[2])
-        Rx, Ry, Rz = camera_to_torso(R_cam[0], R_cam[1], R_cam[2])
+        Lx, Ly, Lz = cam_to_ik(L_cam[0], L_cam[1], L_cam[2])
+        Rx, Ry, Rz = cam_to_ik(R_cam[0], R_cam[1], R_cam[2])
 
         # 중심 (waist 정렬 + grab_x_base)
         if top_center_cam is not None:
-            cx, cy, cz = camera_to_torso(top_center_cam[0],
+            cx, cy, cz = cam_to_ik(top_center_cam[0],
                                           top_center_cam[1],
                                           top_center_cam[2])
         else:
@@ -491,10 +506,10 @@ class GrabController:
                 L_cam, R_cam = d["L"], d["R"]
                 if d.get("box_h"): box_h_m = d["box_h"]
                 if d.get("top_center"): top_center_cam = d["top_center"]
-                Lx, Ly, Lz = camera_to_torso(L_cam[0], L_cam[1], L_cam[2])
-                Rx, Ry, Rz = camera_to_torso(R_cam[0], R_cam[1], R_cam[2])
+                Lx, Ly, Lz = cam_to_ik(L_cam[0], L_cam[1], L_cam[2])
+                Rx, Ry, Rz = cam_to_ik(R_cam[0], R_cam[1], R_cam[2])
                 if top_center_cam is not None:
-                    cx, cy, cz = camera_to_torso(*top_center_cam)
+                    cx, cy, cz = cam_to_ik(*top_center_cam)
                 else:
                     cx, cy, cz = (Lx+Rx)/2, (Ly+Ry)/2, (Lz+Rz)/2
                 print(f"[GRAB-BOX] 재감지 center=[{cx:.3f},{cy:.3f},{cz:.3f}]")
@@ -962,7 +977,7 @@ async def lifespan(app: FastAPI):
     global arm, loco, hand, tts, grab, ACTIVE_MODE, BOOT_ARM_DEG
 
     print("[robot_server] 시작")
-    ChannelFactoryInitialize(0)
+    robot_env.dds_init()
 
     try:
         loco = LocoClientWrapper()

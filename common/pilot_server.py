@@ -81,7 +81,7 @@ class MoveReq(BaseModel):
 async def lifespan(app):
     global loco
     print("[pilot_server] 시작 (SLAM 재현용)")
-    ChannelFactoryInitialize(0)
+    robot_env.dds_init()
     loco = LocoClientWrapper()
     st = mission_status()
     print(f"[pilot_server] mission_server: {st.get('state')}")

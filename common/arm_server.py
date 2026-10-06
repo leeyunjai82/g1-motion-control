@@ -17,7 +17,7 @@ HTTP API 를 통해서만 지령한다. arm_sdk 직접 송신 프로세스는 �
     동시에 두 동작 요청이 오면 뒤엣것은 409.
 
 실행
-  python arm_server.py          # ChannelFactoryInitialize(0) — robot_server와 동일
+  python arm_server.py          # robot_env.dds_init() — robot_server와 동일
 """
 
 import os
@@ -131,7 +131,7 @@ async def _run_blocking(locks, fn, *args):
 async def lifespan(app: FastAPI):
     global arm
     print("[arm_server] 시작")
-    ChannelFactoryInitialize(0)
+    robot_env.dds_init()
     arm = ArmControllerWrapper(motion_mode=True, simulation_mode=False)
     arm.start()
     print(f"[arm_server] 준비 완료 (weight=1, hold)  http://localhost:{PORT}/")
