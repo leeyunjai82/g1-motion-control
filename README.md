@@ -55,13 +55,32 @@ export ROBOT=g1             # 모든 스크립트가 이 값을 요구합니다
 #   → 제어 UI : http://<pc-ip>:50000/
 #   → 3D 뷰어 : http://<pc-ip>:50003/dashboard
 
-# 3. 모션 에디터 (단독, 또는 start_robot.sh 와 함께)
-./start_simulator.sh
-#   → 에디터  : http://<pc-ip>:8000/
+# 3. 모션 에디터 — 모드 지정 필수 (virtual | real)
+./start_simulator.sh real          # 실기 (start_robot.sh 와 함께 써도 됨 — arm_server 재사용)
+#   → 에디터  : http://<pc-ip>:8000/        모터 번호 확인 : http://<pc-ip>:8000/check
 
 # (선택) 웹 런처 — FSM 버튼 + start_robot.sh 실행 (포트 80, sudo)
 ./launcher.sh
 ```
+
+## Motion Editor 모드 (`start_simulator.sh`)
+
+| 명령 | 모드 | 띄우는 것 |
+| --- | --- | --- |
+| `ROBOT=h2 ./start_simulator.sh virtual` | **가상** — URDF/메시 3D + fake_robot, 로봇 없이 (DDS 도메인 1) | fake_robot, arm_server, dashboard, simulator |
+| `ROBOT=g1 ./start_simulator.sh real` | **실기** — 실제 로봇이 움직임 | arm_server·dashboard(떠 있으면 재사용), simulator |
+| `ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real` | **실기 · 모터 번호 확인 전용** — `enabled: false` 로봇 | 위와 같음. 잡기·보행 서버는 실행 거부, 시작 시 `yes` 확인 |
+
+### 모터 번호 확인 (`http://<pc-ip>:8000/check`)
+
+1. 로봇을 매달거나 지지하고 주변을 비운다. E-STOP 을 손에 둔다.
+2. `ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real` (H2) — 상단에 `mode_machine` 이 표시된다 (robot.yaml `identity` 기준값).
+3. **팔·허리** (명령 이동): [기준 잡기] → 슬롯의 [+]/[−] (한 번 5°, 기준 대비 최대 ±15°, 서버에서 제한).
+   실제 로봇에서 움직인 관절과 오른쪽 3D(robot.yaml 이름으로 그림)에서 움직인 관절이 같으면 ✓, 다르면 ✗ + 실제 관절을 메모.
+4. **다리·헤드** (읽기 전용): [제어권 반납] (또는 FSM Damp) → [기준 잡기] → 관절을 손으로 움직이면 변한 슬롯이 노랗게 표시.
+5. [결과 저장] → `robots/<robot>/joint_check_<날짜시각>.json` → 이 결과로 robot.yaml 관절 맵을 최종 조정.
+
+가상 모드에서 같은 화면으로 절차를 미리 연습할 수 있다 (가상은 robot.yaml 대로 움직이므로 항상 ✓).
 
 ## 시뮬레이터 (로봇 없이 시험)
 

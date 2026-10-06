@@ -18,6 +18,7 @@ if [ -z "${ROBOT:-}" ] || [ ! -f "$ROOT/robots/${ROBOT}/robot.yaml" ]; then
   exit 2
 fi
 export ROBOT_SIM=1
+unset ROBOT_CHECK
 
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"

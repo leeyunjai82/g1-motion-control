@@ -77,6 +77,11 @@ def load_config(robot):
 SIM = os.environ.get("ROBOT_SIM", "").strip() == "1"
 DDS_DOMAIN = 1 if SIM else 0
 
+# 실기 모터 번호 확인 모드 (ROBOT_CHECK=1, start_simulator.sh real) — enabled: false 로봇을 실기에서
+# '확인 목적으로만' 띄운다. 허용 프로세스: arm_server / simulator / dashboard 뿐 (잡기·보행 서버는 거부).
+CHECK = os.environ.get("ROBOT_CHECK", "").strip() == "1"
+CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py"}
+
 ROBOT = os.environ.get("ROBOT", "").strip().lower()
 if not ROBOT:
     _fail("ROBOT 환경변수가 없습니다 — 실행 거부 (기본값 없음)")
@@ -86,12 +91,20 @@ try:
     CFG = load_config(ROBOT)
 except Exception as e:  # noqa: BLE001 — 어떤 오류든 실행 거부
     _fail(f"ROBOT='{ROBOT}' 설정 오류 — 실행 거부: {e}")
+if CHECK and os.path.basename(sys.argv[0]) not in CHECK_ALLOWED:
+    _fail(f"ROBOT_CHECK=1 (모터 번호 확인 모드) 에서는 {sorted(CHECK_ALLOWED)} 만 실행 — "
+          f"{os.path.basename(sys.argv[0])} 거부")
 if not CFG.get("enabled", False):
-    if not SIM:
+    if not (SIM or CHECK):
         _fail(f"ROBOT='{ROBOT}' 는 robot.yaml 에서 enabled: false — 실행 거부 "
               f"({CFG.get('disabled_reason', '사유 미기재')})")
-    print(f"[robot_env] ⚠️ 시뮬레이션: ROBOT='{ROBOT}' enabled: false 지만 ROBOT_SIM=1 (DDS 도메인 {DDS_DOMAIN}) 로 실행",
-          file=sys.stderr)
+    if SIM:
+        print(f"[robot_env] ⚠️ 시뮬레이션: ROBOT='{ROBOT}' enabled: false 지만 ROBOT_SIM=1 (DDS 도메인 {DDS_DOMAIN}) 로 실행",
+              file=sys.stderr)
+    else:
+        print(f"[robot_env] ⚠️⚠️ 실기 모터 번호 확인 모드: ROBOT='{ROBOT}' enabled: false — "
+              f"{os.path.basename(sys.argv[0])} 만 실행 (잡기·보행 서버 거부). 로봇을 지지한 상태에서만 사용",
+              file=sys.stderr)
 if SIM:
     # 실기에서 아직 재지 않은 값 — 시뮬 전용 값(robot.yaml sim:)으로 채운다 (실기 경로에는 영향 없음)
     _sim = CFG.get("sim") or {}

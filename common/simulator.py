@@ -231,12 +231,17 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"⚠️ 손 컨트롤러 실패: {e}")
 
-    print("[시스템] 준비 완료  http://localhost:8000/")
+    print(f"[시스템] 준비 완료  http://localhost:8000/   모터 번호 확인: http://localhost:8000/check  "
+          f"({'가상 ROBOT_SIM' if robot_env.SIM else '실기'})")
     yield
     print("--- 서버 종료 (자세 유지 — arm_server 관리) ---")
 
 
 app = FastAPI(title="G1 Motion Editor (통합)", version="7.0", lifespan=lifespan)
+
+# 모터 번호 확인 화면 (/check) — 가상/실기 모두
+from joint_check import router as joint_check_router
+app.include_router(joint_check_router)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
 

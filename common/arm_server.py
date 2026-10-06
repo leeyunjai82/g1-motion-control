@@ -46,7 +46,9 @@ from ctrl.arm_controller_wrapper import ArmControllerWrapper
 PORT = 50022
 
 # 기본 자세 (robot_server 와 같은 값 — robot.yaml default_arm_deg 한 곳에서 읽음)
-DEFAULT_ARM_DEG = [float(v) for v in robot_env.CFG["default_arm_deg"]]
+# None = 미측정 (실기 모터 번호 확인 모드의 H2 등) → release 는 팔을 움직이지 않고 반납, park 는 거부
+DEFAULT_ARM_DEG = ([float(v) for v in robot_env.CFG["default_arm_deg"]]
+                   if robot_env.CFG.get("default_arm_deg") is not None else None)
 PARK_WAIST_DEG = [0.0, 0.0, 0.0]   # yaw, roll, pitch
 
 arm: Optional[ArmControllerWrapper] = None
@@ -199,7 +201,10 @@ def _do_release(duration, arm_deg):
         # loco 기본자세로 보간 후 반납 — 인계 순간 튐 최소화
         arm.move_waist_smooth(yaw=PARK_WAIST_DEG[0], roll=PARK_WAIST_DEG[1],
                               pitch=PARK_WAIST_DEG[2], duration=duration)
-        arm.move_joints_smooth(arm_deg, duration)
+        if arm_deg is not None:
+            arm.move_joints_smooth(arm_deg, duration)
+        else:
+            print("[ARM] 기본 팔 자세 미측정 — 팔은 현재 자세 그대로 반납")
         arm.arm_ctrl.ramp_weight(0.0, duration)
         ARM_MODE = "release"
         print("[ARM] release 완료")
@@ -278,6 +283,8 @@ async def hands(req: HandsReq):
 async def park(req: ParkReq = ParkReq()):
     if not arm:
         raise HTTPException(503, "Arm 미초기화")
+    if (req.arm_deg or DEFAULT_ARM_DEG) is None:
+        raise HTTPException(409, "기본 팔 자세 미측정 (robot.yaml default_arm_deg) — park 불가")
     locks = _acquire_or_409(_arm_lock, _waist_lock)
 
     def _do():

@@ -167,3 +167,18 @@ detect_box 의 K(640×480)로 계산. 박스 중심 x 0.45 m 일 때 화면에 �
 | 0.05, 0.60, 58° | ±0.18 m |
 
 카메라가 박스에 너무 가까우면 박스가 화면 대부분을 차지해 조금만 옆에 있어도 잘린다 — 장착 시 참고.
+
+## 실기 모터 번호 확인 절차 (최종 조정 전)
+
+`ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real` → `http://<pc>:8000/check` (README "모터 번호 확인" 참고).
+
+| 확인 대상 | 방법 | 이번에 특히 볼 것 |
+| --- | --- | --- |
+| 허리 12/13/14 | 명령 ±5° | 12 = yaw (몸통 수직축 회전) 인지 — 공식 자료끼리 다름 |
+| 손목 19–21, 26–28 | 명령 ±5° | roll/pitch/yaw 순서 — 공식 자료끼리 다름 |
+| 어깨·팔꿈치 15–18, 22–25 | 명령 ±5° | (자료 일치, 재확인) |
+| 헤드 29/30, 다리 0–11 | 제어권 반납 후 손으로 → Δ | 발목 4/5 순서 |
+| `mode_machine` | 화면 상단 | `robot.yaml identity.mode_machine` 에 기입 |
+| 기본 팔 자세 | FSM 601 기립, arm_server release 상태에서 각도 | `default_arm_deg` 14개 |
+
+결과 파일(`robots/h2/joint_check_*.json`)로 `robot.yaml` 을 고친 뒤 `enabled: true` 로 바꾼다.
