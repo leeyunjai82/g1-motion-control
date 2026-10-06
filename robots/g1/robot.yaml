@@ -106,6 +106,8 @@ camera:
 
 grab:
   z_offset: 0.08              # robot_server.py GRAB_Z_OFFSET (G1 실험값)
+  waist_base_pitch_deg: -3.0  # robot_server.py WAIST_BASE_PITCH (잡기 중 기본 상체 각도)
+  waist_locked: false         # 박스 쪽 yaw 정렬 / 좌우 건네기 yaw 사용
 
 # FSM (run_launcher.py FSM_NAME / FSM_BAL / STANDING / STEPS, init_fsm.py)
 fsm:

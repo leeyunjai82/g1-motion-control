@@ -112,6 +112,8 @@ camera:
 
 grab:
   z_offset: 0.08              # 시작값 = G1 실험값. H2 는 실험으로 다시 맞춘다
+  waist_base_pitch_deg: 0.0   # 허리 0 (넘어짐 방지)
+  waist_locked: true          # yaw 정렬·좌우 건네기 없음 — 박스는 정면 ±10 cm 이내 (FACTS.md 건네기 IK 범위)
 
 fsm:                          # unitree_sdk2py h2_loco_client.py + h2-motion-control.red init_fsm.py (실기)
   names: {0: "Zero Torque", 1: "Damp", 2: "Squat", 3: "Sit", 4: "StandUp", 601: "Start (balance)"}

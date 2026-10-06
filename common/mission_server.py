@@ -47,6 +47,9 @@ from contextlib import asynccontextmanager
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 import robot_env   # ROBOT 미지정/미지원이면 여기서 종료
+if not robot_env.CFG.get("features", {}).get("locomotion", True):
+    print(f"[robot_env] ❌ ROBOT={robot_env.ROBOT} 는 보행 비활성(features.locomotion: false) — {os.path.basename(__file__)} 실행 거부")
+    sys.exit(2)
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 from ctrl.arm_controller_wrapper import LocoClientWrapper

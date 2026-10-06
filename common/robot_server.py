@@ -140,7 +140,12 @@ GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_
 GRAB_X_OFFSET  = -0.15
 HANDOVER_X     = 0.30
 LEFT_HAND_Y_OFFSET = 0.0
-WAIST_BASE_PITCH = -3.0   # 기본 상체 각도 (0=중립)
+WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # 기본 상체 각도 (0=중립, G1 -3.0)
+# 허리 고정 (robot.yaml grab.waist_locked) — true 면 잡기/건네기 중 허리 yaw 를 쓰지 않는다
+#   (박스 쪽 yaw 정렬 생략, 건네기 방향은 center 만). H2: 넘어짐 방지로 허리 0.
+WAIST_LOCKED = bool(robot_env.CFG["grab"].get("waist_locked", False))
+# 보행 사용 여부 (robot.yaml features.locomotion) — false 면 /follow, /loco, 모션 파일의 걷기 프레임 거부
+LOCOMOTION = bool(robot_env.CFG.get("features", {}).get("locomotion", True))
 
 # 잡은 뒤 → 건네기 구간 타이밍 (s)
 STEP_PAUSE        = 0.1   # 대칭정렬/들기/건네기 동작 사이 정지 (구 0.3/0.2/0.3)
@@ -265,6 +270,9 @@ class GrabController:
         time.sleep(0.5)
 
     def _align_waist_yaw(self, mx, my):
+        if WAIST_LOCKED:
+            print("[WAIST] 고정(robot.yaml grab.waist_locked) — yaw 정렬 생략")
+            return
         yaw_deg = float(np.degrees(np.arctan2(my, mx)))
         print(f"[WAIST] yaw: {yaw_deg:.1f}도")
         if abs(yaw_deg) < 1.5:
@@ -305,6 +313,8 @@ class GrabController:
             hy = -self.handover_yaw_deg
         else:
             hy = 0.0
+        if WAIST_LOCKED:
+            hy = 0.0                       # 허리 고정 로봇은 정면으로만 건넨다
         self._stage("건네기")
         print(f"[GRAB] ⑦' 허리 yaw → {hy:.1f}도")
         if self.robot_available and self.arm is not None:
@@ -1056,6 +1066,9 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 # 모션 실행 (run_motion 동일)
 # ==========================================
 async def _run_loco(direction: str, duration: float):
+    if not LOCOMOTION:
+        print(f"[LOCO] 보행 비활성(robot.yaml features.locomotion) — '{direction}' 프레임 건너뜀")
+        return
     dmap = {"forward":loco.forward,"backward":loco.backward,"left":loco.left,
             "right":loco.right,"turn_left":loco.turn_left,"turn_right":loco.turn_right}
     method = dmap.get(direction)
@@ -1266,6 +1279,8 @@ async def set_wrist(l_roll: float=0, l_pitch: float=0, l_yaw: float=0,
 async def set_handover_direction(direction: str="center", yaw_deg: float=None):
     if direction not in ("center", "left", "right"):
         return JSONResponse({"success": False, "error": f"invalid: {direction}"})
+    if WAIST_LOCKED and direction != "center":
+        return JSONResponse({"success": False, "error": "허리 고정 로봇(robot.yaml grab.waist_locked) — center 만 가능"})
     grab.handover_direction = direction
     if yaw_deg is not None:
         grab.handover_yaw_deg = float(yaw_deg)
@@ -1542,6 +1557,8 @@ async def follow_status():
 
 @app.post("/follow/start")
 async def follow_start():
+    if not LOCOMOTION:
+        raise HTTPException(409, "보행 비활성 로봇 (robot.yaml features.locomotion)")
     if not loco:
         raise HTTPException(503, "Loco 미초기화")
     if grab_busy or is_running:
@@ -1574,6 +1591,8 @@ async def follow_params(body: dict):
 
 @app.post("/loco/move")
 async def loco_move(req: LocoMoveRequest):
+    if not LOCOMOTION:
+        raise HTTPException(409, "보행 비활성 로봇 (robot.yaml features.locomotion)")
     if not loco: raise HTTPException(503, "Loco 미초기화")
 
     global _waist_realigning
