@@ -99,7 +99,8 @@ conda init bash
 스크립트가 `tv` 라는 이름을 씁니다. 이름을 바꾸지 마세요.
 
 ```bash
-conda create -n tv python=3.10 -y
+# xr_teleoperate 공식 절차와 같은 구성 (pinocchio 는 반드시 conda-forge — 7-1 참고)
+conda create -n tv python=3.10 pinocchio=3.1.0 numpy=1.26.4 -c conda-forge -y
 conda activate tv
 ```
 
@@ -146,12 +147,15 @@ pip install -r requirements.txt
 pip freeze | grep -iE "^(pin|pinocchio|casadi|meshcat|logging.mp|openvino)"
 ```
 
-| import | 사용처 |
-| --- | --- |
-| `pinocchio`, `pinocchio.casadi`, `casadi` | IK (`common/ctrl/robot_arm_ik.py`), arm_server, robot_server |
-| `meshcat` | IK 시각화 (import 는 항상 함) |
-| `logging_mp` | IK 로거 |
-| `openvino` | 박스 인식 (ultralytics `intel:cpu`), `utils/get_dev.py` |
+| import | 사용처 | 설치 |
+| --- | --- | --- |
+| `pinocchio`, `pinocchio.casadi` | IK (`common/ctrl/robot_arm_ik.py`), arm_server, robot_server | 5단계 `conda create ... pinocchio=3.1.0 -c conda-forge` |
+| `casadi` | IK 최적화 | conda-forge pinocchio 와 함께 설치됨 (버전 확인 필요) |
+| `meshcat` | IK 시각화 (import 는 항상 함) | `pip install meshcat==0.3.2` (xr_teleoperate requirements 값) |
+| `logging_mp` | IK 로거 | `pip install logging-mp` (unitreerobotics/logging-mp, 운영 PC 버전 확인 필요) |
+| `openvino` | 박스 인식 (ultralytics `intel:cpu`), `utils/get_dev.py` | `pip install openvino` (운영 PC 버전 확인 필요) |
+
+> ⚠️ **pip 의 `pin` 패키지는 쓰지 마세요.** PyPI `pin` 휠에는 `pinocchio.casadi` 가 들어 있지 않아 `from pinocchio import casadi` 가 `ImportError` 로 실패합니다 (2026-10 확인). conda-forge `pinocchio` 를 쓰세요.
 
 > ⚠️ IK 모델 캐시(`robots/g1/g1_29_model_cache.pkl`)는 만든 pinocchio 버전에 묶입니다. 버전이 다르면 `pickle.load` 에서 `class version ...` 오류 → 캐시를 지우면 URDF 에서 다시 만듭니다.
 
