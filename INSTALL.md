@@ -138,7 +138,7 @@ python -c "import numpy, torch, cv2, pinocchio, sksparse, unitree_sdk2py, openvi
 ```
 
 - 검증 (2026-10, Ubuntu 24.04): 위 순서로 설치 후 `ROBOT=h2 ./start_sim.sh` 잡기 시퀀스 10단계 완료.
-  단, 검증 환경에서는 `download.pytorch.org` 접근이 막혀 CPU 판 대신 CUDA 판 torch 로 확인했습니다 (CPU 판 설치 명령은 확인 필요 — 위 확인 명령에서 `+cpu` 인지 보세요).
+  운영 mini PC 실설치에서 `numpy 1.24.4 | torch 2.4.1+cpu` 확인 (CPU 판 torch 정상).
 - `openvino`, `logging-mp` 는 버전을 고정하지 않았습니다 — 기존 G1 운영 PC 의 `pip freeze` 값과 맞추는 것을 권장 (확인 필요).
 - `unitree_sdk2py` 는 requirements 의 고정 커밋 `f559291` (G1). 이 커밋에는 `unitree_sdk2py.h2` 가 없습니다 — H2 실기 FSM 은 SDK 업그레이드 후.
 
