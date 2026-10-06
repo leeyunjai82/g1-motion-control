@@ -4,6 +4,8 @@ A deep dive into the internals of **G1 Motion Control** — architecture, joint 
 
 For installation see [`INSTALL.md`](./INSTALL.md). For user-level usage see [`README.md`](./README.md).
 
+> ⚠️ **Layout note (2026-10):** code moved from `high/` to `common/`; robot-specific files (URDF, meshes, motions, IK cache) moved to `robots/<ROBOT>/`. Every launcher requires `ROBOT=g1`. Some sections below still describe older servers (`ik_box.py`, `run_motion.py`, `simulator_ik.py`) that no longer exist — the current server list is in [`README.md`](./README.md).
+
 ---
 
 ## 1. High-Level Architecture
@@ -15,7 +17,7 @@ For installation see [`INSTALL.md`](./INSTALL.md). For user-level usage see [`RE
 └────────────────────────────────┬─────────────────────────────────┘
                                  │ HTTP/SSE
 ┌────────────────────────────────▼─────────────────────────────────┐
-│                       high/  (FastAPI layer)                      │
+│                       common/  (FastAPI layer)                      │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐    │
 │  │ simulator.py │  │ run_motion.py│  │ ik_box.py · dashboard│    │
 │  │  (editor)    │  │  (player)    │  │  (grasp · live view) │    │
@@ -42,7 +44,7 @@ For installation see [`INSTALL.md`](./INSTALL.md). For user-level usage see [`RE
 The PC runs three layers:
 
 1. **Web / API** — FastAPI servers (`simulator.py`, `run_motion.py`, `ik_box.py`, `dashboard.py`, `rs_stream.py`).
-2. **Controller wrappers** — `high/ctrl/arm_controller_wrapper.py` glues the raw Unitree SDK (`G1_29_ArmController`, `LocoClient`) and the IK solver into a single API used by every server.
+2. **Controller wrappers** — `common/ctrl/arm_controller_wrapper.py` glues the raw Unitree SDK (`G1_29_ArmController`, `LocoClient`) and the IK solver into a single API used by every server.
 3. **Transport** — CycloneDDS topics carry low-level commands and state to/from the robot at 250 Hz.
 
 ---
@@ -54,19 +56,19 @@ The PC runs three layers:
 | `start_fsm.sh` → `utils/init_fsm.py` | FSM ID transitions via `LocoClient.SetFsmId()` |
 | `start_box.sh` | Launches 3 servers (rs_stream / ik_box / dashboard) |
 | `start_motion.sh` | Launches `run_motion.py` only |
-| `high/simulator.py` | Motion authoring (joint-angle editor, port `8000` by default) |
-| `high/simulator_ik.py` | Motion authoring (IK XYZ+RPY editor) |
-| `high/run_motion.py` | Plays both joint-format and IK-format motions, REST + 3D viewer (`:50003`) |
-| `high/ik_box.py` | ArUco detection + IK box grasping FSM (`:50000`) |
-| `high/rs_stream.py` | RealSense MJPEG color + depth streams (`:50001`) |
-| `high/dashboard.py` | Aggregated 3D viewer + camera/depth proxy (`:50003`) |
-| `high/ctrl/arm_controller_wrapper.py` | High-level wrapper, smoothstep interpolation, waist control |
-| `high/ctrl/robot_arm.py` | `G1_29_ArmController` — DDS publisher/subscriber, motor command builder, CRC |
-| `high/ctrl/robot_arm_ik.py` | `G1_29_ArmIK` — Pinocchio-CasADi dual-arm inverse kinematics |
-| `high/ctrl/mandro3.py` | `HandController` — Mandro Mark-7 hand serial protocol |
-| `high/ctrl/text_to_speech.py` | TTS used by the gift / grasping sequence |
-| `high/assets/g1/g1_29dof_rev_1_0.urdf` + `meshes/` | URDF + STL meshes (consumed by IK + 3D viewer) |
-| `high/motions/*.json` | Motion library (see §5) |
+| `common/simulator.py` | Motion authoring (joint-angle editor, port `8000` by default) |
+| `common/simulator_ik.py` | Motion authoring (IK XYZ+RPY editor) |
+| `common/run_motion.py` | Plays both joint-format and IK-format motions, REST + 3D viewer (`:50003`) |
+| `common/ik_box.py` | ArUco detection + IK box grasping FSM (`:50000`) |
+| `common/rs_stream.py` | RealSense MJPEG color + depth streams (`:50001`) |
+| `common/dashboard.py` | Aggregated 3D viewer + camera/depth proxy (`:50003`) |
+| `common/ctrl/arm_controller_wrapper.py` | High-level wrapper, smoothstep interpolation, waist control |
+| `common/ctrl/robot_arm.py` | `G1_29_ArmController` — DDS publisher/subscriber, motor command builder, CRC |
+| `common/ctrl/robot_arm_ik.py` | `G1_29_ArmIK` — Pinocchio-CasADi dual-arm inverse kinematics |
+| `common/ctrl/mandro3.py` | `HandController` — Mandro Mark-7 hand serial protocol |
+| `common/ctrl/text_to_speech.py` | TTS used by the grasping sequence |
+| `robots/g1/g1_29dof_rev_1_0.urdf` + `meshes/` | URDF + STL meshes (consumed by IK + 3D viewer) |
+| `robots/g1/motions/*.json` | Motion library (see §5) |
 | `low/` | Direct low-level motor / DDS tests (`g1_motor_low.py`, `g1_motor_control.py`) |
 | `vision/` | Camera utilities (RealSense, ArUco, calibration, OpenVINO NPU demos) |
 
@@ -225,11 +227,11 @@ While a `locomotion.direction` is active, the wrapper re-issues `loco.move()` ev
 
 Implementation: **Pinocchio + CasADi**, solved with IPOPT.
 
-- **URDF**: `high/assets/g1/g1_29dof_rev_1_0.urdf`.
+- **URDF**: `robots/g1/g1_29dof_rev_1_0.urdf`.
 - **Locked joints** (legs + waist): `left/right_hip_*`, `*_knee`, `*_ankle_*`, `waist_yaw/roll/pitch` — the IK only moves the 14 arm joints.
 - **End-effectors**: virtual frames `L_ee`, `R_ee` placed 5 cm forward of the wrist-yaw link.
 - **Cost terms**: SE(3) translation + orientation error on both hands, regularization on `q - q_prev`, smoothness on `dq`.
-- **Cache**: the reduced robot model is pickled to `high/ctrl/g1_29_model_cache.pkl` on first load (URDF parse is slow — ~5 s without cache, ~50 ms with).
+- **Cache**: the reduced robot model is pickled to `robots/g1/g1_29_model_cache.pkl` on first load (URDF parse is slow — ~5 s without cache, ~50 ms with).
 - **Smoothing**: solutions are passed through `WeightedMovingFilter` (5-tap weighted moving average on the joint vector) to suppress IK chatter.
 
 `solve_and_verify_ik()` calls FK after IK to report per-hand position error in mm — the wrapper considers a result "accurate" when both errors are below **1 mm**.
@@ -356,13 +358,12 @@ The web stream from `ik_box.py` itself (`:50000`) is throttled to **5 fps / 320�
 | GET | `/robot-only` | 3D viewer only |
 | GET | `/docs` | OpenAPI docs |
 | GET | `/status` | Subsystem readiness (`arm/loco/hand/tts`) |
-| GET | `/motions` | List `*.json` under `high/motions/` |
+| GET | `/motions` | List `*.json` under `robots/g1/motions/` |
 | POST | `/motions/run/{filename}` | Run a saved motion (joint or IK; auto-detected) |
 | POST | `/run` | Play inline joint-format frames |
 | POST | `/run_file` | Upload + play a joint-format file |
 | POST | `/run_ik` | Play inline IK frames |
 | POST | `/run_ik_file` | Upload + play an IK file |
-| POST | `/send_gift` | TTS + `right_send.json` sequence |
 | POST | `/stop` | Stop, return to home |
 | POST | `/home` | Go to home pose |
 | POST | `/loco/move` | One-shot velocity command (`vx, vy, vyaw`) |
@@ -395,7 +396,7 @@ The web stream from `ik_box.py` itself (`:50000`) is throttled to **5 fps / 320�
 2. Open `http://localhost:8000/` in a browser.
 3. Drag sliders to pose the robot frame by frame; press the timeline button to record a keyframe and set its `duration`.
 4. Click **Save** — the browser downloads a JSON in the format described in §5.
-5. Drop the file into `high/motions/`.
+5. Drop the file into `robots/g1/motions/`.
 6. Restart `start_motion.sh` (or just call `GET /motions` to verify it shows up) and run it from the web UI or:
    ```bash
    curl -X POST http://localhost:50003/motions/run/my_motion.json
@@ -427,6 +428,8 @@ Graceful shutdown is `SIGTERM` first; the launcher waits **8 seconds** (the IK s
 
 설치는 [`INSTALL.md`](./INSTALL.md), 사용법은 [`README.md`](./README.md) 를 참고하세요.
 
+
+> ⚠️ **구조 변경 (2026-10):** 코드는 `high/` → `common/` 으로, 로봇별 파일(URDF·메시·모션·IK 캐시)은 `robots/<ROBOT>/` 로 옮겼습니다. 모든 실행 스크립트는 `ROBOT=g1` 지정이 필요합니다. 아래 일부 절은 지금은 없는 서버(`ik_box.py`, `run_motion.py`, `simulator_ik.py`)를 설명합니다 — 현재 서버 목록은 [`README.md`](./README.md) 참고.
 ---
 
 ## 1. 전체 아키텍처
@@ -438,7 +441,7 @@ Graceful shutdown is `SIGTERM` first; the launcher waits **8 seconds** (the IK s
 └────────────────────────────────┬─────────────────────────────────┘
                                  │ HTTP / SSE
 ┌────────────────────────────────▼─────────────────────────────────┐
-│                       high/  (FastAPI 계층)                       │
+│                       common/  (FastAPI 계층)                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐    │
 │  │ simulator.py │  │ run_motion.py│  │ ik_box.py · dashboard│    │
 │  │  (에디터)    │  │  (재생)      │  │  (파지 · 라이브뷰)    │    │
@@ -463,7 +466,7 @@ Graceful shutdown is `SIGTERM` first; the launcher waits **8 seconds** (the IK s
 PC 측 소프트웨어는 3개 계층입니다.
 
 1. **웹/API** — FastAPI 서버 5종 (`simulator.py`, `run_motion.py`, `ik_box.py`, `dashboard.py`, `rs_stream.py`).
-2. **컨트롤러 래퍼** — `high/ctrl/arm_controller_wrapper.py` 가 Unitree SDK (`G1_29_ArmController`, `LocoClient`) 와 IK 솔버를 단일 API 로 묶어 모든 서버가 동일하게 사용합니다.
+2. **컨트롤러 래퍼** — `common/ctrl/arm_controller_wrapper.py` 가 Unitree SDK (`G1_29_ArmController`, `LocoClient`) 와 IK 솔버를 단일 API 로 묶어 모든 서버가 동일하게 사용합니다.
 3. **전송 계층** — CycloneDDS 토픽이 PC 와 로봇 사이에서 250Hz 로 저수준 명령/상태를 주고받습니다.
 
 ---
@@ -475,19 +478,19 @@ PC 측 소프트웨어는 3개 계층입니다.
 | `start_fsm.sh` → `utils/init_fsm.py` | `LocoClient.SetFsmId()` 로 자세 FSM 전환 |
 | `start_box.sh` | 3개 서버 (rs_stream / ik_box / dashboard) 일괄 실행 |
 | `start_motion.sh` | `run_motion.py` 단독 실행 |
-| `high/simulator.py` | 관절각 기반 모션 에디터 (기본 포트 `8000`) |
-| `high/simulator_ik.py` | IK (XYZ + RPY) 기반 모션 에디터 |
-| `high/run_motion.py` | 두 포맷 모두 자동 감지하여 재생, REST + 3D 뷰어 (`:50003`) |
-| `high/ik_box.py` | ArUco 인식 + IK 박스 파지 FSM (`:50000`) |
-| `high/rs_stream.py` | RealSense 컬러/깊이 MJPEG (`:50001`) |
-| `high/dashboard.py` | 3D 뷰어 + 카메라 프록시 통합 (`:50003`) |
-| `high/ctrl/arm_controller_wrapper.py` | 고수준 래퍼, Smoothstep 보간, 허리 제어 |
-| `high/ctrl/robot_arm.py` | `G1_29_ArmController` — DDS Pub/Sub, LowCmd, CRC |
-| `high/ctrl/robot_arm_ik.py` | `G1_29_ArmIK` — Pinocchio-CasADi 양팔 IK |
-| `high/ctrl/mandro3.py` | `HandController` — Mandro Mark-7 시리얼 프로토콜 |
-| `high/ctrl/text_to_speech.py` | 박스 파지/선물 시퀀스의 TTS |
-| `high/assets/g1/g1_29dof_rev_1_0.urdf` + `meshes/` | URDF + STL (IK + 3D 뷰어 공용) |
-| `high/motions/*.json` | 사전 정의 모션 라이브러리 (§5) |
+| `common/simulator.py` | 관절각 기반 모션 에디터 (기본 포트 `8000`) |
+| `common/simulator_ik.py` | IK (XYZ + RPY) 기반 모션 에디터 |
+| `common/run_motion.py` | 두 포맷 모두 자동 감지하여 재생, REST + 3D 뷰어 (`:50003`) |
+| `common/ik_box.py` | ArUco 인식 + IK 박스 파지 FSM (`:50000`) |
+| `common/rs_stream.py` | RealSense 컬러/깊이 MJPEG (`:50001`) |
+| `common/dashboard.py` | 3D 뷰어 + 카메라 프록시 통합 (`:50003`) |
+| `common/ctrl/arm_controller_wrapper.py` | 고수준 래퍼, Smoothstep 보간, 허리 제어 |
+| `common/ctrl/robot_arm.py` | `G1_29_ArmController` — DDS Pub/Sub, LowCmd, CRC |
+| `common/ctrl/robot_arm_ik.py` | `G1_29_ArmIK` — Pinocchio-CasADi 양팔 IK |
+| `common/ctrl/mandro3.py` | `HandController` — Mandro Mark-7 시리얼 프로토콜 |
+| `common/ctrl/text_to_speech.py` | 박스 파지/선물 시퀀스의 TTS |
+| `robots/g1/g1_29dof_rev_1_0.urdf` + `meshes/` | URDF + STL (IK + 3D 뷰어 공용) |
+| `robots/g1/motions/*.json` | 사전 정의 모션 라이브러리 (§5) |
 | `low/` | 저수준 모터/DDS 테스트 |
 | `vision/` | RealSense, ArUco, 캘리브레이션, OpenVINO NPU 도구 |
 
@@ -623,11 +626,11 @@ for i in range(steps + 1):
 ## 6. 역기구학 (`G1_29_ArmIK`)
 
 - **구현:** Pinocchio + CasADi, IPOPT 솔버.
-- **URDF:** `high/assets/g1/g1_29dof_rev_1_0.urdf`.
+- **URDF:** `robots/g1/g1_29dof_rev_1_0.urdf`.
 - **잠금 관절:** 다리 12 개 + 허리 3 개 → 팔 14 축만 자유롭게 풀이.
 - **엔드 이펙터:** wrist_yaw 링크 기준 5cm 앞쪽의 가상 프레임 `L_ee` / `R_ee`.
 - **비용 함수:** 양손 위치+자세 SE(3) 오차, `q - q_prev` 정규화, `dq` 평활.
-- **모델 캐시:** 최초 로드 시 `high/ctrl/g1_29_model_cache.pkl` 로 피클링 (URDF 파싱 5초 → 캐시 50ms).
+- **모델 캐시:** 최초 로드 시 `robots/g1/g1_29_model_cache.pkl` 로 피클링 (URDF 파싱 5초 → 캐시 50ms).
 - **출력 평활:** `WeightedMovingFilter` (5탭 가중 이동 평균) 으로 IK chatter 억제.
 
 `solve_and_verify_ik()` 는 IK 직후 FK 로 손 위치를 재계산하여 **양손 모두 1mm 이내** 인지 확인합니다.
@@ -747,11 +750,10 @@ B10 : 방향 (0=Idle, 1=Forward, 2=Reverse, 3=Reset)
 | GET | `/robot-only` | 3D 뷰어만 |
 | GET | `/docs` | OpenAPI 문서 |
 | GET | `/status` | 서브시스템 상태 |
-| GET | `/motions` | `high/motions/*.json` 목록 |
+| GET | `/motions` | `robots/g1/motions/*.json` 목록 |
 | POST | `/motions/run/{filename}` | 저장된 파일 실행 (포맷 자동 감지) |
 | POST | `/run`, `/run_file` | 관절 포맷 실행 |
 | POST | `/run_ik`, `/run_ik_file` | IK 포맷 실행 |
-| POST | `/send_gift` | TTS + `right_send.json` 시퀀스 |
 | POST | `/stop`, `/home` | 정지 / 홈 복귀 |
 | POST | `/loco/move`, `/loco/stop` | 보행 리모컨 |
 | GET | `/api/joint_states` | 실시간 관절 SSE 스트림 |
@@ -777,7 +779,7 @@ B10 : 방향 (0=Idle, 1=Forward, 2=Reverse, 3=Reset)
 2. 브라우저에서 `http://localhost:8000/` 접속.
 3. 슬라이더로 자세를 잡고 타임라인에 키프레임 기록, `duration` 지정.
 4. **Save** 버튼 → §5 의 JSON 다운로드.
-5. `high/motions/` 폴더에 복사.
+5. `robots/g1/motions/` 폴더에 복사.
 6. `start_motion.sh` 재시작 (혹은 `GET /motions` 로 확인) 후 웹 UI 에서 실행하거나:
    ```bash
    curl -X POST http://localhost:50003/motions/run/my_motion.json
