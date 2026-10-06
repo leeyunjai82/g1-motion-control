@@ -44,7 +44,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
 
-PORT = 50010                       # detect_box 와 같은 포트 (robot_server 가 이 주소로 재검출)
+# SIM_CAMERA=real (start_sim.sh real-cam): 카메라·인식은 실물 (rs_stream + detect_box:50010), 로봇만 가상.
+#   이 서버는 가상 박스/가짜 detect_box 를 끄고 조작 화면만 50012 에서 제공한다.
+REAL_CAM = os.environ.get("SIM_CAMERA", "").strip() == "real"
+PORT = 50012 if REAL_CAM else 50010   # 가상 카메라일 때는 detect_box 자리(50010)를 대신한다
+DETECT = "http://localhost:50010"
 ROBOT_SERVER = "http://localhost:50000"
 ARM_SERVER = "http://localhost:50022"
 IMG_W, IMG_H = 640, 480
@@ -172,7 +176,6 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 
 # ---------- detect_box 호환 ----------
-@app.get("/pose")
 def pose():
     v = box_view()
     if not v["visible"]:
@@ -182,7 +185,6 @@ def pose():
             "top_center": v["cam"]["C"].tolist(), "box_h": float(v["box"]["H"]), "method": "sim"}
 
 
-@app.get("/status")
 def status():
     v = box_view()
     out = {"found": v["visible"], "frames": 10 if v["visible"] else 0, "n": 10 if v["visible"] else 0,
@@ -194,12 +196,10 @@ def status():
     return out
 
 
-@app.get("/set_auto_mode")
 def set_auto_mode(enabled: bool = False):
     return {"ok": True, "enabled": False, "note": "시뮬: 자동 잡기 없음 — 시뮬 화면의 [잡기] 사용"}
 
 
-@app.post("/reset_window")
 def reset_window():
     return {"ok": True}
 
@@ -223,7 +223,6 @@ def render_frame():
     return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
 
 
-@app.get("/video_feed")
 def video_feed():
     def gen():
         while True:
@@ -232,17 +231,45 @@ def video_feed():
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
+if not REAL_CAM:   # 가짜 detect_box (가상 카메라)
+    app.get("/pose")(pose)
+    app.get("/status")(status)
+    app.get("/set_auto_mode")(set_auto_mode)
+    app.post("/reset_window")(reset_window)
+    app.get("/video_feed")(video_feed)
+
+
+def current_pose():
+    """잡기에 쓸 인식값 — 실물 카메라면 detect_box /pose, 아니면 가상 박스."""
+    if REAL_CAM:
+        try:
+            return http_json(f"{DETECT}/pose", timeout=1.0)
+        except Exception as e:
+            return {"found": False, "error": f"detect_box 응답 없음: {e}"}
+    return pose()
+
+
 # ---------- 시뮬 조작 ----------
 @app.get("/sim/state")
 def sim_state():
-    v = box_view()
     with lock:
         q = state["q"].copy()
         age = time.time() - state["t"]
     hl, hr = hands_ik_frame(q)
+    if REAL_CAM:
+        v = {"box": None, "visible": False, "torso_C": np.zeros(3), "waist_deg": np.degrees(q[WAIST]).tolist()}
+        d = current_pose()
+        if d.get("found") and d.get("top_center"):
+            v["visible"] = True
+            v["torso_C"] = camera_to_torso(d["top_center"])
+            v["box"] = {"H": float(d.get("box_h") or 0.065)}
+        else:
+            v["box"] = {"H": 0.065}
+    else:
+        v = box_view()
     mid_z = float(v["torso_C"][2] + PELVIS_TO_TORSO[2] - v["box"]["H"] / 2)   # 박스 옆면 중간 높이 (IK 좌표)
     top_z = float(v["torso_C"][2] + PELVIS_TO_TORSO[2])
-    out = {"robot": robot_env.ROBOT, "lowstate_age_s": round(age, 2), "box": v["box"], "visible": v["visible"],
+    out = {"robot": robot_env.ROBOT, "real_cam": REAL_CAM, "lowstate_age_s": round(age, 2), "box": v["box"], "visible": v["visible"],
            "waist_deg": [round(a, 1) for a in v["waist_deg"]],
            "box_torso": [round(float(a), 3) for a in v["torso_C"]],
            # 박스를 IK(손) 좌표로 — 손 높이와 비교 (torso + pelvis_to_torso, 허리 0 축소모델 기준)
@@ -285,9 +312,9 @@ def sim_box(body: dict):
 @app.post("/sim/grab")
 def sim_grab():
     """robot_server 를 box 모드로 두고 현재 인식값으로 /grab_at (detect_box 자동 잡기와 같은 요청)."""
-    p = pose()
+    p = current_pose()
     if not p.get("found"):
-        return JSONResponse({"ok": False, "reason": "카메라 시야 밖 — 박스 위치/장착값 확인"})
+        return JSONResponse({"ok": False, "reason": p.get("error") or "박스 인식 없음 — 카메라 시야/박스 위치 확인"})
     try:
         http_json(f"{ROBOT_SERVER}/set_mode?mode=box", data={}, timeout=3.0)
         time.sleep(2.5)    # set_mode box 의 대기 자세 이동
@@ -326,7 +353,9 @@ def sim_home():
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return HTML.replace("__ROBOT__", robot_env.ROBOT.upper())
+    return (HTML.replace("__ROBOT__", robot_env.ROBOT.upper()).replace("__REALCAM__", "1" if REAL_CAM else "0")
+            .replace("__CAMTITLE__", "실물 D435i — detect_box :50010 (YOLO)" if REAL_CAM
+                     else "가상 D435i 화면 (detect_box 대체 /video_feed)"))
 
 
 HTML = r"""<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
@@ -346,9 +375,9 @@ table{width:100%;border-collapse:collapse}td{padding:3px 4px;border-bottom:1px s
 .ok{color:var(--ok)}.bad{color:var(--bad)}img{width:100%;border-radius:6px;background:#000}
 iframe{width:100%;height:560px;border:0;border-radius:6px;background:#000}
 </style></head><body>
-<div class="top"><b>__ROBOT__ 시뮬레이터</b><span class="warn">ROBOT_SIM=1 · DDS 도메인 1 (실기와 분리) · 물리/접촉 없음</span></div>
+<div class="top"><b>__ROBOT__ 시뮬레이터</b><span class="warn">ROBOT_SIM=1 · DDS 도메인 1 (실기와 분리) · 물리/접촉 없음 · 로봇 가상</span></div>
 <div class="wrap"><div>
- <div class="card"><h3>가상 박스 (pelvis 기준, m)</h3>
+ <div class="card" id="boxcard"><h3>가상 박스 (pelvis 기준, m)</h3>
   <label>앞 x<input type="range" id="x" min="0.15" max="0.80" step="0.01"><span id="vx"></span></label>
   <label>좌우 y (왼 +)<input type="range" id="y" min="-0.50" max="0.50" step="0.01"><span id="vy"></span></label>
   <label>윗면 높이 top<input type="range" id="top" min="-0.30" max="0.50" step="0.01"><span id="vtop"></span></label>
@@ -367,11 +396,14 @@ iframe{width:100%;height:560px;border:0;border-radius:6px;background:#000}
  </div>
  <div class="card"><h3>상태</h3><table id="st"></table></div>
 </div><div>
- <div class="card"><h3>가상 D435i 화면 (detect_box 대체 /video_feed)</h3><img src="/video_feed"></div>
+ <div class="card"><h3>__CAMTITLE__</h3><img id="cam"></div>
  <div class="card"><h3>3D (dashboard :50003)</h3><iframe id="dash"></iframe></div>
 </div></div>
 <script>
 const host=location.hostname;document.getElementById('dash').src=`http://${host}:50003/dashboard`;
+const REALCAM=__REALCAM__;
+document.getElementById('cam').src=REALCAM?`http://${host}:50010/video_feed`:'/video_feed';
+if(REALCAM)document.getElementById('boxcard').style.display='none';
 const K=['x','y','top','W','D','H'];let inited=false,tmr=null;
 function send(){const b={};K.forEach(k=>b[k]=+document.getElementById(k).value);
   fetch('/sim/box',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});}
@@ -382,13 +414,13 @@ async function post(u){const r=await fetch(u,{method:'POST'});const d=await r.js
   document.getElementById('msg').textContent=u+' → '+JSON.stringify(d);}
 const row=(k,v,c)=>`<tr><td>${k}</td><td class="${c||''}">${v}</td></tr>`;
 async function poll(){try{const d=await(await fetch('/sim/state')).json();
-  if(!inited){K.forEach(k=>{const el=document.getElementById(k);el.value=d.box[k];
+  if(!inited&&!d.real_cam){K.forEach(k=>{const el=document.getElementById(k);el.value=d.box[k];
     document.getElementById('v'+k).textContent=(+d.box[k]).toFixed(2);});inited=true;}
   const g=d.grab||{},e=d.hand_err_cm;let h='';
   h+=row('로봇',d.robot+(d.lowstate_age_s<0.5?'':' (lowstate 끊김)'),d.lowstate_age_s<0.5?'ok':'bad');
   h+=row('arm_server',d.arm?`${d.arm.mode} · weight ${(+d.arm.weight).toFixed(2)}`:(d.arm_err||'-'),d.arm?'':'bad');
   h+=row('잡기 단계',g.busy?`${g.stage_idx+1}/${(g.stages||[]).length} ${g.stage}`:(g.mode?`대기 (mode ${g.mode})`:'-'));
-  h+=row('카메라 시야',d.visible?'보임':'안 보임',d.visible?'ok':'bad');
+  h+=row(d.real_cam?'박스 인식 (detect_box)':'카메라 시야',d.visible?(d.real_cam?'인식됨':'보임'):(d.real_cam?'없음':'안 보임'),d.visible?'ok':'bad');
   h+=row('박스 (torso 기준)',d.box_torso.join(', '));
   h+=row('허리 yaw/roll/pitch°',d.waist_deg.join(' / '));
   h+=row('손 목표 오차 L/R',e?`${e[0]} / ${e[1]} cm`:'-',e?(Math.max(...e)>2?'bad':'ok'):'');

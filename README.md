@@ -85,9 +85,12 @@ export ROBOT=g1             # 모든 스크립트가 이 값을 요구합니다
 ## 시뮬레이터 (로봇 없이 시험)
 
 ```bash
-ROBOT=h2 ./start_sim.sh     # 또는 ROBOT=g1
-#   → 시뮬 화면 : http://<pc-ip>:50010/   (가상 박스 배치 · 잡기→건네기 · 상태 · 가상 카메라 · 3D)
+ROBOT=h2 ./start_sim.sh            # 가상 카메라 + 가상 박스  → http://<pc-ip>:50010/
+ROBOT=h2 ./start_sim.sh real-cam   # 실물 D435i + 실제 박스 인식(YOLO), 로봇만 가상 → http://<pc-ip>:50012/
 ```
+
+- `real-cam`: rs_stream + detect_box 를 실물로 띄우고, 인식 결과로 가상 로봇이 잡기 시퀀스를 돈다.
+  인식 좌표 → 로봇 좌표 변환은 robot.yaml `camera` 장착값을 쓰므로, 카메라를 그 높이·각도로 들고(고정해) 시험해야 거리가 맞는다.
 
 - `sim/fake_robot.py` 가 로봇 역할: `rt/arm_sdk` 를 받아 관절을 움직이고 `rt/lowstate` 를 낸다 (기구학만, 물리·균형 없음).
 - `sim/sim_server.py` 가 detect_box(50010) 자리를 대신: 가상 박스를 robot.yaml `camera` 장착값으로 카메라 좌표로 바꿔
