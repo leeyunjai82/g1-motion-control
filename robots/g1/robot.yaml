@@ -104,6 +104,8 @@ camera:
   y: 0.03003
   z: 0.42987
   pitch_deg: 47.6             # = 0.8307767239493009 rad (CAMERA_PITCH_URDF 와 비트 단위 동일)
+  # 컬러 640×480 내부 파라미터 [fx, fy, ppx, ppy] — .red detect_box.py / detect_marker.py 고정값 그대로 (G1 D435)
+  intrinsics: [606.756104, 606.583374, 316.739441, 258.982391]
 
 grab:
   z_offset: 0.08              # robot_server.py GRAB_Z_OFFSET (G1 실험값)

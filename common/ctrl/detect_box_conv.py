@@ -61,8 +61,7 @@ DEPTH_URL     = os.environ.get("RS_DEPTH_URL", "http://localhost:50001/depth_raw
 ROBOT_SERVER  = os.environ.get("ROBOT_SERVER", "http://localhost:50000")
 
 # 카메라 K (ik_box 검증값 — detect_box 와 동일)
-CAM_FX, CAM_FY = 606.756104, 606.583374
-CAM_PPX, CAM_PPY = 316.739441, 258.982391
+CAM_FX, CAM_FY, CAM_PPX, CAM_PPY = robot_env.CAMERA_K   # robot.yaml camera.intrinsics (카메라마다 다름)
 camera_K = np.array([[CAM_FX,0,CAM_PPX],[0,CAM_FY,CAM_PPY],[0,0,1]], dtype=np.float32)
 
 # 카메라 tilt 고정 (G1, 47.6도)

@@ -55,6 +55,7 @@ def main():
     pipe = rs.pipeline()
     cfg = rs.config()
     cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+    cfg.enable_stream(rs.stream.accel)          # D435i IMU — 같은 순간의 숙임각 (cam_tilt.py 와 같은 계산)
     prof = pipe.start(cfg)
     intr = prof.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
     K = np.array([[intr.fx, 0, intr.ppx], [0, intr.fy, intr.ppy], [0, 0, 1]], dtype=np.float64)
@@ -71,11 +72,16 @@ def main():
 
     try:
         while True:
-            ts, ns = [], []
+            ts, ns, acc = [], [], []
             t_end = time.time() + (1.0 if a.watch else a.sec)
             mid = None
             while time.time() < t_end:
-                f = pipe.wait_for_frames(1000).get_color_frame()
+                fs = pipe.wait_for_frames(1000)
+                af = fs.first_or_default(rs.stream.accel)
+                if af:
+                    d_ = af.as_motion_frame().get_motion_data()
+                    acc.append((d_.x, d_.y, d_.z))
+                f = fs.get_color_frame()
                 if not f:
                     continue
                 img = np.asanyarray(f.get_data())
@@ -112,12 +118,22 @@ def main():
             # 2) 마커 면(수평 가정)으로 추정한 카메라 숙임각 / 좌우 기울기
             pitch_est = math.degrees(math.atan2(-n[2], -n[1]))
             roll_est = math.degrees(math.asin(max(-1.0, min(1.0, n[0]))))
+            # 1') 같은 순간 D435i IMU 숙임각 (중력 기준) 으로 계산한 렌즈 기준 좌표
+            imu_line = "    IMU: 가속도 없음"
+            if acc:
+                g = np.mean(np.array(acc), axis=0)
+                ip = math.asin(min(1.0, abs(g[2]) / float(np.linalg.norm(g))))
+                f2 = t[2] * math.cos(ip) - t[1] * math.sin(ip)
+                d2 = t[2] * math.sin(ip) + t[1] * math.cos(ip)
+                imu_line = (f"    1') IMU 숙임각 {math.degrees(ip):.1f}° 로 계산: 앞 {f2:.3f}  아래 {d2:.3f} m "
+                            f"→ torso x {f2 + CX:.3f} z {CZ - d2:+.3f}")
             # 3) torso / IK(pelvis) 좌표
             tor = camera_to_torso(t)
             ik = tor + P2T
 
             print(f"  ID {mid}  n={len(ts)}  거리 {np.linalg.norm(t):.3f} m")
             print(f"    1) 렌즈 기준 (pitch {math.degrees(CP):.1f}° 사용): 앞 {fwd:.3f}  좌 {left:+.3f}  아래 {down:.3f} m")
+            print(imu_line)
             print(f"    2) 마커 면으로 본 카메라 숙임각 {pitch_est:.1f}° (yaml {math.degrees(CP):.1f}°), 좌우 기울기 {roll_est:+.1f}°")
             print(f"    3) torso  x {tor[0]:.3f} y {tor[1]:+.3f} z {tor[2]:+.3f}   |   IK(pelvis) x {ik[0]:.3f} y {ik[1]:+.3f} z {ik[2]:+.3f}")
             if not a.watch:

@@ -136,6 +136,9 @@ camera:
   y: 0.0
   z: 0.377
   pitch_deg: 39.1
+  # 컬러 640×480 내부 파라미터 [fx, fy, ppx, ppy] — 실측 2026-10-07 H2 장착 D435i (S/N 261822072488),
+  #   cam_marker_check.py 가 장치에서 읽은 값 (소수 1자리 출력). G1 고정값과 ppx +16.4 px, ppy −14.2 px 다름
+  intrinsics: [606.2, 606.2, 333.1, 244.8]
   placeholder: true           # 마커 시험으로 x/z 확인 후 false 로
 
 grab:

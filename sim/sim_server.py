@@ -54,10 +54,8 @@ ARM_SERVER = "http://localhost:50022"
 IMG_W, IMG_H = 640, 480
 INSET = 0.02                       # L/R = 윗면 좌우 변 중점에서 안쪽 2 cm (box_estimator 와 동일)
 
-# ---- 카메라 내부 파라미터: detect_box.py 의 값을 그대로 읽는다 (같은 D435i) ----
-_src = open(os.path.join(ROOT, "common", "ctrl", "detect_box.py"), encoding="utf-8").read()
-_m = re.search(r"CAM_FX, CAM_FY = ([\d.]+), ([\d.]+)\s+CAM_PPX, CAM_PPY = ([\d.]+), ([\d.]+)", _src)
-FX, FY, PPX, PPY = (float(v) for v in _m.groups())
+# ---- 카메라 내부 파라미터: detect_box 와 같은 값 (robot.yaml camera.intrinsics) ----
+FX, FY, PPX, PPY = robot_env.CAMERA_K
 
 # ---- 로봇 모델 ----
 J = robot_env.JOINTS

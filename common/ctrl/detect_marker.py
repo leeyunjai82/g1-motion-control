@@ -38,8 +38,7 @@ PORT          = 50011
 RS_STREAM_URL = os.environ.get("RS_STREAM_URL", "http://localhost:50001/video_feed")
 ROBOT_SERVER  = os.environ.get("ROBOT_SERVER", "http://localhost:50000")
 
-CAM_FX, CAM_FY = 606.756104, 606.583374
-CAM_PPX, CAM_PPY = 316.739441, 258.982391
+CAM_FX, CAM_FY, CAM_PPX, CAM_PPY = robot_env.CAMERA_K   # robot.yaml camera.intrinsics (카메라마다 다름)
 CAM_DIST = [0.0, 0.0, 0.0, 0.0, 0.0]
 
 ARUCO_DICT_TYPE = cv2.aruco.DICT_4X4_50
