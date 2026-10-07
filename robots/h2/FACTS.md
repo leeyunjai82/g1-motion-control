@@ -64,7 +64,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | 팔 추종 | `arm_sdk_test --enable` 슬롯 15 +5° 명령 → +2.7° (kp 80 / kd 3, robot.yaml gains 의 kp_low). xr_teleoperate H2 는 팔 kp 140 / kd 3, 손목 50 / 2 | 실기 2026-10-07 |
 | **팔 슬롯 15–28 매핑 ✓** | 15 L ShoulderPitch, 16 Roll, 17 Yaw, 18 Elbow, 19 WristRoll, 20 WristPitch, 21 WristYaw / 22–28 오른쪽 같은 순서 — `robot.yaml joints.map` 그대로 맞음. 23(오른 roll) +8° 는 몸통 쪽이라 3.1° 에서 막힘, −8° 는 −5.4° | 실기 2026-10-07 `arm_sdk_test.py --enable --slot N --deg 8`, 사용자 육안 확인 |
 | FSM 703 (PhaseWalk) | `start_fsm.sh 703` (4 → 703) Result 0, `GetFsmId` (0, 703). 다리는 601 과 같은 밸런싱 서기 (걷지 않음, 사용자 확인). EnableArmSDK 후 팔 15 +8° → +6.8° ✓ (게인 140/3). **허리 12/13/14 +5° → 0.0° (안 움직임)** | 실기 2026-10-07 |
-| 허리 결론 | FSM 4·703 모두 arm_sdk 로 허리 안 움직임 → H2 는 이 방식으로 허리 제어 불가, `waist_locked: true` 유지 | 실기 2026-10-07 |
+| 허리 결론 | FSM 4·703 모두 arm_sdk 로 허리 안 움직임 → H2 는 이 방식으로 허리 제어 불가, `waist_locked: true` 유지. SDK H2 예제도 허리 없음 (794fb2b 팔 14 → e6cd8af 팔 14 + 머리 2), G1 예제는 허리 포함. 예제 구성(`arm_sdk_test.py --enable --style sdk --slot 14/12 --deg 5`) 재확인은 보류. **디버그 모드(rt/lowcmd)는 사용 안 함** (사용자 결정 2026-10-07) | 실기 2026-10-07 |
 | 기본 팔 자세 (FSM 703) | [8.2, 18.2, -12.1, 73.7, 0.8, 0.9, 0.1, 8.1, -18.2, 12.4, 73.4, -0.3, 1.2, -0.5] | 실측 2026-10-07 → `robot.yaml default_arm_deg` (601 값 대체) |
 | 온도·전압 추이 | 어깨 pitch 15/22: 52 (부팅) → 53 (601) → 59 → **61/60 °C** (703 진입 직후). 허리 55–56 °C. 전압 74.0 → 71.0–71.5 V | 실측 2026-10-07. 한계값 자료 없음 (확인 필요) |
 | D435i 숙임각 | 39.1° (IMU, 중력 기준), 좌우 +2.2°. 로봇 IMU pitch −0.3° / roll +0.2° (703) → `camera.pitch_deg 39.1` | 실측 2026-10-07 `utils/cam_tilt.py` |
