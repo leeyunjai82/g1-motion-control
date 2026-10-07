@@ -14,11 +14,12 @@ ik_cache: h2_model_cache.pkl  # 첫 실행 시 URDF 에서 생성
 
 sdk:
   loco_module: unitree_sdk2py.h2.loco.h2_loco_client
-  # tv 환경 SDK(requirements 고정 f559291, G1)에는 unitree_sdk2py.h2 가 없다.
-  # → h2-motion-control.red requirements.txt 의 커밋(실기 동작)을 third_party/ 에 따로 받아 H2 에서만 쓴다.
+  # tv 환경 SDK(requirements 고정 f559291, G1)에는 unitree_sdk2py.h2 가 없다 → third_party/ 에 따로 받아 H2 에서만 쓴다.
   #   activate_tv.sh 가 처음 한 번 자동으로 받고, common/robot_env.py 가 sys.path 앞에 넣는다. (cyclonedds 0.10.2 동일)
+  # 814556d (master): h2-motion-control.red 의 65691c8 대비 unitree_sdk2py 변경은 h2_loco_client.py 의
+  #   EnableArmSDK / DisableArmSDK 가 결과 코드를 반환하는 것뿐 (65691c8 은 None → 공식 예제가 실패로 판단, 2026-10-07)
   repo: https://github.com/unitreerobotics/unitree_sdk2_python.git
-  commit: 65691c8a8bc53b98d3976dba4dbf9d5d20b2e7f5
+  commit: 814556d15970dd2ecf1c9984e845ca02ab07e206
 
 identity:
   mode_machine: 1             # 실측 2026-10-07 utils/check_robot_id.py (부팅 직후, 20회 모두 1) — 다르면 arm_sdk/FSM 거부
