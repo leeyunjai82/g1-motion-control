@@ -8,6 +8,7 @@ cam_marker_check.py — ArUco 마커로 카메라 장착값(robot.yaml camera) �
   ROBOT=h2 source activate_tv.sh
   ROBOT=h2 python utils/cam_marker_check.py              # 3초 중앙값, 1회
   ROBOT=h2 python utils/cam_marker_check.py --watch      # 계속 출력
+  ROBOT=h2 python utils/cam_marker_check.py --points 0.35,0.45   # 2점 보정: 같은 테이블 면, 몸통 중심에서 앞 거리 [m]
 
   마커를 '수평인 테이블 위'에 평평하게 놓고 실행하면 세 가지를 출력한다.
    1) 렌즈 기준 수평 좌표 — 줄자로 바로 비교할 값
@@ -17,6 +18,10 @@ cam_marker_check.py — ArUco 마커로 카메라 장착값(robot.yaml camera) �
       robot.yaml pitch_deg 를 써서 계산 → 줄자와 다르면 pitch 또는 거리 오차
    2) 마커 면으로 추정한 카메라 숙임각 / 좌우 기울기 (테이블이 수평일 때) — robot.yaml pitch_deg 와 비교
    3) torso_link / IK(pelvis) 좌표 — 잡기에서 실제로 쓰는 값 (robot_server camera_to_torso 와 같은 식)
+
+  --points: 같은 테이블 면에서 몸통 중심(torso_link x 0)으로부터 앞 거리를 아는 위치 2곳 이상에 차례로 마커를 놓고 측정
+    → '모든 점의 높이가 같다' 조건으로 숙임각, '앞 거리가 맞다' 조건으로 camera.x 를 계산 (테이블 높이는 몰라도 됨)
+    → 같은 순간 IMU 숙임각을 썼을 때의 결과도 함께 출력
 """
 import argparse
 import math
@@ -50,13 +55,21 @@ def main():
     ap.add_argument("--id", type=int, default=None, help="이 ID 만 사용 (기본: 처음 보이는 것)")
     ap.add_argument("--sec", type=float, default=3.0)
     ap.add_argument("--watch", action="store_true")
+    ap.add_argument("--points", default=None, help="2점 보정: 몸통 중심에서 마커까지 앞 거리 목록 [m], 예: 0.35,0.45")
     a = ap.parse_args()
 
     pipe = rs.pipeline()
     cfg = rs.config()
     cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
     cfg.enable_stream(rs.stream.accel)          # D435i IMU — 같은 순간의 숙임각 (cam_tilt.py 와 같은 계산)
-    prof = pipe.start(cfg)
+    try:
+        prof = pipe.start(cfg)
+    except RuntimeError as e:
+        # IMU(HID/iio) 권한 없음 등 — 컬러만으로 계속 (IMU 줄은 생략). 해결: sudo 실행 또는 RealSense udev 규칙
+        print(f"[marker] ⚠️ IMU 스트림 열기 실패 → 컬러만 사용 ({e})")
+        cfg = rs.config()
+        cfg.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+        prof = pipe.start(cfg)
     intr = prof.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
     K = np.array([[intr.fx, 0, intr.ppx], [0, intr.fy, intr.ppy], [0, 0, 1]], dtype=np.float64)
     dist = np.array(intr.coeffs[:5], dtype=np.float64)
@@ -69,6 +82,87 @@ def main():
                                   cv2.aruco.DetectorParameters())
     h = a.size / 2
     obj = np.array([[-h, h, 0], [h, h, 0], [h, -h, 0], [-h, -h, 0]], dtype=np.float64)
+
+    def measure(sec):
+        """sec 동안 마커 tvec·법선 중앙값 + IMU 숙임각 평균 → (t, n, imu_pitch_rad|None, id, 개수)."""
+        ts, ns, acc = [], [], []
+        t_end = time.time() + sec
+        mid = None
+        while time.time() < t_end:
+            fs = pipe.wait_for_frames(1000)
+            af = fs.first_or_default(rs.stream.accel)
+            if af:
+                d_ = af.as_motion_frame().get_motion_data()
+                acc.append((d_.x, d_.y, d_.z))
+            f = fs.get_color_frame()
+            if not f:
+                continue
+            corners, ids, _ = det.detectMarkers(cv2.cvtColor(np.asanyarray(f.get_data()), cv2.COLOR_BGR2GRAY))
+            if ids is None:
+                continue
+            for c, i in zip(corners, ids.flatten()):
+                if a.id is not None and i != a.id:
+                    continue
+                ok, rvec, tvec = cv2.solvePnP(obj, c.reshape(4, 2).astype(np.float64), K, dist,
+                                              flags=cv2.SOLVEPNP_IPPE_SQUARE)
+                if ok:
+                    ts.append(tvec.ravel())
+                    ns.append(cv2.Rodrigues(rvec)[0][:, 2])
+                    mid = int(i)
+                break
+        if not ts:
+            return None
+        t = np.median(np.array(ts), axis=0)
+        n = np.median(np.array(ns), axis=0)
+        n /= np.linalg.norm(n)
+        if n[1] > 0:
+            n = -n
+        ip = None
+        if acc:
+            g = np.mean(np.array(acc), axis=0)
+            ip = math.asin(min(1.0, abs(g[2]) / float(np.linalg.norm(g))))
+        return t, n, ip, mid, len(ts)
+
+    def fwd_down(t, p):
+        return t[2] * math.cos(p) - t[1] * math.sin(p), t[2] * math.sin(p) + t[1] * math.cos(p)
+
+    if a.points:
+        xs = [float(v) for v in a.points.split(",")]
+        meas = []
+        try:
+            for i, xt in enumerate(xs):
+                input(f"\n[{i + 1}/{len(xs)}] 마커를 몸통 중심에서 앞 {xt * 100:.0f} cm (같은 테이블 면) 에 놓고 Enter ")
+                r = measure(a.sec)
+                if r is None:
+                    print("  마커 안 보임 — 중단")
+                    return
+                t, n, ip, mid, cnt = r
+                f0, d0 = fwd_down(t, CP)
+                print(f"  ID {mid} n={cnt}  yaml pitch: torso x {f0 + CX:.3f} z {CZ - d0:+.3f} y {-t[0] + CY:+.3f}"
+                      f"   IMU 숙임각 {math.degrees(ip) if ip else float('nan'):.1f}°")
+                meas.append((xt, t, ip))
+        finally:
+            pipe.stop()
+        ts_ = [m[1] for m in meas]
+        # 숙임각: 모든 점의 '아래' 가 같아지는 값 (최소제곱)
+        grid = np.radians(np.arange(10.0, 70.0, 0.05))
+        spread = [np.std([fwd_down(t, p)[1] for t in ts_]) for p in grid]
+        p_fit = float(grid[int(np.argmin(spread))])
+        print("\n== 2점 보정 결과 ==")
+        for label, p in [("높이 일치 조건으로 구한 숙임각", p_fit),
+                         ("IMU 숙임각(평균)", float(np.mean([m[2] for m in meas if m[2] is not None])) if all(m[2] for m in meas) else None),
+                         ("robot.yaml 숙임각", CP)]:
+            if p is None:
+                continue
+            fd = [fwd_down(t, p) for t in ts_]
+            cx = [xt - f for (xt, _, _), (f, _) in zip(meas, fd)]
+            downs = [d for _, d in fd]
+            print(f"  {label} {math.degrees(p):5.1f}°: camera.x 필요값 " + " / ".join(f"{v:.3f}" for v in cx) +
+                  f"  (평균 {np.mean(cx):.3f}),  렌즈→테이블 아래 " + " / ".join(f"{v:.3f}" for v in downs) +
+                  f"  (차이 {max(downs) - min(downs):.3f})")
+        print("  · 같은 숙임각에서 camera.x 필요값이 점마다 같고, 아래 차이가 1 cm 안이면 그 숙임각이 맞음")
+        print("  · camera.z 는 렌즈→테이블 아래 값 + (바닥→테이블) 과 (바닥→torso 원점) 실측이 있어야 정해짐")
+        return
 
     try:
         while True:
