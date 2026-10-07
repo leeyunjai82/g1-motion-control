@@ -59,6 +59,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | **EnableArmSDK 필요** | 호출 없이: FSM 4·601, LowCmd mode_machine 0·1, 메시지 구성(이 repo / 공식 예제) 모두 팔 0.0° (`GetArmSdkStatus` 는 True 로 나옴). 공식 예제(SDK `814556d`, `EnableArmSDK` 결과 0) 에서는 팔이 움직임 — Stage 1(0자세로) 중 팔이 부딪혀 충돌음, 1.1 s 에 Ctrl+C | 실기 2026-10-07 → `robot.yaml sdk.enable_arm_sdk: true` (robot_arm.py 송신 전 호출, arm_server 종료 시 weight 0 후 Disable) |
 | **허리 12–14 는 arm_sdk 로 안 움직임** | FSM 4 + EnableArmSDK 상태에서 팔은 움직이는데 허리 3축 모두 반응 없음 (simulator 에서 명령). SDK `814556d` 공식 예제의 `upper_body_joints` 도 팔 14 + 머리 2 뿐 (허리 없음) | 실기 2026-10-07 사용자 → `grab.waist_locked: true` (정면 건네기만) |
 | 팔 추종 | `arm_sdk_test --enable` 슬롯 15 +5° 명령 → +2.7° (kp 80 / kd 3, robot.yaml gains 의 kp_low). xr_teleoperate H2 는 팔 kp 140 / kd 3, 손목 50 / 2 | 실기 2026-10-07 |
+| **팔 슬롯 15–28 매핑 ✓** | 15 L ShoulderPitch, 16 Roll, 17 Yaw, 18 Elbow, 19 WristRoll, 20 WristPitch, 21 WristYaw / 22–28 오른쪽 같은 순서 — `robot.yaml joints.map` 그대로 맞음. 23(오른 roll) +8° 는 몸통 쪽이라 3.1° 에서 막힘, −8° 는 −5.4° | 실기 2026-10-07 `arm_sdk_test.py --enable --slot N --deg 8`, 사용자 육안 확인 |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)

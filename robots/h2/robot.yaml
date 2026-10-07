@@ -38,8 +38,9 @@ lowcmd:
 joints:
   motor_slots: 35             # unitree_hg LowState_ 고정 길이 (SDK, xr_teleoperate)
   # URDF 관절 이름 → 모터 슬롯
-  #   어깨·팔꿈치·헤드·weight : SDK / xr_teleoperate / h2-motion-control.red 일치
-  #   허리 · 손목 순서        : h2-motion-control.red simulator 실기 동작 기준 (사용자 확인 2026-10)
+  #   팔 15–28              : ✓ 실기 확인 2026-10-07 (utils/arm_sdk_test.py 슬롯별 ±8°, 14개 모두 이름대로 움직임 — 사용자 육안)
+  #   헤드·weight            : SDK / xr_teleoperate / h2-motion-control.red 일치
+  #   허리 순서               : h2-motion-control.red 기준, 미확인 (arm_sdk 로 허리가 안 움직여 실기 판정 불가 — xr 817fb00 은 12 roll/13 pitch/14 yaw)
   #   발목 4/5               : h2-motion-control.red 기준 (이번 범위에서 사용 안 함)
   map:
     left_hip_pitch_joint:        0
@@ -83,13 +84,14 @@ joints:
   wrist: [19, 20, 21, 26, 27, 28]
   weak: [4, 10, 15, 16, 17, 18, 22, 23, 24, 25]  # h2-motion-control.red 값 그대로 (G1 에서 복사된 목록 — 다리 슬롯 의미는 확인 필요)
 
-gains:                        # h2-motion-control.red robot_arm.py (실기 동작)
+gains:                        # xr_teleoperate 817fb00 H2_ArmController (팔 = kp_low/kd_low, 손목 = kp_wrist/kd_wrist)
+  # 이전 h2-motion-control.red 값 80/3 · 40/1.5 · 300/3 → 실기 2026-10-07 어깨 +8° 명령에 4.6–5.5° 만 따라옴
   kp_high: 300.0
-  kd_high: 3.0
-  kp_low: 80.0
+  kd_high: 5.0
+  kp_low: 140.0
   kd_low: 3.0
-  kp_wrist: 40.0
-  kd_wrist: 1.5
+  kp_wrist: 50.0
+  kd_wrist: 2.0
   kp_waist: 150.0
   kd_waist: 3.0
   kp_head: 30.0               # SDK arm_sdk 예제도 head kp 30 / kd 1
