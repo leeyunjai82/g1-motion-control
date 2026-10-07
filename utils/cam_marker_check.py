@@ -52,7 +52,7 @@ def camera_to_torso(c):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--size", type=float, default=0.045, help="마커 검은 사각형 한 변 [m] (기본 0.045)")
-    ap.add_argument("--id", type=int, default=None, help="이 ID 만 사용 (기본: 처음 보이는 것)")
+    ap.add_argument("--id", type=int, default=None, help="이 ID 만 사용 (기본: 화면에서 가장 큰 마커)")
     ap.add_argument("--sec", type=float, default=3.0)
     ap.add_argument("--watch", action="store_true")
     ap.add_argument("--points", default=None, help="2점 보정: 몸통 중심에서 마커까지 앞 거리 목록 [m], 예: 0.35,0.45")
@@ -83,6 +83,22 @@ def main():
     h = a.size / 2
     obj = np.array([[-h, h, 0], [h, h, 0], [h, -h, 0], [-h, -h, 0]], dtype=np.float64)
 
+    seen = set()
+
+    def pick(corners, ids):
+        """--id 가 있으면 그 ID, 없으면 화면에서 가장 큰(= 가장 가까운) 마커. 처음 보는 ID 는 알려 준다."""
+        best, best_a = (None, None), -1.0
+        for c, i in zip(corners, ids.flatten()):
+            if int(i) not in seen:
+                seen.add(int(i))
+                print(f"  (화면에 마커 ID {int(i)} 보임)")
+            if a.id is not None and i != a.id:
+                continue
+            area = cv2.contourArea(c.reshape(4, 2).astype(np.float32))
+            if area > best_a:
+                best, best_a = (c, i), area
+        return best
+
     def measure(sec):
         """sec 동안 마커 tvec·법선 중앙값 + IMU 숙임각 평균 → (t, n, imu_pitch_rad|None, id, 개수)."""
         ts, ns, acc = [], [], []
@@ -100,16 +116,15 @@ def main():
             corners, ids, _ = det.detectMarkers(cv2.cvtColor(np.asanyarray(f.get_data()), cv2.COLOR_BGR2GRAY))
             if ids is None:
                 continue
-            for c, i in zip(corners, ids.flatten()):
-                if a.id is not None and i != a.id:
-                    continue
-                ok, rvec, tvec = cv2.solvePnP(obj, c.reshape(4, 2).astype(np.float64), K, dist,
-                                              flags=cv2.SOLVEPNP_IPPE_SQUARE)
-                if ok:
-                    ts.append(tvec.ravel())
-                    ns.append(cv2.Rodrigues(rvec)[0][:, 2])
-                    mid = int(i)
-                break
+            c, i = pick(corners, ids)
+            if c is None:
+                continue
+            ok, rvec, tvec = cv2.solvePnP(obj, c.reshape(4, 2).astype(np.float64), K, dist,
+                                          flags=cv2.SOLVEPNP_IPPE_SQUARE)
+            if ok:
+                ts.append(tvec.ravel())
+                ns.append(cv2.Rodrigues(rvec)[0][:, 2])
+                mid = int(i)
         if not ts:
             return None
         t = np.median(np.array(ts), axis=0)
@@ -182,9 +197,8 @@ def main():
                 corners, ids, _ = det.detectMarkers(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
                 if ids is None:
                     continue
-                for c, i in zip(corners, ids.flatten()):
-                    if a.id is not None and i != a.id:
-                        continue
+                c, i = pick(corners, ids)
+                if c is not None:
                     ok, rvec, tvec = cv2.solvePnP(obj, c.reshape(4, 2).astype(np.float64), K, dist,
                                                   flags=cv2.SOLVEPNP_IPPE_SQUARE)
                     if ok:
@@ -192,7 +206,6 @@ def main():
                         ts.append(tvec.ravel())
                         ns.append(R[:, 2])
                         mid = int(i)
-                    break
             if not ts:
                 print("  마커 안 보임")
                 if not a.watch:
