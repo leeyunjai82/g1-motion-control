@@ -80,7 +80,7 @@ DDS_DOMAIN = 1 if SIM else 0
 # 실기 모터 번호 확인 모드 (ROBOT_CHECK=1, start_simulator.sh real) — enabled: false 로봇을 실기에서
 # '확인 목적으로만' 띄운다. 허용 프로세스: arm_server / simulator / dashboard 뿐 (잡기·보행 서버는 거부).
 CHECK = os.environ.get("ROBOT_CHECK", "").strip() == "1"
-CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py"}
+CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py", "init_fsm.py"}   # init_fsm: start_fsm.sh (기립/앉기)
 
 ROBOT = os.environ.get("ROBOT", "").strip().lower()
 if not ROBOT:
@@ -91,6 +91,21 @@ try:
     CFG = load_config(ROBOT)
 except Exception as e:  # noqa: BLE001 — 어떤 오류든 실행 거부
     _fail(f"ROBOT='{ROBOT}' 설정 오류 — 실행 거부: {e}")
+# 로봇별 unitree_sdk2py (robot.yaml sdk.commit — H2). activate_tv.sh(ensure_robot_sdk) 가 third_party/ 에 받아 둔다.
+#   sys.path 앞에 넣어 tv 환경 SDK(G1 고정 커밋)보다 먼저 쓰게 한다. sudo 실행(init_fsm)에서도 같은 경로.
+SDK_DIR = None
+_sdk_commit = (CFG.get("sdk") or {}).get("commit")
+if _sdk_commit:
+    SDK_DIR = os.path.join(REPO_ROOT, "third_party", f"unitree_sdk2_python-{str(_sdk_commit)[:7]}")
+    if not os.path.isfile(os.path.join(SDK_DIR, "unitree_sdk2py", "__init__.py")):
+        _fail(f"ROBOT='{ROBOT}' 용 unitree_sdk2py {str(_sdk_commit)[:7]} 없음: {SDK_DIR} — "
+              f"'ROBOT={ROBOT} source activate_tv.sh' 를 한 번 실행하면 자동으로 받습니다")
+    _loaded = sys.modules.get("unitree_sdk2py")
+    if _loaded is not None and not os.path.abspath(_loaded.__file__).startswith(SDK_DIR + os.sep):
+        _fail(f"unitree_sdk2py 가 robot_env 보다 먼저 import 됨 ({_loaded.__file__}) — "
+              f"ROBOT='{ROBOT}' 는 {SDK_DIR} 를 써야 함 (import 순서 확인)")
+    if SDK_DIR not in sys.path:
+        sys.path.insert(0, SDK_DIR)
 if CHECK and os.path.basename(sys.argv[0]) not in CHECK_ALLOWED:
     _fail(f"ROBOT_CHECK=1 (모터 번호 확인 모드) 에서는 {sorted(CHECK_ALLOWED)} 만 실행 — "
           f"{os.path.basename(sys.argv[0])} 거부")

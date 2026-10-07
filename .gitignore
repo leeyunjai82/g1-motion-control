@@ -95,3 +95,6 @@ secrets.json
 
 # 시뮬(가상) 모터 번호 확인 결과 — 실기 결과(joint_check_*.json)는 커밋
 robots/*/joint_check_*_sim.json
+
+# 로봇별 unitree_sdk2py (robot.yaml sdk.commit — activate_tv.sh 가 자동으로 받음)
+third_party/

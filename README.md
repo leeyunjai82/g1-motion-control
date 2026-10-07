@@ -73,7 +73,10 @@ export ROBOT=g1             # 모든 스크립트가 이 값을 요구합니다
 
 ### 모터 번호 확인 (`http://<pc-ip>:8000/check`)
 
-1. 로봇을 매달거나 지지하고 주변을 비운다. E-STOP 을 손에 둔다.
+1. 로봇을 거치대에 걸고 주변을 비운다. E-STOP 을 손에 둔다.
+   - H2: `ROBOT_CHECK=1 ROBOT=h2 ./start_fsm.sh stand` (1 → 5초 → 4 → 10초 → 601, h2-motion-control.red 와 같은 순서, `yes` 확인).
+     H2 용 SDK(robot.yaml `sdk.commit` 65691c8)는 처음 실행 때 `third_party/` 에 자동으로 받는다 (tv 환경 SDK 는 그대로).
+     로봇 상태(rt/lowstate)가 안 들어오면 FSM 명령을 보내지 않는다.
 2. `ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real` (H2) — 상단에 `mode_machine` 이 표시된다 (robot.yaml `identity` 기준값).
 3. **팔·허리** (명령 이동): [기준 잡기] → 슬롯의 [+]/[−] (한 번 5°, 기준 대비 최대 ±15°, 서버에서 제한).
    실제 로봇에서 움직인 관절과 오른쪽 3D(robot.yaml 이름으로 그림)에서 움직인 관절이 같으면 ✓, 다르면 ✗ + 실제 관절을 메모.
@@ -82,6 +85,7 @@ export ROBOT=g1             # 모든 스크립트가 이 값을 요구합니다
    실물에서 양손이 누른 방향으로 곧게 가고 손목이 비틀리지 않으면 정상. 화면의 오차(목표 vs 실제 관절각 FK)·손 자세 변화도 기록.
    (FK 는 같은 관절 맵으로 계산하므로 맵 오류는 눈으로 판단)
 6. [결과 저장] → `robots/<robot>/joint_check_<날짜시각>.json` → 이 결과로 robot.yaml 관절 맵을 최종 조정.
+7. [제어권 반납] → simulator Ctrl+C → H2 는 거치대에 건 채로 `ROBOT_CHECK=1 ROBOT=h2 ./start_fsm.sh damp` (sit 안 씀).
 
 가상 모드에서 같은 화면으로 절차를 미리 연습할 수 있다 (가상은 robot.yaml 대로 움직이므로 항상 ✓).
 

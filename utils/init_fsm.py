@@ -3,13 +3,19 @@ import sys
 import time
 
 # 로봇 선택 — start_fsm.sh 가 sudo 뒤에서 두 번째 인자로 넘긴다 (sudo 가 환경변수를 지우므로).
-#   python init_fsm.py <stand|sit|bal|damp|no-bal> <robot>
+#   python init_fsm.py <stand|sit|bal|damp|no-bal> <robot> [check]
+#   check : 모터 번호 확인 모드 (ROBOT_CHECK=1) — enabled: false 로봇(H2) 기립/앉기용. start_fsm.sh 가 확인 후 넘긴다.
 # FSM ID 는 robots/<robot>/robot.yaml fsm (G1: damp 1 / lock 4 / run 501 / sit 3).
 if len(sys.argv) < 3 or sys.argv[1] not in ("stand", "sit", "bal", "damp", "no-bal"):
-    print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal] <robot>")
+    print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal] <robot> [check]")
     sys.exit(1)
 
 os.environ["ROBOT"] = sys.argv[2]
+if len(sys.argv) > 3:
+    if sys.argv[3] != "check":
+        print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal] <robot> [check]")
+        sys.exit(1)
+    os.environ["ROBOT_CHECK"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "common"))
 import robot_env   # ROBOT 미지정 / robot.yaml 없음 / enabled: false 면 여기서 종료
 
@@ -38,6 +44,9 @@ while _msg is None and time.time() < _t_end:
     _msg = _sub.Read(0.5)
 if _msg is None:
     print("[init_fsm] ⚠️ rt/lowstate 수신 없음 — 로봇 확인 불가")
+    if robot_env.CHECK:
+        print("[init_fsm] ❌ 모터 번호 확인 모드: 로봇 상태 수신 없이 FSM 명령하지 않음 (네트워크 192.168.123.x / 전원 확인)")
+        sys.exit(3)
     if (robot_env.CFG.get("identity") or {}).get("mode_machine") is not None:
         print("[init_fsm] ❌ identity.mode_machine 이 설정된 로봇은 확인 없이 명령하지 않음")
         sys.exit(3)

@@ -8,13 +8,17 @@
 # ============================================================
 name: h2
 enabled: false
-disabled_reason: "H2 확인 필요 항목 미완료 (FACTS.md) — mode_machine, D435i 실장착 위치, 기본 팔 자세, SDK 업그레이드"
+disabled_reason: "H2 확인 필요 항목 미완료 (FACTS.md) — mode_machine, 관절 번호 실기 확인, 기본 팔 자세, D435i 실장착 위치"
 urdf: H2.urdf                 # unitree_ros 5994d4f robots/h2_description (h2-motion-control.red 와 동일)
 ik_cache: h2_model_cache.pkl  # 첫 실행 시 URDF 에서 생성
 
 sdk:
-  # unitree_sdk2_python master 에만 있음 — requirements 의 고정 커밋 f559291 에는 없음 (업그레이드 필요)
   loco_module: unitree_sdk2py.h2.loco.h2_loco_client
+  # tv 환경 SDK(requirements 고정 f559291, G1)에는 unitree_sdk2py.h2 가 없다.
+  # → h2-motion-control.red requirements.txt 의 커밋(실기 동작)을 third_party/ 에 따로 받아 H2 에서만 쓴다.
+  #   activate_tv.sh 가 처음 한 번 자동으로 받고, common/robot_env.py 가 sys.path 앞에 넣는다. (cyclonedds 0.10.2 동일)
+  repo: https://github.com/unitreerobotics/unitree_sdk2_python.git
+  commit: 65691c8a8bc53b98d3976dba4dbf9d5d20b2e7f5
 
 identity:
   mode_machine: null          # 확인 필요 — utils/check_robot_id.py 로 측정해 기입

@@ -6,3 +6,5 @@
 _ACT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_ACT_DIR/robot_env.sh" || return 1 2>/dev/null || exit 1
 source "$CONDA_BASE/bin/activate" tv || return 1 2>/dev/null || exit 1
+# ROBOT 이 정해져 있고 robot.yaml 에 sdk.commit 이 있으면(H2) 그 SDK 를 준비 (처음 한 번만 다운로드)
+ensure_robot_sdk || return 1 2>/dev/null || exit 1
