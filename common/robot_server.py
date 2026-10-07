@@ -151,6 +151,11 @@ LOCOMOTION = bool(robot_env.CFG.get("features", {}).get("locomotion", True))
 STEP_PAUSE        = 0.1   # 대칭정렬/들기/건네기 동작 사이 정지 (구 0.3/0.2/0.3)
 WAIST_SETTLE      = 0.2   # 허리 회전 후 안정 대기 (구 0.5)
 HANDOVER_HOLD_SEC = 2.0   # box: 건넨 뒤 손 벌리기까지 대기 (구 3.0)
+PLACE_HOLD_SEC    = 1.5   # place: 들어 올린 채 보여 주는 시간
+PLACE_Z_CLEAR     = 0.005 # place: 내려놓을 때 잡았던 높이보다 이만큼 위에서 놓기 (테이블 누름 방지)
+HANDOVER_MODES = ("center", "left", "right", "place")
+DEFAULT_HANDOVER = str(robot_env.CFG["grab"].get("default_handover", "center"))   # robot.yaml (H2: place)
+assert DEFAULT_HANDOVER in HANDOVER_MODES, f"robot.yaml grab.default_handover: {DEFAULT_HANDOVER}"
 
 
 # ==========================================
@@ -207,7 +212,7 @@ class GrabController:
             'right': {'roll': 0.0, 'pitch': 0.0, 'yaw':  0.0},
         }
         # handover 방향
-        self.handover_direction = "center"   # center|left|right
+        self.handover_direction = DEFAULT_HANDOVER   # center|left|right|place (place = 제자리 내려놓기)
         self.handover_yaw_deg   = 30.0
 
         # 박스 크기 (marker 모드 고정값, box 모드는 측정값 사용)
@@ -219,6 +224,7 @@ class GrabController:
         self.MSG_RECEIVED = "Nicely done!"
         self.MSG_TIMEOUT  = "No one? I will put it down."
         self.MSG_HOME      = "Bring me another box."
+        self.MSG_PLACED    = "I put it back."
 
         self.HOME_LEFT  = [0.15,  0.25, 0.20]
         self.HOME_RIGHT = [0.15, -0.25, 0.20]
@@ -326,6 +332,10 @@ class GrabController:
             return
         time.sleep(STEP_PAUSE)
 
+        if self.handover_direction == "place":
+            self._place_back(grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot)
+            return
+
         if self.handover_direction == "left":
             hy = +self.handover_yaw_deg
         elif self.handover_direction == "right":
@@ -395,6 +405,32 @@ class GrabController:
         self._reset_waist()
         self._move(self.HOME_LEFT, self.HOME_RIGHT, 2.0, "⑪ Home")
         self.speak(self.MSG_HOME)
+
+    # ---- place: 들었던 자리에 다시 내려놓기 (사람 없이 반복 시연) ----
+    def _place_back(self, grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot):
+        print(f"[PLACE] 들어 올린 채 {PLACE_HOLD_SEC:.1f}초")
+        time.sleep(PLACE_HOLD_SEC)
+        self._stage("놓기")
+        down_z = grab_z + PLACE_Z_CLEAR
+        dl = [grab_x_base, +grp_off_L + LEFT_HAND_Y_OFFSET, down_z]
+        dr = [grab_x_base, -grp_off_R, down_z]
+        if not self._move(dl, dr, 1.5, "⑨ 제자리 내려놓기", l_rot, r_rot):
+            return
+        time.sleep(0.3)
+        ol = [grab_x_base, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, down_z]
+        orr = [grab_x_base, -grp_off_R - 0.10, down_z]
+        if not self._move(ol, orr, 1.0, "⑩ 손 벌림", l_rot, r_rot):
+            return
+        ul = [grab_x_base, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, lift_z]
+        ur = [grab_x_base, -grp_off_R - 0.10, lift_z]
+        if not self._move(ul, ur, 1.0, "⑩' 손 위로 (박스에서 떨어지기)", l_rot, r_rot):
+            return
+        self.speak(self.MSG_PLACED)
+        time.sleep(0.3)
+        self._stage("복귀")
+        print("[PLACE] ⑪ 복귀")
+        self._reset_waist()
+        self._move(self.HOME_LEFT, self.HOME_RIGHT, 2.0, "⑪ Home")
 
     # ---- 대기 자세 (모드 선택 시) ----
     def ready(self):
@@ -1296,10 +1332,10 @@ async def set_wrist(l_roll: float=0, l_pitch: float=0, l_yaw: float=0,
 
 @app.get("/set_handover_direction")
 async def set_handover_direction(direction: str="center", yaw_deg: float=None):
-    if direction not in ("center", "left", "right"):
+    if direction not in HANDOVER_MODES:
         return JSONResponse({"success": False, "error": f"invalid: {direction}"})
-    if WAIST_LOCKED and direction != "center":
-        return JSONResponse({"success": False, "error": "허리 고정 로봇(robot.yaml grab.waist_locked) — center 만 가능"})
+    if WAIST_LOCKED and direction in ("left", "right"):
+        return JSONResponse({"success": False, "error": "허리 고정 로봇(robot.yaml grab.waist_locked) — center / place 만 가능"})
     grab.handover_direction = direction
     if yaw_deg is not None:
         grab.handover_yaw_deg = float(yaw_deg)
@@ -1661,7 +1697,8 @@ def _ui_inject():
         hide += ["#ho-left", "#ho-right", "#ho-yaw-wrap"]
     if not has_motions:
         hide += ["#card-motions"]
-    ui = {"robot": robot_env.ROBOT, "locomotion": LOCOMOTION, "waist_locked": WAIST_LOCKED, "motions": has_motions}
+    ui = {"robot": robot_env.ROBOT, "locomotion": LOCOMOTION, "waist_locked": WAIST_LOCKED, "motions": has_motions,
+          "handover": grab.handover_direction if grab else DEFAULT_HANDOVER}
     css = (",".join(hide) + "{display:none!important}") if hide else ""
     js = ("" if LOCOMOTION else
           "document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('arm-release-sub');"

@@ -163,6 +163,8 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .seg.two{grid-template-columns:1fr 1fr}
 .ctl .btn{padding:8px 4px;line-height:1.35;white-space:nowrap}
 .ctl .btn .sub{display:block;font-size:10px;opacity:.75}
+#ho-seg .btn{display:flex;flex-direction:column;align-items:center;justify-content:center}
+#ho-seg .btn .sub{display:block;font-size:10px;opacity:.75}
 .btn{font-family:inherit;font-size:12px;background:var(--panel2);border:1px solid var(--line);
   color:var(--ink);padding:9px;border-radius:7px;cursor:pointer;transition:.12s}
 .btn:hover{border-color:var(--accent);color:var(--accent)}
@@ -342,10 +344,11 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
         <span id="ho-yaw-wrap" style="display:flex;align-items:center;gap:5px;text-transform:none;letter-spacing:0">yaw
           <input class="in" id="ho-yaw" type="number" value="30" step="5" style="width:56px;padding:2px 5px">°</span></div>
       <div class="card-b">
-        <div class="seg">
-          <button class="btn" id="ho-left" onclick="setHandover('left')">◀ Left</button>
-          <button class="btn on" id="ho-center" onclick="setHandover('center')">■ Center</button>
-          <button class="btn" id="ho-right" onclick="setHandover('right')">Right ▶</button>
+        <div class="seg" id="ho-seg" style="display:flex">
+          <button class="btn" id="ho-left" style="flex:1" onclick="setHandover('left')">◀ Left</button>
+          <button class="btn on" id="ho-center" style="flex:1" onclick="setHandover('center')">■ Center<span class="sub">건네기</span></button>
+          <button class="btn" id="ho-right" style="flex:1" onclick="setHandover('right')">Right ▶</button>
+          <button class="btn" id="ho-place" style="flex:1" onclick="setHandover('place')">⤓ Place<span class="sub">내려놓기</span></button>
         </div>
       </div>
     </div>
@@ -516,7 +519,9 @@ function applyWrist(){const g=id=>document.getElementById(id).value||0;
   fetch('/set_wrist?'+q).then(()=>toast('Wrist applied'));}
 function setHandover(dir){const yaw=document.getElementById('ho-yaw').value||30;
   fetch(`/set_handover_direction?direction=${dir}&yaw_deg=${yaw}`).then(r=>r.json()).then(d=>{
-    ['left','center','right'].forEach(k=>document.getElementById('ho-'+k).classList.toggle('on',k===d.direction));});}
+    hoMark(d.direction);});}
+function hoMark(dir){['left','center','right','place'].forEach(k=>document.getElementById('ho-'+k).classList.toggle('on',k===dir));}
+document.addEventListener('DOMContentLoaded',()=>{if(window.UI&&window.UI.handover)hoMark(window.UI.handover);});
 
 // ---- motions ----
 async function refreshMotions(){const el=document.getElementById('mlist');
