@@ -11,6 +11,7 @@ RealSense → HTTP MJPEG 서버 (canvas viewer)
 """
 
 import threading
+import time
 import cv2
 import numpy as np
 import pyrealsense2 as rs
@@ -25,6 +26,8 @@ COLOR_W, COLOR_H, FPS = 640, 480, 30
 DEPTH_W, DEPTH_H      = 320, 240
 COLOR_Q, DEPTH_Q      = 80, 60
 DEPTH_MAX_MM          = 3000
+FAIL_RESTART          = 3      # wait_for_frames(2초) 연속 실패 횟수 → 카메라 다시 열기 (약 6초)
+STAT_EVERY_SEC        = 30     # 수신 fps 로그 주기
 
 
 class FrameBuffer:
@@ -65,6 +68,28 @@ def init_camera():
     print(f"[RS] 카메라 시작 ({COLOR_W}x{COLOR_H}@{FPS}fps)")
 
 
+def restart_camera():
+    """카메라 다시 열기 — USB 순간 끊김(전원·케이블) 후 장치가 다시 잡히면 복구. 성공할 때까지 2초 간격 재시도."""
+    global pipeline
+    try:
+        if pipeline:
+            pipeline.stop()
+    except Exception:
+        pass
+    n = 0
+    while not stop_flag.is_set():
+        n += 1
+        try:
+            init_camera()
+            print(f"[RS] ✓ 카메라 재연결 성공 (시도 {n})", flush=True)
+            return True
+        except Exception as e:
+            if n == 1 or n % 10 == 0:
+                print(f"[RS] 재연결 실패 (시도 {n}): {e} — 2초 후 재시도 (USB 연결 확인)", flush=True)
+            time.sleep(2.0)
+    return False
+
+
 def capture_loop():
     depth_lut = np.clip(
         np.arange(65536, dtype=np.float32) * (255.0 / DEPTH_MAX_MM), 0, 255
@@ -74,11 +99,26 @@ def capture_loop():
     # PNG 압축 레벨 낮게 (속도 우선)
     png_enc = [cv2.IMWRITE_PNG_COMPRESSION, 1]
 
+    fails = 0
+    n_ok, t_stat = 0, time.time()
     while not stop_flag.is_set():
         try:
             frames = pipeline.wait_for_frames(timeout_ms=2000)
-        except Exception:
+        except Exception as e:
+            fails += 1
+            print(f"[RS] ⚠️ 프레임 수신 실패 {fails}/{FAIL_RESTART}: {e}", flush=True)
+            if fails >= FAIL_RESTART:
+                print("[RS] 카메라 응답 없음 — 다시 연다", flush=True)
+                restart_camera()
+                fails = 0
             continue
+        if fails:
+            print(f"[RS] 프레임 수신 복구 (연속 실패 {fails}회 후)", flush=True)
+            fails = 0
+        n_ok += 1
+        if time.time() - t_stat >= STAT_EVERY_SEC:
+            print(f"[RS] 수신 {n_ok / (time.time() - t_stat):.1f} fps", flush=True)
+            n_ok, t_stat = 0, time.time()
         aligned = align.process(frames)
         cf = aligned.get_color_frame()
         df = aligned.get_depth_frame()
