@@ -66,6 +66,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | 온도·전압 추이 | 어깨 pitch 15/22: 52 (부팅) → 53 (601) → 59 → **61/60 °C** (703 진입 직후). 허리 55–56 °C. 전압 74.0 → 71.0–71.5 V | 실측 2026-10-07. 한계값 자료 없음 (확인 필요) |
 | D435i 숙임각 | 39.1° (IMU, 중력 기준), 좌우 +2.2°. 로봇 IMU pitch −0.3° / roll +0.2° (703) → `camera.pitch_deg 39.1` | 실측 2026-10-07 `utils/cam_tilt.py` |
 | D435i 마커 보정 | depth 기준 2점(0.45/0.55, 테이블 렌즈 아래 0.51 m): 축척 0.101/0.100, 숙임 35.2°, camera.x 0.075 (두 점 오차 0). IMU 는 같은 때 36.3° (앞서 39.1° — 로봇 자세 차이 추정). PnP(마커 크기) 거리는 이 조건에서 10 cm 이동을 5 cm 로 냄 → 사용 안 함 | 실측 2026-10-07 `utils/cam_marker_check.py` |
+| 서 있을 때 높이 (FSM 703) | 바닥→허리 관절(torso_link 원점) **1.13 m** → pelvis ≈ **1.01 m** (URDF 다리 편 자세 1.04 보다 3 cm 낮음), 바닥→D435i 렌즈 1.51 m | 실측 2026-10-07 |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)
@@ -92,7 +93,6 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | D435i 장착 위치·외부 파라미터 | **외부 D435i 를 mini PC USB 에 연결** (G1 과 같은 방식, 헤드 내장 카메라 미사용). `robot.yaml camera` 는 **임시값**(가슴 고정 가정: x 0.10, z 0.35, 아래 50°) — 실장착 후 4개 값만 수정. 목 관절이 있으므로 torso 고정 권장 |
 | H2 기본(헤드) 카메라 | 2차 자료상 140° 광각 **바이노큘러 RGB** (unitree.com 직접 확인 못 함). 깊이 출력·공장 intrinsics API 근거 없음. teleimager(`f883d6a`)는 컬러 JPEG 만 전송 (depth/intrinsics 는 RealSense 백엔드에서만 읽고 전송 안 함). 일부 판매처 상품명의 "depth camera" 는 실체 미확인 → H2 PC 에서 `lsusb` / `rs-enumerate-devices` 로 RealSense 존재 여부 확인 필요 |
 | 테이블 높이 | 아래 시퀀스 IK 가능 범위 + 실측 pelvis 높이로 결정 |
-| 서 있을 때 pelvis 높이 | H2R `GROUND_TO_PELVIS = 0.782` 는 G1 값 복사. URDF 다리 편 자세 ankle_roll_link = pelvis −0.985 m |
 | IMU | URDF 에 `imu_in_torso`, `imu_in_pelvis` 링크. `rt/lowstate.imu_state` 가 어느 쪽인지 확인 필요 |
 
 ## IK 도달 범위 (오프라인 근사, 2026-10)
