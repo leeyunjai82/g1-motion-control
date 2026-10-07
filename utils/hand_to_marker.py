@@ -148,7 +148,10 @@ def main():
     if a.above < 0.03:
         sys.exit("❌ --above 는 0.03 m 이상")
 
-    st = arm("/status", timeout=2.0)
+    try:
+        st = arm("/status", timeout=2.0)
+    except Exception as e:  # noqa: BLE001
+        sys.exit(f"❌ arm_server(50022) 응답 없음 ({e}) — 다른 터미널에서 'ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real' 먼저")
     if st.get("mode") != "hold" or float(st.get("weight", 0)) < 0.99:
         sys.exit(f"❌ arm_server 가 hold·weight 1 아님 ({st}) — /check 에서 [제어권 잡기]")
 
