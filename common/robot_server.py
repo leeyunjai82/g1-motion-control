@@ -158,6 +158,8 @@ HANDOVER_HOLD_SEC = 2.0   # box: 건넨 뒤 손 벌리기까지 대기 (구 3.0)
 # ==========================================
 GRAB_STAGES = ["허리 정렬", "재검출", "위쪽 접근", "측면 하강", "잡기",
                "들기", "건네기", "받기 대기", "놓기", "복귀"]
+if WAIST_LOCKED:   # 허리 고정 로봇(H2): 허리 정렬 단계 없음 (진행 표시에서도 뺌)
+    GRAB_STAGES = [s for s in GRAB_STAGES if s != "허리 정렬"]
 
 # IK 목표 좌표계 = pelvis 기준(허리 0 가정 축소모델). 카메라 좌표는 torso_link 기준.
 # torso_link 원점은 pelvis 에서 (-0.0039635, 0, 0.044) (URDF waist_roll_joint, 허리 0일 때).
@@ -231,6 +233,8 @@ class GrabController:
         self._last_kind = "marker"   # 마지막 잡기 종류 (handover 가림 판정용)
 
     def _stage(self, name):
+        if name not in GRAB_STAGES:      # 이 로봇에 없는 단계 (예: 허리 고정 로봇의 '허리 정렬')
+            return
         self.stage = name
         self._stage_log.append((name, time.time()))
         print(f"[STAGE] {GRAB_STAGES.index(name)+1}/{len(GRAB_STAGES)} {name}")
@@ -1646,9 +1650,29 @@ async def i18n_js():
     return FileResponse(os.path.join(current_dir, "i18n.js"), media_type="application/javascript")
 
 
+def _ui_inject():
+    """robot.yaml 기능에 맞춰 안 되는 UI 를 숨긴다 (요소는 남겨 JS 는 그대로 동작).
+    G1(locomotion true, waist_locked false, 모션 있음)은 아무것도 숨기지 않는다."""
+    has_motions = any(MOTIONS_DIR.glob("*.json"))
+    hide = []
+    if not LOCOMOTION:
+        hide += ["#card-loco", "#sec-follow", "#link-marker-wrap"]
+    if WAIST_LOCKED:
+        hide += ["#ho-left", "#ho-right", "#ho-yaw-wrap"]
+    if not has_motions:
+        hide += ["#card-motions"]
+    ui = {"robot": robot_env.ROBOT, "locomotion": LOCOMOTION, "waist_locked": WAIST_LOCKED, "motions": has_motions}
+    css = (",".join(hide) + "{display:none!important}") if hide else ""
+    js = ("" if LOCOMOTION else
+          "document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('arm-release-sub');"
+          "if(e)e.textContent='제어권 반납';});")
+    return f"<script>window.UI={json.dumps(ui, ensure_ascii=False)};{js}</script><style>{css}</style>"
+
+
 @app.get("/", include_in_schema=False)
 async def index():
-    return HTMLResponse(open(WEB_HTML_PATH, encoding="utf-8").read())
+    html = open(WEB_HTML_PATH, encoding="utf-8").read()
+    return HTMLResponse(html.replace("</head>", _ui_inject() + "</head>", 1))
 
 
 if __name__ == "__main__":

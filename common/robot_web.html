@@ -317,7 +317,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
             <span id="auto-lbl" style="color:var(--dim);white-space:nowrap">Auto Grab : OFF</span>
           </label>
           <span class="hint" style="white-space:nowrap">
-            <a id="link-marker" href="#" target="_blank" style="color:var(--accent2)" title="Marker 인식">:50011</a> ·
+            <span id="link-marker-wrap"><a id="link-marker" href="#" target="_blank" style="color:var(--accent2)" title="Marker 인식">:50011</a> ·</span>
             <a id="link-box" href="#" target="_blank" style="color:var(--accent2)" title="Box 인식">:50010</a>
           </span>
         </div>
@@ -339,7 +339,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 
     <div class="card">
       <div class="card-h">Handover
-        <span style="display:flex;align-items:center;gap:5px;text-transform:none;letter-spacing:0">yaw
+        <span id="ho-yaw-wrap" style="display:flex;align-items:center;gap:5px;text-transform:none;letter-spacing:0">yaw
           <input class="in" id="ho-yaw" type="number" value="30" step="5" style="width:56px;padding:2px 5px">°</span></div>
       <div class="card-b">
         <div class="seg">
@@ -362,10 +362,11 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
         <div class="sec">Arm 제어권</div>
         <div class="row">
           <button class="btn" id="arm-hold" onclick="armMode('hold')">✋ Hold<span class="sub">잡기/운반</span></button>
-          <button class="btn" id="arm-release" onclick="armMode('release')">🚶 Release<span class="sub">걷기</span></button>
+          <button class="btn" id="arm-release" onclick="armMode('release')">🚶 Release<span class="sub" id="arm-release-sub">걷기</span></button>
         </div>
         <div class="state" id="arm-state"><span class="big" id="arm-mode-lbl">-</span><span class="desc" id="arm-desc">상태 확인 중</span></div>
 
+        <div id="sec-follow">
         <div class="sec">마커 추종</div>
         <div class="row">
           <button class="btn" style="border-color:#2b6;color:#7fd" onclick="followStart()">🎯 추종 시작</button>
@@ -375,6 +376,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
         <div class="stats">
           <div class="stat"><div class="k">앞 거리 X</div><div class="v"><span id="fw-mx">-</span><small>m</small></div></div>
           <div class="stat"><div class="k">좌우 Y</div><div class="v"><span id="fw-my">-</span><small>m</small></div></div>
+        </div>
         </div>
       </div>
     </div>
@@ -400,7 +402,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-loco">
       <div class="card-h">Locomotion</div>
       <div class="card-b">
         <div class="spd"><span>Speed</span>
@@ -429,7 +431,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-motions">
       <div class="card-h">Motions <span style="cursor:pointer" onclick="refreshMotions()">⟳</span></div>
       <div class="card-b">
         <div class="mlist" id="mlist"><div class="hint" style="text-align:center">Loading...</div></div>
@@ -542,7 +544,7 @@ function setState(id,cls){document.getElementById(id).className='state'+(cls?' '
 
 // ---- arm_sdk 제어권 (hold/release) ----
 const ARM_TXT={hold:['HOLD','팔·허리 점유 — 잡기/운반','ok'],
-               release:['RELEASE','보행 제어기가 팔 사용 — 걷기','info']};
+               release:['RELEASE',(window.UI&&!window.UI.locomotion)?'로봇 제어기가 팔 사용 (제어권 반납)':'보행 제어기가 팔 사용 — 걷기','info']};
 let armTarget=null, armReady=null;   // 전환 목표(서버는 완료 전까지 이전 모드를 답함) / arm_server 연결
 function updateArmMode(m,switching){
   if(switching&&armTarget)m=armTarget;
@@ -563,7 +565,7 @@ async function armMode(m){
     if(!r.ok)throw new Error(d.detail||'failed');
     // 전환 중엔 목표 모드를 표시 (arm_server 는 완료 전까지 이전 모드를 답함)
     armTarget=m;updateArmMode(m,true);
-    toast(m==='hold'?'✋ Hold — 팔/허리 점유 (전환 중...)':'🚶 Release — 걷기 모드 (전환 중...)');
+    toast(m==='hold'?'✋ Hold — 팔/허리 점유 (전환 중...)':((window.UI&&!window.UI.locomotion)?'🚶 Release — 제어권 반납 (전환 중...)':'🚶 Release — 걷기 모드 (전환 중...)'));
     let n=0;
     const t=setInterval(async()=>{
       try{const s=await(await fetch('/arm_mode')).json();
@@ -593,7 +595,7 @@ const FW_TXT={idle:['대기','추종 시작을 누르세요',''],
   timeout:['시간 초과','60초 초과 — 정지','err'],
   stopped:['정지됨','수동 정지','']};
 const FW_PHASE={waypoint:'정면 경유점으로 이동',final:'마커로 접근'};
-setInterval(async()=>{try{const d=await(await fetch('/follow/status')).json();
+setInterval(async()=>{if(window.UI&&!window.UI.locomotion)return;try{const d=await(await fetch('/follow/status')).json();
   const t=FW_TXT[d.state]||[d.state,'',''];
   document.getElementById('fw-state').textContent=t[0];
   document.getElementById('fw-desc').textContent=d.state==='following'
@@ -625,7 +627,7 @@ document.querySelectorAll('.pad button[data-cmd]').forEach(b=>{const c=b.dataset
   b.addEventListener('touchstart',e=>{e.preventDefault();startLoco(c,b);},{passive:false});
   b.addEventListener('touchend',e=>{e.preventDefault();stopLoco();});});
 const km={'ArrowUp':'forward','ArrowDown':'backward','ArrowLeft':'left','ArrowRight':'right','q':'turn_left','e':'turn_right'};
-document.addEventListener('keydown',e=>{if(e.repeat)return;if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;const c=km[e.key];if(c){e.preventDefault();startLoco(c,document.querySelector(`[data-cmd="${c}"]`));}});
+document.addEventListener('keydown',e=>{if(window.UI&&!window.UI.locomotion)return;if(e.repeat)return;if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;const c=km[e.key];if(c){e.preventDefault();startLoco(c,document.querySelector(`[data-cmd="${c}"]`));}});
 document.addEventListener('keyup',e=>{if(km[e.key]){e.preventDefault();stopLoco();}});
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
