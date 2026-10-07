@@ -51,6 +51,9 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | 부팅 직후 다리 0–3, 6–9 | `mode 10`, `vol 0.00` (온도는 정상 출력). 발목 4/5/10/11·상체는 `mode 1`, 73.5–74.0 V | 실측 2026-10-07. mode 10 의미는 확인 필요 (이번 범위에서 다리 미사용) |
 | 기본 팔 자세 (FSM 601, arm_sdk 전) | 슬롯 15–28 [deg] = [6.2, 23.7, -25.8, 63.8, 0.6, 0.3, 0.1, 3.2, -19.9, 18.4, 62.6, -0.3, 0.7, 0.1] | 실측 2026-10-07 거치대, 1회 → `robot.yaml default_arm_deg`. 좌우 어깨 roll(16 +, 23 −)·yaw(17 −, 24 +) 부호가 대칭 → 15–18/22–25 배치와 일치. 손목 6개는 모두 ≈0 이라 순서 판정 불가 (jog 로 확인) |
 | 601 기립 후 다리 0–3, 6–9 | 여전히 `mode 10`, `vol 0.00` → 부팅 직후와 같음 (기립·밸런스 중에도 이 값) | 실측 2026-10-07 |
+| 실기 FSM 목록 (`GetAvailableFsmIds` 7008) | 0 Invalid, 1 Passive, 2 Protection, 3 Sit, **4 FixStand**, 5 HybridPassive, 502 HumanMimic, 503 HumanMimic2, 100 BeyondMimic, **601 HybridWalk**, 701 WalkNew, **703 PhaseWalk** (+ 100xxx/502xxx/503xxx 모션 ID 다수) | 실측 2026-10-07 `utils/robot_state.py` (code 0 응답) |
+| arm_sdk 지원 FSM | SDK master `814556d` 예제 `ARM_SDK_SUPPORTED_FSM_IDS = {4, 703}` + `EnableArmSDK()` (601 은 목록에 없음) | SDK 예제. 601 에서 jog 했을 때 팔이 안 움직였다는 사용자 보고 있음 (2026-10-07) |
+| FSM 4 상태 | `GetFsmId` (0, 4), `GetFsmMode` (0, 0), **`GetArmSdkStatus` (0, True)** — EnableArmSDK 호출 없이 True. rt/arm_sdk 240 Hz 수신, weight 1.0, 팔 명령 vs 실측 차이 ≤ 1.3° | 실측 2026-10-07 `start_fsm.sh no-bal` 후. jog 추종 여부는 확인 중 |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)
