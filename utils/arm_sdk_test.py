@@ -11,6 +11,8 @@ arm_sdk_test.py — rt/arm_sdk 로 팔 관절 하나만 조금 움직여 보고,
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --mm 0        # LowCmd.mode_machine 0 (이전 방식) 비교
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --style sdk   # 공식 SDK 예제 구성
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --allow-fsm 601  # 리모컨 운동제어 모드 등 목록 밖 FSM
+  ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --enable      # EnableArmSDK → 시험 → DisableArmSDK (공식 예제 절차)
+  안전: 시험 슬롯 외 팔·허리 슬롯이 시작 대비 8° 넘게 움직이면 즉시 weight 반납
 
   --style sdk  : unitree_sdk2_python h2_arm_sdk_dds_example.py 와 같은 구성
                  팔 14 슬롯만 q / kp 80 / kd 1.5, mode 는 건드리지 않음(0). (허리는 현재각 유지 kp 150 / kd 3 추가)
@@ -49,6 +51,7 @@ NAME = {int(v): k.replace("_joint", "") for k, v in J["map"].items()}
 ARM_SDK_FSM = {4, 703}     # SDK master 814556d h2_arm_sdk_dds_example.py ARM_SDK_SUPPORTED_FSM_IDS
 DT = 0.02                  # SDK 예제 control_dt_
 MAX_DEG = 10.0
+WATCH_DEG = 8.0            # 시험 슬롯 외 팔·허리 슬롯이 시작 대비 이만큼 움직이면 즉시 weight 반납 (예상 밖 움직임)
 
 
 def ours_gain(s):
@@ -71,6 +74,8 @@ def main():
     ap.add_argument("--style", choices=("sdk", "ours"), default="ours")
     ap.add_argument("--allow-fsm", type=int, action="append", default=[],
                     help="지원 목록 {4, 703} 밖의 FSM 도 허용 (예: 리모컨으로 들어간 운동제어 모드의 FSM ID — robot_state.py 로 확인)")
+    ap.add_argument("--enable", action="store_true",
+                    help="시작 전 EnableArmSDK(7109), 끝나면 DisableArmSDK — 공식 예제와 같은 절차 (결과 코드 0 아니면 중단)")
     ap.add_argument("--mm", default=None, help='LowCmd.mode_machine: "lowstate" 또는 숫자 (기본: robot.yaml lowcmd.mode_machine)')
     a = ap.parse_args()
     if a.slot not in ARM:
@@ -102,6 +107,12 @@ def main():
         if code != 0 or fsm not in (ARM_SDK_FSM | set(a.allow_fsm)):
             sys.exit(f"❌ FSM {fsm} — arm_sdk 지원 FSM {sorted(ARM_SDK_FSM)} 에서만 실행 "
                      f"(ROBOT_CHECK=1 ROBOT={robot_env.ROBOT} ./start_fsm.sh no-bal)")
+    loco = c if not robot_env.SIM else None
+    if a.enable and loco is not None:
+        ret = loco.EnableArmSDK()
+        print(f"[test] EnableArmSDK → {ret}  (GetArmSdkStatus = {loco.GetArmSdkStatus()})")
+        if ret != 0:
+            sys.exit("❌ EnableArmSDK 실패 — 명령하지 않음 (SDK 814556d 필요: ROBOT=h2 source activate_tv.sh)")
 
     pub = ChannelPublisher("rt/arm_sdk", hg_LowCmd)
     pub.Init()
@@ -142,6 +153,16 @@ def main():
         cmd.crc = crc.Crc(cmd)
         pub.Write(cmd)
 
+    watch = [s_ for s_ in ARM + WAIST if s_ != a.slot]
+    q_watch0 = {s_: float(q_all[s_]) for s_ in watch}
+
+    def check_watch():
+        m = st["msg"]
+        for s_ in watch:
+            d = np.degrees(float(m.motor_state[s_].q) - q_watch0[s_])
+            if abs(d) > WATCH_DEG:
+                raise RuntimeError(f"슬롯 {s_} ({NAME.get(s_, '')}) 가 시작 대비 {d:+.1f}° 움직임 — 예상 밖")
+
     try:
         for name, dur in phases:
             n = int(round(dur / DT))
@@ -160,18 +181,22 @@ def main():
                     weight = 1.0 - r
                 send(weight, q_slot)
                 time.sleep(DT)
+                check_watch()
             meas = float(st["msg"].motor_state[a.slot].q)
             if name == "유지":
                 held = meas
             print(f"  {name:10s} 끝: 명령 {np.degrees(q_slot):+6.1f}°  실측 {np.degrees(meas):+6.1f}°  weight {weight:.2f}")
-    except KeyboardInterrupt:
-        print("\n[test] 중단 — weight 를 0 으로 내림")
+    except (KeyboardInterrupt, RuntimeError) as e:
+        print(f"\n[test] 중단 ({e or 'Ctrl+C'}) — weight 를 0 으로 내림")
         for i in range(25):
             weight = max(0.0, weight - 0.04)
             send(weight, float(cmd.motor_cmd[a.slot].q))
             time.sleep(DT)
         send(0.0, float(cmd.motor_cmd[a.slot].q))
         return
+    finally:
+        if a.enable and loco is not None:
+            print(f"[test] DisableArmSDK → {loco.DisableArmSDK()}")
 
     moved = np.degrees(held - q0)
     verdict = "✓ 따라옴" if abs(moved) >= abs(a.deg) * 0.5 and np.sign(moved) == np.sign(a.deg) else "✗ 안 따라옴"
