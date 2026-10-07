@@ -153,7 +153,7 @@ grab:
 fsm:                          # unitree_sdk2py h2_loco_client.py + h2-motion-control.red init_fsm.py (실기)
   # 실기 GetAvailableFsmIds(7008) 이름: 4 FixStand, 601 HybridWalk, 703 PhaseWalk (2026-10-07)
   # arm_sdk 지원 = {4, 703} (SDK 814556d 예제). 601 은 실기에서 팔 안 움직임
-  names: {0: "Zero Torque", 1: "Damp", 2: "Squat", 3: "Sit", 4: "FixStand", 601: "HybridWalk", 703: "PhaseWalk"}
+  names: {0: "Zero Torque", 1: "Damp", 2: "Squat", 3: "Sit", 4: "FixStand", 601: "HybridWalk", 701: "WalkNew", 703: "PhaseWalk"}
   balance: [601, 703]         # 703: 실기에서 601 과 같은 밸런싱 서기 (다리 걷지 않음, 사용자 확인 2026-10-07)
   standing: [4, 601, 703]
   damp: 1
