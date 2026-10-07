@@ -140,6 +140,8 @@ GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_
 GRAB_X_OFFSET  = float(robot_env.CFG["grab"].get("grab_x_offset", -0.15))
 # ↑ 좁혀 잡을 때 손 x 를 박스 중심에서 이만큼 옮김 (robot.yaml grab.grab_x_offset). G1 −0.15 (실험값, 몸쪽으로 당김).
 #   H2 는 카메라를 마커로 보정했으므로 0 (박스 옆면 가운데를 그대로 잡음).
+PULL_X = float(robot_env.CFG["grab"].get("pull_x", 0.0))
+# ↑ 좁혀 잡은 '뒤' 그 높이 그대로 x 로 끌어당김 [m] (− = 몸쪽). robot.yaml grab.pull_x. G1 0 (기존 동작 그대로)
 HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
 LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽, G1 0.0)
 WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # 기본 상체 각도 (0=중립, G1 -3.0)
@@ -410,9 +412,9 @@ class GrabController:
 
     # ---- place: 들었던 자리에 다시 내려놓기 (사람 없이 반복 시연) ----
     def _place_back(self, grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot):
-        # 잡기에서 박스를 몸쪽으로 GRAB_X_OFFSET 만큼 당겼으므로, 원래 자리(박스 중심 x)로 다시 밀어 놓는다
+        # 잡기에서 박스를 몸쪽으로 (GRAB_X_OFFSET + PULL_X) 만큼 당겼으므로, 원래 자리(박스 중심 x)로 다시 밀어 놓는다
         #   → 다음 회에도 같은 자리에서 인식·잡기 (반복 시연). 들어 올린 높이에서 앞으로 → 내려놓기
-        px = grab_x_base - GRAB_X_OFFSET
+        px = grab_x_base - GRAB_X_OFFSET - PULL_X
         print(f"[PLACE] 들어 올린 채 {PLACE_HOLD_SEC:.1f}초")
         time.sleep(PLACE_HOLD_SEC)
         self._stage("놓기")
@@ -605,8 +607,15 @@ class GrabController:
         if not self._move(gripL, gripR, 2.5, "⑥ 잡기", l_rot, r_rot): return
         time.sleep(1.0)
 
+        # 끌어당기기 — 잡은 뒤 테이블 위에서 몸쪽으로 (팔이 덜 뻗은 자세에서 들기 위해)
+        if PULL_X != 0.0:
+            pullL = [gripL[0] + PULL_X, gripL[1], grab_z]
+            pullR = [gripR[0] + PULL_X, gripR[1], grab_z]
+            if not self._move(pullL, pullR, 1.5, "⑥'' 끌어당기기", l_rot, r_rot): return
+            time.sleep(0.2)
+
         # 대칭 정렬용 파라미터: 잡은 뒤 양손을 평행/대칭으로 정리
-        grab_x_base = cx + GRAB_X_OFFSET
+        grab_x_base = cx + GRAB_X_OFFSET + PULL_X
         grp_off_L = abs(Ly - cy)
         grp_off_R = abs(Ry - cy)
         self._finish_sequence(grab_x_base, grp_off_L, grp_off_R,
