@@ -122,9 +122,13 @@ stream_started = False
 
 estimator = None
 
+# 자동 잡기 영역 기본값 (torso_link 기준 박스 윗면 중심) — robot.yaml grab.auto_zone (G1 x 0.30–0.45)
+_Z = robot_env.CFG["grab"].get("auto_zone") or {}
 auto_mode = {"enabled": False,
-             "x_min":0.30,"x_max":0.45,"y_min":-0.20,"y_max":0.20,
-             "z_min":-0.15,"z_max":0.25,"dwell_sec":1.5}
+             "x_min": float(_Z.get("x", [0.30, 0.45])[0]), "x_max": float(_Z.get("x", [0.30, 0.45])[1]),
+             "y_min": float(_Z.get("y", [-0.20, 0.20])[0]), "y_max": float(_Z.get("y", [-0.20, 0.20])[1]),
+             "z_min": float(_Z.get("z", [-0.15, 0.25])[0]), "z_max": float(_Z.get("z", [-0.15, 0.25])[1]),
+             "dwell_sec": float(_Z.get("dwell", 1.5))}
 auto_state = {"in_zone_since": None}
 
 # 인식 성능/결과 (표시용 — 제어에 쓰지 않음)
@@ -578,7 +582,11 @@ async def set_auto_mode(enabled: bool=None,
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return HTML_PAGE
+    a = auto_mode
+    return (HTML_PAGE.replace("__AX_MIN__", f"{a['x_min']:.2f}").replace("__AX_MAX__", f"{a['x_max']:.2f}")
+            .replace("__AY_MIN__", f"{a['y_min']:.2f}").replace("__AY_MAX__", f"{a['y_max']:.2f}")
+            .replace("__AZ_MIN__", f"{a['z_min']:.2f}").replace("__AZ_MAX__", f"{a['z_max']:.2f}")
+            .replace("__DWELL__", f"{a['dwell_sec']:.1f}"))
 
 
 HTML_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -615,10 +623,10 @@ button{background:#FF9800;border:none;color:#000;padding:8px;border-radius:5px;c
       <div class="card-title">자동 모드</div>
       <label><input type="checkbox" id="auto" onchange="toggleAuto()" style="width:auto"> 자동 잡기</label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:8px;font-size:11px;color:#888">
-        <div>X min<input id="ax-min" value="0.30"></div><div>X max<input id="ax-max" value="0.45"></div>
-        <div>Y min<input id="ay-min" value="-0.20"></div><div>Y max<input id="ay-max" value="0.20"></div>
-        <div>Z min<input id="az-min" value="-0.15"></div><div>Z max<input id="az-max" value="0.25"></div>
-        <div>dwell<input id="dwell" value="1.5"></div>
+        <div>X min<input id="ax-min" value="__AX_MIN__"></div><div>X max<input id="ax-max" value="__AX_MAX__"></div>
+        <div>Y min<input id="ay-min" value="__AY_MIN__"></div><div>Y max<input id="ay-max" value="__AY_MAX__"></div>
+        <div>Z min<input id="az-min" value="__AZ_MIN__"></div><div>Z max<input id="az-max" value="__AZ_MAX__"></div>
+        <div>dwell<input id="dwell" value="__DWELL__"></div>
       </div>
       <button onclick="applyZone()">영역 적용</button>
       <button onclick="fetch('/reset_window',{method:'POST'})" style="background:#666;color:#fff">버퍼 비우기</button>

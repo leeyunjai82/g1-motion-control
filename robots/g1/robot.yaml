@@ -112,6 +112,8 @@ grab:
   waist_base_pitch_deg: -3.0  # robot_server.py WAIST_BASE_PITCH (잡기 중 기본 상체 각도)
   waist_locked: false         # 박스 쪽 yaw 정렬 / 좌우 건네기 yaw 사용
   handover_x: 0.30            # robot_server.py HANDOVER_X — 건네기 때 손 x (IK 좌표, m)
+  # 자동 잡기 영역 (detect_box auto_mode 기본값, torso_link 기준 박스 윗면 중심 [m]) — .red 값 그대로
+  auto_zone: {x: [0.30, 0.45], y: [-0.20, 0.20], z: [-0.15, 0.25], dwell: 1.5}
 
 # FSM (run_launcher.py FSM_NAME / FSM_BAL / STANDING / STEPS, init_fsm.py)
 fsm:

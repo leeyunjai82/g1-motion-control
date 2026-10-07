@@ -147,6 +147,9 @@ grab:
   waist_base_pitch_deg: 0.0   # 허리 pitch/roll 0 — 앞으로 숙이지 않음 (넘어짐 방지)
   waist_locked: true          # 실기 2026-10-07: FSM 4 + EnableArmSDK 에서 rt/arm_sdk 로 허리 3축 모두 안 움직임
                               # (SDK 공식 예제도 팔+머리만 명령) → yaw 정렬·좌우 건네기 없음, 정면 건네기만
+  # 자동 잡기 영역 (detect_box, torso_link 기준 박스 윗면 중심 [m]) — 사용자 지정 2026-10-07: 팔이 길어 x 0.35–0.60
+  #   y·z 는 G1 값 그대로. 참고: 오프라인 IK 근사로는 x 0.50 넘으면 들기·건네기가 경계 (FACTS.md 시퀀스 표) — 실기로 확인
+  auto_zone: {x: [0.35, 0.60], y: [-0.20, 0.20], z: [-0.15, 0.25], dwell: 1.5}
   default_handover: place     # 기본 = 들었던 자리에 내려놓기 (사람 없이 반복 시연). 사람이 앞에 있을 때 페이지에서 Center(건네기)
   handover_x: 0.45            # 건네기 때 손 x (IK 좌표). 들기 높이 pelvis+0.35 에서 x 0.50 까지 IK 가능 (오프라인 계산)
                               # → 잡는 위치(박스 x 0.45 − 0.15 = 0.30)보다 15 cm 앞으로 내민다. G1 값 0.30 이면 앞으로 안 나감
