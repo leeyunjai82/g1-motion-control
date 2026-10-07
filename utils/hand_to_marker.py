@@ -42,7 +42,8 @@ MOVE_SEC = 3.0
 X_RANGE = (0.25, 0.60)
 Y_MAX = 0.35
 Z_RANGE = (0.05, 0.60)
-MAX_STEP = 0.30            # 손 위치에서 목표까지 한 번에 최대 [m]
+MAX_STEP = 0.30            # 손 위치에서 목표까지 한 번에 최대 [m] (준비 자세가 아닐 때)
+MAX_STEP_READY = 0.40      # 준비 자세(알려진 안전 자세)에서 목표까지 최대 [m]
 READY_L = np.array([0.30, 0.20, 0.20])   # 준비 자세 (IK 좌표) — 양손 앞으로, 손바닥 마주보기(단위 회전, 잡기와 같음)
 READY_R = np.array([0.30, -0.20, 0.20])
 READY_MAX = 0.50           # 지금 손에서 준비 자세까지 최대 [m]
@@ -171,7 +172,8 @@ def main():
     cur = pr0 if hand == "right" else pl0
     step = float(np.linalg.norm(tgt - cur))
     used_ready = False
-    if step > MAX_STEP:
+    at_ready = (np.linalg.norm(pl0 - READY_L) < 0.03 and np.linalg.norm(pr0 - READY_R) < 0.03)
+    if step > MAX_STEP and not (at_ready and step <= MAX_STEP_READY):
         dl, dr = float(np.linalg.norm(READY_L - pl0)), float(np.linalg.norm(READY_R - pr0))
         print(f"[hand] 목표가 지금 손에서 {step * 100:.0f} cm — 먼저 준비 자세로: L {READY_L.tolist()} R {READY_R.tolist()}"
               f" (이동 L {dl * 100:.0f} / R {dr * 100:.0f} cm, 4 초, 손바닥 마주보기)")
@@ -194,8 +196,9 @@ def main():
         bad.append(f"|y| {abs(tgt[1]):.3f} > {Y_MAX}")
     if not (Z_RANGE[0] <= tgt[2] <= Z_RANGE[1]):
         bad.append(f"z {tgt[2]:.3f} 범위 {Z_RANGE} 밖 (테이블이 너무 낮거나 높음)")
-    if step > MAX_STEP:
-        bad.append(f"이동 {step * 100:.0f} cm > {MAX_STEP * 100:.0f} cm (팔을 먼저 앞으로)")
+    lim = MAX_STEP_READY if (used_ready or at_ready) else MAX_STEP
+    if step > lim:
+        bad.append(f"이동 {step * 100:.0f} cm > {lim * 100:.0f} cm (마커를 더 가까이)")
     if bad:
         sys.exit("❌ 이동 안 함: " + "; ".join(bad))
 
