@@ -12,6 +12,13 @@ joint_check.py — 모터 번호 확인 화면 (simulator.py 에 붙는 라우�
 
 결과는 [저장] → robots/<ROBOT>/joint_check_<날짜시각>.json (슬롯·이름·판정·메모·mode_machine)
 
+IK 확인 (모터 번호 확인 다음 단계)
+  [IK 기준 잡기] 의 손 위치·자세에서 양손을 위/아래·앞/뒤·좌/우·벌림/좁힘 으로 3 cm 씩 (기준 대비 최대 10 cm).
+  손목 자세는 기준 자세 유지. arm_server /hands (IK) 로 움직인다.
+  · 화면: 목표 / 실제 관절각 FK 손 위치 / 오차(cm) / 손 자세 변화(°)
+  · 실물에서 볼 것: 지시한 방향으로 곧게 움직이는가, 손목이 비틀리지 않는가 (관절 맵이 틀리면 엉뚱한 방향·회전)
+    FK 오차는 같은 관절 맵으로 계산하므로 맵 오류는 못 잡는다 — 맵 오류는 눈으로 확인.
+
 명령은 모두 arm_server(:50022) 경유 — rt/arm_sdk 단독 점유 원칙 그대로.
 """
 import json
@@ -46,6 +53,12 @@ _ls_lock = threading.Lock()
 _sub_started = False
 _base = {"q": None, "arm_t": None, "waist_t": None}
 _offset = {}             # slot -> deg (명령 이동 누적)
+
+IK_STEP_M = 0.03         # IK 버튼 한 번 이동량
+IK_MAX_M = 0.10          # 기준 대비 최대 이동 (축마다, 서버에서 제한)
+IK_MOVE_SEC = 1.5
+_ik = {"model": None, "data": None, "fl": None, "fr": None, "q_slot": None,
+       "base": None, "off": {"x": 0.0, "y": 0.0, "z": 0.0, "spread": 0.0}, "last": None}
 
 
 def _arm(path, body=None, timeout=10.0):
@@ -85,6 +98,109 @@ def _capture_base():
     p = _arm("/pose")
     _base.update(q=q, arm_t=list(p["arm_target_deg"]), waist_t=list(p["waist_target_deg"]))
     _offset.clear()
+
+
+def _ik_model():
+    """robot_arm_ik.py 와 같은 축소 모델 (robot.yaml ik) — 손 위치(FK) 계산용."""
+    if _ik["model"] is None:
+        import pinocchio as pin
+        full = pin.buildModelFromUrdf(robot_env.URDF_PATH)
+        lock = [full.getJointId(n) for n in robot_env.CFG["ik"]["lock_joints"] if full.existJointName(n)]
+        m = pin.buildReducedModel(full, lock, np.zeros(full.nq))
+        off = np.array(robot_env.CFG["ik"]["ee_offset"], dtype=float)
+        for nm, jn in zip(("L_ee", "R_ee"), robot_env.CFG["ik"]["ee_joints"]):
+            m.addFrame(pin.Frame(nm, m.getJointId(jn), pin.SE3(np.eye(3), off), pin.FrameType.OP_FRAME))
+        # 축소 모델 q 순서 → arm_server /pose arm_rad(팔 14, ARM 순서) 인덱스
+        q_idx = [ARM.index(int(J["map"][m.names[j]])) for j in range(1, m.njoints)]
+        _ik.update(model=m, data=m.createData(), fl=m.getFrameId("L_ee"), fr=m.getFrameId("R_ee"), q_slot=q_idx)
+    return _ik
+
+
+def _hands_now():
+    """측정 팔 관절각 → 손끝(L_ee/R_ee) 위치·자세 (IK 좌표)."""
+    import pinocchio as pin
+    k = _ik_model()
+    arm = np.asarray(_arm("/pose")["arm_rad"], dtype=float)
+    q = arm[k["q_slot"]]
+    pin.framesForwardKinematics(k["model"], k["data"], q)
+    L, Rm = k["data"].oMf[k["fl"]], k["data"].oMf[k["fr"]]
+    return L.translation.copy(), L.rotation.copy(), Rm.translation.copy(), Rm.rotation.copy()
+
+
+def _quat_wxyz(Rm):
+    import pinocchio as pin
+    qq = pin.Quaternion(Rm)
+    return [float(qq.w), float(qq.x), float(qq.y), float(qq.z)]
+
+
+def _ik_report():
+    if _ik["base"] is None:
+        return None
+    import pinocchio as pin
+    pl, rl, pr, rr = _hands_now()
+    b = _ik["base"]
+    tl, tr = _ik_targets()
+    ang = lambda R0, R1: float(np.degrees(np.linalg.norm(pin.log3(R0.T @ R1))))
+    return {"off_cm": {k: round(v * 100, 1) for k, v in _ik["off"].items()},
+            "target_L": np.round(tl, 3).tolist(), "target_R": np.round(tr, 3).tolist(),
+            "actual_L": np.round(pl, 3).tolist(), "actual_R": np.round(pr, 3).tolist(),
+            "err_cm": [round(float(np.linalg.norm(pl - tl)) * 100, 1), round(float(np.linalg.norm(pr - tr)) * 100, 1)],
+            "rot_deg": [round(ang(b["rl"], rl), 1), round(ang(b["rr"], rr), 1)]}
+
+
+def _ik_targets():
+    b, o = _ik["base"], _ik["off"]
+    d = np.array([o["x"], o["y"], o["z"]])
+    return b["pl"] + d + np.array([0, o["spread"], 0]), b["pr"] + d - np.array([0, o["spread"], 0])
+
+
+@router.post("/check/ik_base")
+def check_ik_base():
+    pl, rl, pr, rr = _hands_now()
+    _ik["base"] = {"pl": pl, "rl": rl, "pr": pr, "rr": rr}
+    _ik["off"] = {"x": 0.0, "y": 0.0, "z": 0.0, "spread": 0.0}
+    return {"ok": True, "L": np.round(pl, 3).tolist(), "R": np.round(pr, 3).tolist()}
+
+
+@router.post("/check/ik_jog")
+def check_ik_jog(axis: str, delta: float):
+    if axis not in ("x", "y", "z", "spread"):
+        raise HTTPException(400, "axis 는 x / y / z / spread")
+    if abs(delta) > IK_STEP_M + 1e-9:
+        raise HTTPException(400, f"한 번에 ±{IK_STEP_M * 100:.0f} cm 까지")
+    if _ik["base"] is None:
+        check_ik_base()
+    st = _arm("/status", timeout=1.0)
+    if st.get("mode") != "hold" or float(st.get("weight", 0)) < 0.99:
+        raise HTTPException(409, "arm_server 가 hold(weight 1) 아님 — [제어권 잡기] 먼저")
+    _ik["off"][axis] = float(np.clip(_ik["off"][axis] + delta, -IK_MAX_M, IK_MAX_M))
+    tl, tr = _ik_targets()
+    b = _ik["base"]
+    _arm("/hands", {"left_xyz": tl.tolist(), "right_xyz": tr.tolist(),
+                    "left_quat": _quat_wxyz(b["rl"]), "right_quat": _quat_wxyz(b["rr"]),
+                    "duration": IK_MOVE_SEC}, timeout=IK_MOVE_SEC + 15)
+    time.sleep(0.3)
+    return {"ok": True, **(_ik_report() or {})}
+
+
+@router.post("/check/ik_reset")
+def check_ik_reset():
+    """IK 기준 위치·자세로 복귀."""
+    if _ik["base"] is None:
+        return {"ok": True}
+    _ik["off"] = {"x": 0.0, "y": 0.0, "z": 0.0, "spread": 0.0}
+    b = _ik["base"]
+    _arm("/hands", {"left_xyz": b["pl"].tolist(), "right_xyz": b["pr"].tolist(),
+                    "left_quat": _quat_wxyz(b["rl"]), "right_quat": _quat_wxyz(b["rr"]), "duration": 2.0}, timeout=20)
+    return {"ok": True}
+
+
+@router.get("/check/ik_state")
+def check_ik_state():
+    try:
+        return {"ok": True, "report": _ik_report()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @router.get("/check", response_class=HTMLResponse)
@@ -169,6 +285,7 @@ def check_hold():
 def check_release():
     _offset.clear()
     _base.update(arm_t=None, waist_t=None)
+    _ik["base"] = None
     return _arm("/release", {"duration": 2.0}, timeout=20)
 
 
@@ -221,6 +338,17 @@ iframe{width:100%;height:640px;border:0;border-radius:6px;background:#000}.note{
   · <b>명령 이동</b> (팔·허리): 한 번에 __STEP__°, 기준 대비 최대 ±__MAX__°. 실제 로봇에서 움직인 관절과 오른쪽 3D 에서 움직인 관절(robot.yaml 이름)이 같으면 ✓.<br>
   · 실기 모드는 로봇을 매달거나 지지한 상태에서, 주변을 비우고 사용하세요.</p>
  <div id="msg" class="note"></div>
+ <div style="border:1px solid #2a313b;border-radius:6px;padding:8px;margin:8px 0">
+  <b>IK 확인</b> <span class="note">(모터 번호 확인 다음 단계 — 3 cm 씩, 기준 대비 최대 10 cm, 손목 자세 유지)</span><br>
+  <button onclick="api('/check/ik_base')">IK 기준 잡기</button>
+  <button onclick="ik('z',1)">위 ↑</button><button onclick="ik('z',-1)">아래 ↓</button>
+  <button onclick="ik('x',1)">앞 →</button><button onclick="ik('x',-1)">뒤 ←</button>
+  <button onclick="ik('y',1)">왼쪽</button><button onclick="ik('y',-1)">오른쪽</button>
+  <button onclick="ik('spread',1)">벌림</button><button onclick="ik('spread',-1)">좁힘</button>
+  <button onclick="api('/check/ik_reset')">IK 원위치</button>
+  <div class="note" id="ikr">기준 없음</div>
+  <div class="note">실물: 누른 방향으로 <b>양손이 곧게</b> 움직이고 <b>손목이 비틀리지 않으면</b> 정상. 오차·자세 변화가 커도 표시됨 (오차 = 목표 vs 실제 관절각 FK).</div>
+ </div>
  <table><thead><tr><th>슬롯</th><th>robot.yaml 이름</th><th class="num">각도°</th><th class="num">Δ°</th><th>명령</th><th>판정</th><th>메모</th></tr></thead>
  <tbody id="tb"></tbody></table>
 </div><div class="card"><iframe id="dash"></iframe></div></div>
@@ -232,6 +360,14 @@ const res={};let built=false;
 async function api(u){try{const r=await fetch(u,{method:'POST'});const d=await r.json();
   document.getElementById('msg').textContent=u+' → '+(r.ok?'OK':JSON.stringify(d.detail||d));}catch(e){document.getElementById('msg').textContent=u+' 실패 '+e;}}
 async function jog(s,d){await api(`/check/jog?slot=${s}&delta=${d}`);}
+async function ik(a,sgn){await api(`/check/ik_jog?axis=${a}&delta=${(sgn*0.03).toFixed(2)}`);}
+async function ikpoll(){try{const d=await(await fetch('/check/ik_state')).json();const r=d.report;const el=document.getElementById('ikr');
+  if(!r){el.textContent=d.ok?'기준 없음 — [IK 기준 잡기]':('IK 상태 오류: '+d.error);return;}
+  el.innerHTML=`이동(cm) x ${r.off_cm.x} · y ${r.off_cm.y} · z ${r.off_cm.z} · 벌림 ${r.off_cm.spread}<br>`+
+   `목표 L ${r.target_L.join(', ')} / R ${r.target_R.join(', ')}<br>실제 L ${r.actual_L.join(', ')} / R ${r.actual_R.join(', ')}<br>`+
+   `<b style="color:${Math.max(...r.err_cm)>2?'var(--bad)':'var(--ok)'}">오차 L ${r.err_cm[0]} / R ${r.err_cm[1]} cm</b> · `+
+   `<b style="color:${Math.max(...r.rot_deg)>5?'var(--bad)':'var(--ok)'}">손 자세 변화 L ${r.rot_deg[0]}° / R ${r.rot_deg[1]}°</b>`;}catch(e){}}
+setInterval(ikpoll,700);
 function build(rows){const tb=document.getElementById('tb');tb.innerHTML='';
   rows.forEach(r=>{const tr=document.createElement('tr');tr.id='r'+r.slot;tr.className='k-'+r.kind;
     const can=(r.kind==='arm'||r.kind==='waist');
