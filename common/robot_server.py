@@ -408,21 +408,28 @@ class GrabController:
 
     # ---- place: 들었던 자리에 다시 내려놓기 (사람 없이 반복 시연) ----
     def _place_back(self, grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot):
+        # 잡기에서 박스를 몸쪽으로 GRAB_X_OFFSET 만큼 당겼으므로, 원래 자리(박스 중심 x)로 다시 밀어 놓는다
+        #   → 다음 회에도 같은 자리에서 인식·잡기 (반복 시연). 들어 올린 높이에서 앞으로 → 내려놓기
+        px = grab_x_base - GRAB_X_OFFSET
         print(f"[PLACE] 들어 올린 채 {PLACE_HOLD_SEC:.1f}초")
         time.sleep(PLACE_HOLD_SEC)
         self._stage("놓기")
+        fl = [px, +grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
+        fr = [px, -grp_off_R, lift_z]
+        if not self._move(fl, fr, 1.5, "⑨ 원래 자리 위로", l_rot, r_rot):
+            return
         down_z = grab_z + PLACE_Z_CLEAR
-        dl = [grab_x_base, +grp_off_L + LEFT_HAND_Y_OFFSET, down_z]
-        dr = [grab_x_base, -grp_off_R, down_z]
-        if not self._move(dl, dr, 1.5, "⑨ 제자리 내려놓기", l_rot, r_rot):
+        dl = [px, +grp_off_L + LEFT_HAND_Y_OFFSET, down_z]
+        dr = [px, -grp_off_R, down_z]
+        if not self._move(dl, dr, 1.5, "⑨' 제자리 내려놓기", l_rot, r_rot):
             return
         time.sleep(0.3)
-        ol = [grab_x_base, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, down_z]
-        orr = [grab_x_base, -grp_off_R - 0.10, down_z]
+        ol = [px, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, down_z]
+        orr = [px, -grp_off_R - 0.10, down_z]
         if not self._move(ol, orr, 1.0, "⑩ 손 벌림", l_rot, r_rot):
             return
-        ul = [grab_x_base, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, lift_z]
-        ur = [grab_x_base, -grp_off_R - 0.10, lift_z]
+        ul = [px, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, lift_z]
+        ur = [px, -grp_off_R - 0.10, lift_z]
         if not self._move(ul, ur, 1.0, "⑩' 손 위로 (박스에서 떨어지기)", l_rot, r_rot):
             return
         self.speak(self.MSG_PLACED)
