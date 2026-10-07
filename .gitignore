@@ -101,4 +101,5 @@ third_party/
 
 # 박스 인식 모델 — g1-motion-control.red 에서도 커밋 대상 (high/models). 위의 *.pt / *.bin 예외
 !common/models/*.pt
+!common/models/box_openvino_model/
 !common/models/box_openvino_model/*.bin
