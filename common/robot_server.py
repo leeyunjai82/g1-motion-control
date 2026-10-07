@@ -130,7 +130,7 @@ def marker_x_axis_in_torso(rvec):
 # 잡기 파라미터 (ik_box와 동일)
 # ==========================================
 GRIP_EXTRA     = -0.050
-APPROACH_EXTRA = 0.10
+APPROACH_EXTRA = float(robot_env.CFG["grab"].get("approach_extra", 0.10))   # 접근 때 박스 옆면에서 바깥으로 더 벌림 [m] (G1 0.10)
 GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_offset (G1 0.08)
 # ↑ 실험으로 맞춘 값. grab_z = 박스 윗면 - h/2 + GRAB_Z_OFFSET.
 #   아래를 함께 흡수하고 있다 (h=9cm 예: IK 목표 윗면+3.5cm → 실제 손 윗면 약 -0.9cm):
@@ -139,7 +139,7 @@ GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_
 #   좌표 변환을 pelvis 기준으로 정확히 고치면 이 값을 0.044 줄여야 같은 높이가 된다.
 GRAB_X_OFFSET  = -0.15
 HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
-LEFT_HAND_Y_OFFSET = 0.0
+LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽, G1 0.0)
 WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # 기본 상체 각도 (0=중립, G1 -3.0)
 # 허리 고정 (robot.yaml grab.waist_locked) — true 면 잡기/건네기 중 허리 yaw 를 쓰지 않는다
 #   (박스 쪽 yaw 정렬 생략, 건네기 방향은 center 만). H2: 넘어짐 방지로 허리 0.
