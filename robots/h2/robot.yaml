@@ -143,7 +143,8 @@ camera:
   placeholder: true           # y(좌우) 만 미보정 — 마커 정면 실측 후 false
 
 grab:
-  z_offset: -0.044            # 실기 2026-10-07: 0.036 → −0.014 (5 cm 높음) → −0.044 (3 cm 더). grab_z = 윗면 − H/2 + z_offset
+  z_offset: -0.064            # 실기 2026-10-07: 0.036 → −0.014 (5 cm 높음) → −0.044 (3 cm 더) → −0.064 (2 cm 더). grab_z = 윗면 − H/2 + z_offset
+                              #   grab_reach (윗면 pelvis+0.25): 목표 2 cm 내려도 실제 손은 x 0.35–0.55 에서 1.0–1.3 cm 만 내려감 (팔 도달 한계)
   waist_base_pitch_deg: 0.0   # 허리 pitch/roll 0 — 앞으로 숙이지 않음 (넘어짐 방지)
   waist_locked: true          # 실기 2026-10-07: FSM 4 + EnableArmSDK 에서 rt/arm_sdk 로 허리 3축 모두 안 움직임
                               # (SDK 공식 예제도 팔+머리만 명령) → yaw 정렬·좌우 건네기 없음, 정면 건네기만
