@@ -83,7 +83,7 @@ DDS_DOMAIN = 1 if SIM else 0
 # 실기 모터 번호 확인 모드 (ROBOT_CHECK=1, start_simulator.sh real) — enabled: false 로봇을 실기에서
 # '확인 목적으로만' 띄운다. 허용 프로세스: arm_server / simulator / dashboard 뿐 (잡기·보행 서버는 거부).
 CHECK = os.environ.get("ROBOT_CHECK", "").strip() == "1"
-CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py", "init_fsm.py", "robot_state.py", "arm_sdk_test.py", "cam_marker_check.py"}   # init_fsm: start_fsm.sh, robot_state: 읽기 전용 진단
+CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py", "init_fsm.py", "robot_state.py", "arm_sdk_test.py", "cam_marker_check.py", "hand_to_marker.py"}   # init_fsm: start_fsm.sh, robot_state: 읽기 전용 진단
 
 ROBOT = os.environ.get("ROBOT", "").strip().lower()
 if not ROBOT:
