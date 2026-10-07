@@ -10,6 +10,7 @@ arm_sdk_test.py — rt/arm_sdk 로 팔 관절 하나만 조금 움직여 보고,
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py               # 이 repo(robot_arm.py) 방식, 슬롯 15 +5°
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --mm 0        # LowCmd.mode_machine 0 (이전 방식) 비교
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --style sdk   # 공식 SDK 예제 구성
+  ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --allow-fsm 601  # 리모컨 운동제어 모드 등 목록 밖 FSM
 
   --style sdk  : unitree_sdk2_python h2_arm_sdk_dds_example.py 와 같은 구성
                  팔 14 슬롯만 q / kp 80 / kd 1.5, mode 는 건드리지 않음(0). (허리는 현재각 유지 kp 150 / kd 3 추가)
@@ -68,6 +69,8 @@ def main():
     ap.add_argument("--slot", type=int, default=ARM[0], help=f"팔 슬롯 {ARM[0]}~{ARM[-1]} (기본 {ARM[0]})")
     ap.add_argument("--deg", type=float, default=5.0, help=f"움직일 각도 (|deg| ≤ {MAX_DEG})")
     ap.add_argument("--style", choices=("sdk", "ours"), default="ours")
+    ap.add_argument("--allow-fsm", type=int, action="append", default=[],
+                    help="지원 목록 {4, 703} 밖의 FSM 도 허용 (예: 리모컨으로 들어간 운동제어 모드의 FSM ID — robot_state.py 로 확인)")
     ap.add_argument("--mm", default=None, help='LowCmd.mode_machine: "lowstate" 또는 숫자 (기본: robot.yaml lowcmd.mode_machine)')
     a = ap.parse_args()
     if a.slot not in ARM:
@@ -96,7 +99,7 @@ def main():
         c.Init()
         code, fsm = c.GetFsmId()
         print(f"[test] GetFsmId = ({code}, {fsm}),  GetArmSdkStatus = {c.GetArmSdkStatus()}")
-        if code != 0 or fsm not in ARM_SDK_FSM:
+        if code != 0 or fsm not in (ARM_SDK_FSM | set(a.allow_fsm)):
             sys.exit(f"❌ FSM {fsm} — arm_sdk 지원 FSM {sorted(ARM_SDK_FSM)} 에서만 실행 "
                      f"(ROBOT_CHECK=1 ROBOT={robot_env.ROBOT} ./start_fsm.sh no-bal)")
 
