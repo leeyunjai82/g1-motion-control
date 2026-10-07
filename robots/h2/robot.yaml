@@ -18,6 +18,10 @@ sdk:
   #   activate_tv.sh 가 처음 한 번 자동으로 받고, common/robot_env.py 가 sys.path 앞에 넣는다. (cyclonedds 0.10.2 동일)
   # 814556d (master): h2-motion-control.red 의 65691c8 대비 unitree_sdk2py 변경은 h2_loco_client.py 의
   #   EnableArmSDK / DisableArmSDK 가 결과 코드를 반환하는 것뿐 (65691c8 은 None → 공식 예제가 실패로 판단, 2026-10-07)
+  # EnableArmSDK(7109) 를 송신 시작 전에 호출, 종료 시 weight 0 후 DisableArmSDK (SDK 814556d 공식 예제 절차)
+  #   실기 2026-10-07: 호출 없이는 FSM 4/601 모두 팔이 안 움직임 (GetArmSdkStatus 는 True 로 나왔는데도).
+  #   공식 예제(EnableArmSDK 성공 후)에서는 팔이 움직임 — 0자세로 가다 충돌음.
+  enable_arm_sdk: true
   repo: https://github.com/unitreerobotics/unitree_sdk2_python.git
   commit: 814556d15970dd2ecf1c9984e845ca02ab07e206
 

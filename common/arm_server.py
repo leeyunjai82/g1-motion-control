@@ -145,6 +145,7 @@ async def lifespan(app: FastAPI):
             w = arm.arm_ctrl.get_weight()
             if w > 0.0:
                 arm.arm_ctrl.ramp_weight(0.0, 1.0)
+            arm.arm_ctrl.disable_arm_sdk()     # robot.yaml sdk.enable_arm_sdk 로봇만 (H2)
     except Exception as e:
         print(f"[arm_server] 반납 실패: {e}")
     os._exit(0)

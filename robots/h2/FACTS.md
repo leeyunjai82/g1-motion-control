@@ -42,7 +42,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | LocoClient | `unitree_sdk2py.h2.loco.h2_loco_client.LocoClient` | SDK. **현재 requirements 고정 커밋 `f559291` 에는 없음 → SDK 업그레이드 필요** |
 | FSM ID | 0 ZeroTorque, 1 Damp, 2 Squat, 3 Sit, 4 StandUp, **601 Start** | SDK `h2_loco_client.py` (`Start()` 가 500 → 601 로 바뀐 커밋 `6dec8b2`, 2026-07-02) |
 | 기립 순서 | 1 → (5초) → 4 → (10초) → 601 | H2R `utils/init_fsm.py` `stand` — 실기 사용 |
-| **FSM 601 에서 arm_sdk 동작** | 동작함, `EnableArmSDK()` 호출 없이 | H2R(실기, `start_fsm.sh stand` 후 simulator). 펌웨어 버전 확인 필요 |
+| ~~FSM 601 에서 arm_sdk 동작 (EnableArmSDK 없이)~~ | **실기 2026-10-07 재확인: 동작 안 함** (h2-motion-control.red simulator.py 그대로 실행해도 안 움직임) | 사용자 실기 |
 | FSM 조회 API | `GetFsmId` 7001, `GetAvailableFsmIds` 7008 (ID+이름), `GetArmSdkStatus` 7007 | SDK `h2_loco_api.py`. 실기 응답 여부는 확인 필요 |
 | URDF | `robots/h2/H2.urdf` = ROS `H2.urdf` (H2R 의 URDF 와 바이트 동일) | ROS, H2R |
 | 메시 | ROS `5994d4f` (H2R 대비 `head_pitch_link.stl`, `head_yaw_link.stl` 만 갱신 — 시각용) | ROS |
@@ -56,6 +56,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | FSM 4 상태 | `GetFsmId` (0, 4), `GetFsmMode` (0, 0), **`GetArmSdkStatus` (0, True)** — EnableArmSDK 호출 없이 True. rt/arm_sdk 240 Hz 수신, weight 1.0, 팔 명령 vs 실측 차이 ≤ 1.3° | 실측 2026-10-07 `start_fsm.sh no-bal` 후. jog 추종 여부는 확인 중 |
 | LowCmd 헤더 `mode_machine` | xr_teleoperate `817fb00` `H2_ArmController`: `msg.mode_pr = 0`, `msg.mode_machine = lowstate.mode_machine`. 이 repo·H2R 는 0 을 보냄 → `robot.yaml lowcmd.mode_machine: lowstate` 로 변경 (2026-10-07). 실기 효과는 `utils/arm_sdk_test.py` 로 확인 중 | XR, H2R |
 | 허리 슬롯 (충돌 추가) | xr_teleoperate `817fb00` "[fix] H2 waist's joint index": **12 WaistRoll, 13 WaistPitch, 14 WaistYaw** — 현재 yaml(12 yaw / 13 roll / 14 pitch, H2R 기준)과 다름 → `/check` jog 로 실기 판정 | XR |
+| **EnableArmSDK 필요** | 호출 없이: FSM 4·601, LowCmd mode_machine 0·1, 메시지 구성(이 repo / 공식 예제) 모두 팔 0.0° (`GetArmSdkStatus` 는 True 로 나옴). 공식 예제(SDK `814556d`, `EnableArmSDK` 결과 0) 에서는 팔이 움직임 — Stage 1(0자세로) 중 팔이 부딪혀 충돌음, 1.1 s 에 Ctrl+C | 실기 2026-10-07 → `robot.yaml sdk.enable_arm_sdk: true` (robot_arm.py 송신 전 호출, arm_server 종료 시 weight 0 후 Disable) |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)

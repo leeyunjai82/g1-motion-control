@@ -171,6 +171,18 @@ class G1_29_ArmController:
 
         logger_mp.info("관절 고정 완료.")
 
+        # arm_sdk 활성화 (robot.yaml sdk.enable_arm_sdk — H2: EnableArmSDK 7109 없이는 rt/arm_sdk 를 반영하지 않음, 실기 2026-10-07)
+        self._loco = None
+        if self.motion_mode and not self.simulation_mode and not robot_env.SIM \
+                and (robot_env.CFG.get("sdk") or {}).get("enable_arm_sdk"):
+            self._loco = robot_env.loco_client_class()()
+            self._loco.SetTimeout(5.0)
+            self._loco.Init()
+            ret = self._loco.EnableArmSDK()
+            logger_mp.warning(f"EnableArmSDK → {ret}")
+            if ret != 0:
+                raise RuntimeError(f"EnableArmSDK 실패 (code {ret}) — 송신하지 않음")
+
         # 송신 스레드 시작
         self.publish_thread = threading.Thread(target=self._ctrl_motor_state)
         self.ctrl_lock = threading.Lock()
@@ -272,6 +284,15 @@ class G1_29_ArmController:
             self.waist_q_target = np.array(q_target)
 
     # ==================== arm_sdk 제어권 (hold/release) ====================
+
+    def disable_arm_sdk(self):
+        """EnableArmSDK 를 호출했으면 DisableArmSDK (weight 를 0 으로 내린 뒤 호출할 것)."""
+        if getattr(self, "_loco", None) is None:
+            return None
+        ret = self._loco.DisableArmSDK()
+        logger_mp.warning(f"DisableArmSDK → {ret}")
+        self._loco = None
+        return ret
 
     def get_weight(self):
         return float(self.arm_weight)
