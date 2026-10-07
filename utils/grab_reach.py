@@ -5,6 +5,9 @@ grab_reach.py — 박스 위치별로 잡기 시퀀스를 '서버와 같은 IK' 
   ROBOT=h2 python utils/grab_reach.py                       # 기본 격자 (place, 윗면 +0.15/+0.20/+0.25, x 0.35–0.60)
   ROBOT=h2 python utils/grab_reach.py --mode center         # 건네기
   ROBOT=h2 python utils/grab_reach.py --x 0.45 --y 0.05 --top 0.20 -v   # 한 점, 단계별 오차 출력
+  ROBOT=h2 python utils/grab_reach.py --frac 0 0.25 --D 0.20        # grab.grab_inset_frac 값별 비교 (박스 깊이 D)
+  ROBOT=h2 python utils/grab_reach.py --inset 0 0.03 0.05            # D 미측정 고정값(grab.grab_inset_x) 비교 (frac 0)
+  ROBOT=h2 python utils/grab_reach.py --z-offset -0.064             # grab.z_offset 대신 이 값
 
   방법
    - robot_server.GrabController 를 그대로 써서 대기자세(ready) → grab_box → place/center 의 손 목표를 기록
@@ -57,7 +60,7 @@ def box_cam(rsv, x, y, top, W):
 WRIST = None   # (roll, pitch, yaw) deg — 박스 페이지 Wrist RPY 와 같은 값 (양손 같게)
 
 
-def record(rsv, mode, x, y, top, W, H):
+def record(rsv, mode, x, y, top, W, H, D=None):
     rec = []
     g = rsv.GrabController(arm=None, speak=lambda t: None, robot_available=False)
     if WRIST is not None:
@@ -72,7 +75,7 @@ def record(rsv, mode, x, y, top, W, H):
     g._move = mv
     g.ready()
     L, R, C = box_cam(rsv, x, y, top, W)
-    g.grab_box(L, R, box_h_m=H, top_center_cam=C)
+    g.grab_box(L, R, box_h_m=H, top_center_cam=C, box_d_m=D)
     return rec
 
 
@@ -120,7 +123,11 @@ def main():
     ap.add_argument("--top", type=float, nargs="*", default=[0.15, 0.20, 0.25], help="박스 윗면 z (pelvis 위)")
     ap.add_argument("--W", type=float, default=0.28, help="박스 폭(손 사이 방향) [m]")
     ap.add_argument("--H", type=float, default=0.18, help="박스 높이 [m] (잡는 높이 = 윗면 − H/2 + z_offset)")
+    ap.add_argument("--D", type=float, default=0.20, help="박스 깊이(좌/우 옆면 길이) [m] — grab_inset_frac 에 쓰임. 0 = 미측정")
     ap.add_argument("--wrist", default=None, help="손목 RPY deg 'roll,pitch,yaw' (박스 페이지 Wrist RPY 와 같음, 양손 같게)")
+    ap.add_argument("--frac", type=float, nargs="*", default=None, help="grab.grab_inset_frac 대신 이 값들로 (여러 개면 각각 표)")
+    ap.add_argument("--inset", type=float, nargs="*", default=None, help="grab.grab_inset_x 대신 이 값들로 [m], frac 0 (여러 개면 각각 표)")
+    ap.add_argument("--z-offset", type=float, default=None, help="grab.z_offset 대신 이 값 [m]")
     ap.add_argument("-v", action="store_true", help="단계별 오차")
     a = ap.parse_args()
     global WRIST
@@ -129,21 +136,34 @@ def main():
 
     t0 = time.time()
     rsv, ik = build()
+    if a.z_offset is not None:
+        rsv.GRAB_Z_OFFSET = a.z_offset
     q0 = np.radians(np.array(robot_env.CFG["default_arm_deg"], dtype=float))
     print(f"[reach] ROBOT={robot_env.ROBOT} mode={a.mode} 박스 W {a.W} H {a.H}  z_offset {rsv.GRAB_Z_OFFSET} "
           f"handover_x {rsv.HANDOVER_X}  wrist {WRIST or '0,0,0'}  판정 < {POS_OK_CM:.0f} cm / {ROT_OK_DEG:.0f}°  (IK 준비 {time.time() - t0:.1f}s)")
-    for top in a.top:
-        print(f"\n박스 윗면 pelvis+{top:.2f} m  (H2 바닥 기준 약 {1.01 + top:.2f} m)")
-        print("   y\\x  " + "  ".join(f"{x:5.2f}" for x in a.x))
-        for y in a.y:
-            cells = []
-            for x in a.x:
-                ok, worst, rows = run(ik, record(rsv, a.mode, x, y, top, a.W, a.H), q0, verbose=False)
-                cells.append(" O   " if ok else f"{worst[0]:4.0f}c")
-                if a.v:
-                    print(f"  x {x} y {y} top {top}: {'O' if ok else 'X'}  최대 {worst[0]:.1f} cm {worst[1]:.0f}° @ {worst[2]}")
-                    run(ik, record(rsv, a.mode, x, y, top, a.W, a.H), q0, verbose=True)
-            print(f"  {y:+.2f} " + "  ".join(cells))
+    D = a.D if a.D > 0 else None
+    if a.frac is not None:
+        variants = [(f, rsv.GRAB_INSET_X) for f in a.frac]
+    elif a.inset is not None:
+        variants = [(0.0, v) for v in a.inset]
+    else:
+        variants = [(rsv.GRAB_INSET_FRAC, rsv.GRAB_INSET_X)]
+    for frac, fixed in variants:
+        rsv.GRAB_INSET_FRAC, rsv.GRAB_INSET_X = frac, fixed
+        inset = rsv.grab_inset(D)
+        for top in a.top:
+            print(f"\n박스 윗면 pelvis+{top:.2f} m  (H2 바닥 기준 약 {1.01 + top:.2f} m)   "
+                  f"손 x = 박스 중심 − {inset:.3f}  (frac {frac}, 고정 {fixed}, D {D})")
+            print("   y\\x  " + "  ".join(f"{x:5.2f}" for x in a.x))
+            for y in a.y:
+                cells = []
+                for x in a.x:
+                    ok, worst, rows = run(ik, record(rsv, a.mode, x, y, top, a.W, a.H, D), q0, verbose=False)
+                    cells.append(" O   " if ok else f"{worst[0]:4.0f}c")
+                    if a.v:
+                        print(f"  x {x} y {y} top {top}: {'O' if ok else 'X'}  최대 {worst[0]:.1f} cm {worst[1]:.0f}° @ {worst[2]}")
+                        run(ik, record(rsv, a.mode, x, y, top, a.W, a.H, D), q0, verbose=True)
+                print(f"  {y:+.2f} " + "  ".join(cells))
     print("\n  O = 모든 단계 위치 < 2 cm · 자세 < 10°.  숫자 = 가장 크게 빗나간 단계의 위치 오차 [cm] (-v 로 단계 확인)")
     print(f"  ({time.time() - t0:.0f}s)")
 

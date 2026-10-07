@@ -140,6 +140,20 @@ GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_
 GRAB_X_OFFSET  = float(robot_env.CFG["grab"].get("grab_x_offset", -0.15))
 # ↑ 좁혀 잡을 때 손 x 를 박스 중심에서 이만큼 옮김 (robot.yaml grab.grab_x_offset). G1 −0.15 (실험값, 몸쪽으로 당김).
 #   H2 는 카메라를 마커로 보정했으므로 0 (박스 옆면 가운데를 그대로 잡음).
+GRAB_INSET_FRAC = float(robot_env.CFG["grab"].get("grab_inset_frac", 0.0))
+GRAB_INSET_X = float(robot_env.CFG["grab"].get("grab_inset_x", 0.0))
+GRAB_INSET_MARGIN = 0.03     # 손 x 가 박스 앞면(몸쪽 면)에서 최소 이만큼 안쪽
+# ↑ 접근·하강·잡기·제자리 놓기 손 x 를 모두 박스 중심보다 몸쪽으로 (G1 둘 다 0 = 기존 그대로).
+#   grab_inset_frac: 윗면 앞뒤 길이 D(인식된 윗면 좌/우 변 길이) 의 비율. 0.25 = 윗면 중심과 몸쪽 끝변의 가운데.
+#   grab_inset_x: D 를 못 받았을 때 고정값 [m].
+#   GRAB_X_OFFSET 과 달리 하강 전부터 같은 x 라 좁힐 때 손이 앞뒤로 움직이지 않음. 팔을 덜 뻗어 손이 더 내려감.
+
+
+def grab_inset(box_d):
+    """손 x 를 박스 중심보다 몸쪽으로 옮길 거리 [m]. D 를 알면 frac·D (앞면에서 GRAB_INSET_MARGIN 이상 안쪽), 모르면 고정값."""
+    if GRAB_INSET_FRAC > 0 and box_d and 0.05 < box_d < 0.80:
+        return min(GRAB_INSET_FRAC * box_d, max(0.0, box_d / 2 - GRAB_INSET_MARGIN))
+    return GRAB_INSET_X
 PULL_X = float(robot_env.CFG["grab"].get("pull_x", 0.0))
 ALIGN_TO_HANDS = bool(robot_env.CFG["grab"].get("align_to_hands", False))
 # ↑ 잡은 뒤 '대칭 정렬'·들기·놓기 기준을 실제 잡은 손 위치로 (H2 true). false = 박스 중심 추정값 기준 + y 0 대칭 (G1 기존)
@@ -415,7 +429,8 @@ class GrabController:
 
     # ---- place: 들었던 자리에 다시 내려놓기 (사람 없이 반복 시연) ----
     def _place_back(self, grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot, yc=0.0):
-        # 잡기에서 박스를 몸쪽으로 (GRAB_X_OFFSET + PULL_X) 만큼 당겼으므로, 원래 자리(박스 중심 x)로 다시 밀어 놓는다
+        # 잡기에서 박스를 몸쪽으로 (GRAB_X_OFFSET + PULL_X) 만큼 당겼으므로, 원래 자리로 다시 밀어 놓는다
+        #   px = 처음 잡은 손 x (박스 중심 − GRAB_INSET_X) → 박스가 원래 자리에 놓임
         #   → 다음 회에도 같은 자리에서 인식·잡기 (반복 시연). 들어 올린 높이에서 앞으로 → 내려놓기
         px = grab_x_base - GRAB_X_OFFSET - PULL_X
         print(f"[PLACE] 들어 올린 채 {PLACE_HOLD_SEC:.1f}초")
@@ -527,12 +542,13 @@ class GrabController:
                               grab_z, lift_z, l_rot, r_rot)
 
     # ---- box(cardboard) 잡기 ----
-    def grab_box(self, L_cam, R_cam, box_h_m=None, top_center_cam=None):
+    def grab_box(self, L_cam, R_cam, box_h_m=None, top_center_cam=None, box_d_m=None):
         """박스: L/R(윗면 좌우 변 중심, 안쪽 2cm) 직접 사용.
 
         L_cam, R_cam: 카메라 좌표 grip 점
         box_h_m: 측정된 박스 높이 (잡는 높이 결정용)
         top_center_cam: 윗면 중심 (waist yaw 정렬용)
+        box_d_m: 측정된 윗면 앞뒤 길이 = 윗면 좌/우 변 길이 (잡는 x 결정용, grab_inset)
         """
         print("[GRAB-BOX] 시작")
         self._last_kind = "box"
@@ -559,6 +575,7 @@ class GrabController:
             if d and d.get("L") and d.get("R"):
                 L_cam, R_cam = d["L"], d["R"]
                 if d.get("box_h"): box_h_m = d["box_h"]
+                if d.get("box_d"): box_d_m = d["box_d"]
                 if d.get("top_center"): top_center_cam = d["top_center"]
                 Lx, Ly, Lz = cam_to_ik(L_cam[0], L_cam[1], L_cam[2])
                 Rx, Ry, Rz = cam_to_ik(R_cam[0], R_cam[1], R_cam[2])
@@ -569,6 +586,13 @@ class GrabController:
                 print(f"[GRAB-BOX] 재감지 center=[{cx:.3f},{cy:.3f},{cz:.3f}]")
             else:
                 print("[GRAB-BOX] 재감지 실패 — 원래 좌표 사용")
+
+        # 손 x 를 박스 중심보다 몸쪽으로 (grab_inset) — L/R/중심을 같이 옮겨 접근·하강·잡기·놓기가 모두 같은 x
+        inset = grab_inset(box_d_m)
+        if inset:
+            Lx -= inset; Rx -= inset; cx -= inset
+            d_txt = f"D {box_d_m*100:.0f} cm" if box_d_m else "D 미측정 → 고정값"
+            print(f"[GRAB-BOX] 손 x 박스 중심보다 {inset*100:.1f} cm 몸쪽 ({d_txt}, L x {Lx:.3f}, R x {Rx:.3f})")
 
         # 잡는 높이: 윗면(=L/R z)에서 박스 H 절반 내려 옆면 중간
         h = box_h_m if box_h_m else 0.065
@@ -998,6 +1022,7 @@ class GrabRequest(BaseModel):
     R:    Optional[List[float]] = None     # box 오른쪽 grip
     top_center: Optional[List[float]] = None
     box_h: Optional[float] = None          # box 높이 (m)
+    box_d: Optional[float] = None          # box 윗면 앞뒤 길이 = 윗면 좌/우 변 길이 (m)
 
 
 # ==========================================
@@ -1246,7 +1271,7 @@ def _run_grab(req: GrabRequest):
             grab.grab_marker(req.tvec, req.rvec)
         elif req.type == "cardboard":
             grab.grab_box(req.L, req.R, box_h_m=req.box_h,
-                          top_center_cam=req.top_center)
+                          top_center_cam=req.top_center, box_d_m=req.box_d)
         else:
             print(f"[GRAB] 알 수 없는 type: {req.type}")
     except Exception:
@@ -1389,7 +1414,7 @@ async def grab_manual():
     if not d.get("found"):
         return JSONResponse({"ok": False, "reason": "검출 없음"})
     req = GrabRequest(**{k: d.get(k) for k in
-                         ("type","tvec","rvec","L","R","top_center","box_h")
+                         ("type","tvec","rvec","L","R","top_center","box_h","box_d")
                          if k in d})
     return await grab_at(req)
 

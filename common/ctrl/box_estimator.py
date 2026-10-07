@@ -483,6 +483,8 @@ class BoxEstimator:
             # 위/아래 평균 = 한 차원, 좌/우 평균 = 다른 차원
             W_m = (top_edge + bottom_edge) / 2
             D_m = (left_edge + right_edge) / 2
+            # 윗면 좌/우 변 길이 = 윗면 앞뒤 길이 (손이 잡는 옆면 방향) — 아래 W/D 교환과 무관하게 그대로 (잡는 x 결정용)
+            out['box_side_m'] = float(D_m)
             # W가 큰 쪽 (가로)
             if D_m > W_m:
                 W_m, D_m = D_m, W_m

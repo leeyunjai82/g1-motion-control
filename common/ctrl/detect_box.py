@@ -162,7 +162,7 @@ class Smoother:
     def clear(self): self.buf.clear()
 
 smoothers = {k: Smoother(SMOOTH_WINDOW_SEC)
-             for k in ['top_center','L','R','box_H']}
+             for k in ['top_center','L','R','box_H','box_side']}
 alt_smoothers = {k: Smoother(SMOOTH_WINDOW_SEC)            # 평면 피팅 방식
                  for k in ['top_center','L','R','box_H','tilt']}
 smoother_lock = threading.Lock()
@@ -193,6 +193,8 @@ def update_smoothers(result):
                 smoothers['R'].push(mids['R'])
         if result.get('box_H_m') is not None:
             smoothers['box_H'].push([result['box_H_m']])
+        if result.get('box_side_m') is not None:
+            smoothers['box_side'].push([result['box_side_m']])
         a = result.get('alt')
         if a:
             alt_smoothers['top_center'].push(a['top_center_3d'])
@@ -413,6 +415,7 @@ def post_grab(sm):
         "R": [float(v) for v in sm['R']],
         "top_center": [float(v) for v in sm['top_center']],
         "box_h": float(sm['box_H'][0]) if 'box_H' in sm else None,
+        "box_d": float(sm['box_side'][0]) if 'box_side' in sm else None,
     }).encode()
     try:
         req = urllib.request.Request(f"{ROBOT_SERVER}/grab_at", data=body,
@@ -529,6 +532,7 @@ async def pose():
            "R": [float(v) for v in sm['R']],
            "top_center": [float(v) for v in sm['top_center']] if 'top_center' in sm else None,
            "box_h": float(sm['box_H'][0]) if 'box_H' in sm else None,
+           "box_d": float(sm['box_side'][0]) if 'box_side' in sm else None,
            "method": BOX_METHOD}
     # 비교용: 선택 안 된 쪽 값도 같이 (3D 뷰어가 두 방식을 겹쳐 그림)
     other = get_smoothed_alt() if BOX_METHOD == "legacy" else get_smoothed_legacy()
@@ -563,6 +567,8 @@ async def status():
         out["torso"] = {"x":round(mx,3),"y":round(my,3),"z":round(mz,3)}
         if 'box_H' in sm:
             out["box_h_cm"] = round(float(sm['box_H'][0])*100,1)
+        if 'box_side' in sm:
+            out["box_d_cm"] = round(float(sm['box_side'][0])*100,1)
     return out
 
 

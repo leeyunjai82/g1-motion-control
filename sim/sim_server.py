@@ -180,7 +180,8 @@ def pose():
         return {"found": False, "n": 0}
     return {"found": True, "type": "cardboard", "n": 10,
             "L": v["cam"]["L"].tolist(), "R": v["cam"]["R"].tolist(),
-            "top_center": v["cam"]["C"].tolist(), "box_h": float(v["box"]["H"]), "method": "sim"}
+            "top_center": v["cam"]["C"].tolist(), "box_h": float(v["box"]["H"]), "box_d": float(v["box"]["D"]),
+            "method": "sim"}
 
 
 def status():
@@ -191,6 +192,7 @@ def status():
         tc = camera_to_torso(v["cam"]["C"])
         out["torso"] = {"x": round(float(tc[0]), 3), "y": round(float(tc[1]), 3), "z": round(float(tc[2]), 3)}
         out["box_h_cm"] = round(float(v["box"]["H"]) * 100, 1)
+        out["box_d_cm"] = round(float(v["box"]["D"]) * 100, 1)
     return out
 
 

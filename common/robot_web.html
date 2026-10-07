@@ -681,6 +681,7 @@ function pollCoord(){
       const x=(d.torso.x*100).toFixed(1),y=(d.torso.y*100).toFixed(1),z=(d.torso.z*100).toFixed(1);
       let s=`X ${x}  Y ${y}  Z ${z} cm`;
       if(d.box_h_cm)s+=`  H ${d.box_h_cm}`;
+      if(d.box_d_cm)s+=`  D ${d.box_d_cm}`;
       co.textContent=s;
     }else{co.textContent='no target';}
     renderAI(d);
