@@ -46,6 +46,9 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | FSM 조회 API | `GetFsmId` 7001, `GetAvailableFsmIds` 7008 (ID+이름), `GetArmSdkStatus` 7007 | SDK `h2_loco_api.py`. 실기 응답 여부는 확인 필요 |
 | URDF | `robots/h2/H2.urdf` = ROS `H2.urdf` (H2R 의 URDF 와 바이트 동일) | ROS, H2R |
 | 메시 | ROS `5994d4f` (H2R 대비 `head_pitch_link.stl`, `head_yaw_link.stl` 만 갱신 — 시각용) | ROS |
+| **`LowState_.mode_machine`** | **1** (`mode_pr` 0, `version` [0, 0]) | 실측 2026-10-07 `utils/check_robot_id.py` 부팅 직후, 20회 관측 모두 1 → `robot.yaml identity.mode_machine` |
+| 살아 있는 모터 슬롯 | 0–30 (31개). 31–34 온도·전압 0 (weight 슬롯 31 에 모터 없음) | 실측 2026-10-07 |
+| 부팅 직후 다리 0–3, 6–9 | `mode 10`, `vol 0.00` (온도는 정상 출력). 발목 4/5/10/11·상체는 `mode 1`, 73.5–74.0 V | 실측 2026-10-07. mode 10 의미는 확인 필요 (이번 범위에서 다리 미사용) |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)
@@ -66,7 +69,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 
 | 항목 | 비고 |
 | --- | --- |
-| `LowState_.mode_machine` 값 | 로봇 식별 안전장치 기준값. `python utils/check_robot_id.py` 로 측정 (SDK-low 가 이 값을 "H2 type" 으로 출력) |
+| 모터 온도 한계 | 부팅 직후(서 있지 않음) 허리 12–14·어깨 pitch 15/22 가 50–52 °C, 손목 20/21/27/28 이 41–48 °C (실측 2026-10-07). 경고/보호 온도 자료 없음 |
 | 펌웨어 버전 | 7109(EnableArmSDK) 필요 여부가 펌웨어에 따라 달라질 수 있음 |
 | 손 종류 / SDK | H2R 는 G1 과 같은 `mandro3.py` 포함 — 실제 장착 손 확인 |
 | D435i 장착 위치·외부 파라미터 | **외부 D435i 를 mini PC USB 에 연결** (G1 과 같은 방식, 헤드 내장 카메라 미사용). `robot.yaml camera` 는 **임시값**(가슴 고정 가정: x 0.10, z 0.35, 아래 50°) — 실장착 후 4개 값만 수정. 목 관절이 있으므로 torso 고정 권장 |
