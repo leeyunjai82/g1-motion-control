@@ -54,9 +54,15 @@ def box_cam(rsv, x, y, top, W):
     return to_cam((x, y + W / 2 - inset, top)), to_cam((x, y - W / 2 + inset, top)), to_cam((x, y, top))
 
 
+WRIST = None   # (roll, pitch, yaw) deg — 박스 페이지 Wrist RPY 와 같은 값 (양손 같게)
+
+
 def record(rsv, mode, x, y, top, W, H):
     rec = []
     g = rsv.GrabController(arm=None, speak=lambda t: None, robot_available=False)
+    if WRIST is not None:
+        for side in ("left", "right"):
+            g.wrist_params[side] = {"roll": WRIST[0], "pitch": WRIST[1], "yaw": WRIST[2]}
     g.redetect = None
     g.handover_direction = mode
 
@@ -114,14 +120,18 @@ def main():
     ap.add_argument("--top", type=float, nargs="*", default=[0.15, 0.20, 0.25], help="박스 윗면 z (pelvis 위)")
     ap.add_argument("--W", type=float, default=0.28, help="박스 폭(손 사이 방향) [m]")
     ap.add_argument("--H", type=float, default=0.18, help="박스 높이 [m] (잡는 높이 = 윗면 − H/2 + z_offset)")
+    ap.add_argument("--wrist", default=None, help="손목 RPY deg 'roll,pitch,yaw' (박스 페이지 Wrist RPY 와 같음, 양손 같게)")
     ap.add_argument("-v", action="store_true", help="단계별 오차")
     a = ap.parse_args()
+    global WRIST
+    if a.wrist:
+        WRIST = tuple(float(v) for v in a.wrist.split(","))
 
     t0 = time.time()
     rsv, ik = build()
     q0 = np.radians(np.array(robot_env.CFG["default_arm_deg"], dtype=float))
     print(f"[reach] ROBOT={robot_env.ROBOT} mode={a.mode} 박스 W {a.W} H {a.H}  z_offset {rsv.GRAB_Z_OFFSET} "
-          f"handover_x {rsv.HANDOVER_X}  판정 < {POS_OK_CM:.0f} cm / {ROT_OK_DEG:.0f}°  (IK 준비 {time.time() - t0:.1f}s)")
+          f"handover_x {rsv.HANDOVER_X}  wrist {WRIST or '0,0,0'}  판정 < {POS_OK_CM:.0f} cm / {ROT_OK_DEG:.0f}°  (IK 준비 {time.time() - t0:.1f}s)")
     for top in a.top:
         print(f"\n박스 윗면 pelvis+{top:.2f} m  (H2 바닥 기준 약 {1.01 + top:.2f} m)")
         print("   y\\x  " + "  ".join(f"{x:5.2f}" for x in a.x))
