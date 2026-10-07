@@ -54,6 +54,8 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | 실기 FSM 목록 (`GetAvailableFsmIds` 7008) | 0 Invalid, 1 Passive, 2 Protection, 3 Sit, **4 FixStand**, 5 HybridPassive, 502 HumanMimic, 503 HumanMimic2, 100 BeyondMimic, **601 HybridWalk**, 701 WalkNew, **703 PhaseWalk** (+ 100xxx/502xxx/503xxx 모션 ID 다수) | 실측 2026-10-07 `utils/robot_state.py` (code 0 응답) |
 | arm_sdk 지원 FSM | SDK master `814556d` 예제 `ARM_SDK_SUPPORTED_FSM_IDS = {4, 703}` + `EnableArmSDK()` (601 은 목록에 없음) | SDK 예제. 601 에서 jog 했을 때 팔이 안 움직였다는 사용자 보고 있음 (2026-10-07) |
 | FSM 4 상태 | `GetFsmId` (0, 4), `GetFsmMode` (0, 0), **`GetArmSdkStatus` (0, True)** — EnableArmSDK 호출 없이 True. rt/arm_sdk 240 Hz 수신, weight 1.0, 팔 명령 vs 실측 차이 ≤ 1.3° | 실측 2026-10-07 `start_fsm.sh no-bal` 후. jog 추종 여부는 확인 중 |
+| LowCmd 헤더 `mode_machine` | xr_teleoperate `817fb00` `H2_ArmController`: `msg.mode_pr = 0`, `msg.mode_machine = lowstate.mode_machine`. 이 repo·H2R 는 0 을 보냄 → `robot.yaml lowcmd.mode_machine: lowstate` 로 변경 (2026-10-07). 실기 효과는 `utils/arm_sdk_test.py` 로 확인 중 | XR, H2R |
+| 허리 슬롯 (충돌 추가) | xr_teleoperate `817fb00` "[fix] H2 waist's joint index": **12 WaistRoll, 13 WaistPitch, 14 WaistYaw** — 현재 yaml(12 yaw / 13 roll / 14 pitch, H2R 기준)과 다름 → `/check` jog 로 실기 판정 | XR |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)

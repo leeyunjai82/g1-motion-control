@@ -24,6 +24,12 @@ identity:
   mode_machine: 1             # 실측 2026-10-07 utils/check_robot_id.py (부팅 직후, 20회 모두 1) — 다르면 arm_sdk/FSM 거부
   required: true              # enabled: true 로 바꿀 때 mode_machine 이 null 이면 거부
 
+# rt/arm_sdk 로 보내는 LowCmd 헤더
+#   xr_teleoperate 817fb00 H2_ArmController: msg.mode_pr = 0, msg.mode_machine = lowstate.mode_machine
+#   (이 repo / h2-motion-control.red 는 0 을 보냈음 — 실기에서 FSM 601·4 모두 팔이 안 움직임, 2026-10-07)
+lowcmd:
+  mode_machine: lowstate
+
 joints:
   motor_slots: 35             # unitree_hg LowState_ 고정 길이 (SDK, xr_teleoperate)
   # URDF 관절 이름 → 모터 슬롯

@@ -129,7 +129,11 @@ class G1_29_ArmController:
         self.crc = CRC()
         self.msg = unitree_hg_msg_dds__LowCmd_()
         self.msg.mode_pr = 0
-        self.msg.mode_machine = 0
+        # LowCmd.mode_machine — robot.yaml lowcmd.mode_machine
+        #   0 (기본, G1 기존 동작) / "lowstate" = 수신한 rt/lowstate.mode_machine 을 그대로 (xr_teleoperate H2_ArmController 방식)
+        _mm = (robot_env.CFG.get("lowcmd") or {}).get("mode_machine", 0)
+        self.msg.mode_machine = int(self._last_lowstate_msg.mode_machine) if _mm == "lowstate" else int(_mm)
+        logger_mp.info(f"LowCmd mode_machine = {self.msg.mode_machine} (robot.yaml lowcmd.mode_machine: {_mm})")
 
         # 현재 상태 읽기 및 초기 타겟 설정
         current_all_q = self.get_current_motor_q()

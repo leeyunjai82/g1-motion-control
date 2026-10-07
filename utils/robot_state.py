@@ -76,7 +76,8 @@ def main():
     if m is None:
         print("  ❌ rt/arm_sdk 수신 0건 — arm_server 가 명령을 내보내지 않음 (arm_server 로그 앞부분 확인)")
     else:
-        print(f"  수신 {n}건 ({n / LISTEN_SEC:.0f} Hz),  weight = motor_cmd[{WEIGHT_SLOT}].q = {m.motor_cmd[WEIGHT_SLOT].q:.3f}")
+        print(f"  수신 {n}건 ({n / LISTEN_SEC:.0f} Hz),  weight = motor_cmd[{WEIGHT_SLOT}].q = {m.motor_cmd[WEIGHT_SLOT].q:.3f},"
+              f"  LowCmd mode_pr = {m.mode_pr}, mode_machine = {m.mode_machine}")
 
     st = None
     t_end = time.time() + 2.0
