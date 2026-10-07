@@ -16,7 +16,9 @@ sys.path.append(parent2_dir)
 
 from ctrl.weighted_moving_filter import WeightedMovingFilter
 
-class G1_29_ArmIK:
+class ArmIK:
+    """양팔 IK — 로봇별 값은 robots/<ROBOT>/robot.yaml (urdf, ik.lock_joints/ee_joints/ee_offset/cost).
+    G1 = xr_teleoperate G1_29_ArmIK, H2 = xr_teleoperate 817fb00 H2_ArmIK 와 같은 모델·비용."""
     def __init__(self, Unit_Test = False, Visualization = False):
         np.set_printoptions(precision=5, suppress=True, linewidth=200)
 
@@ -32,10 +34,10 @@ class G1_29_ArmIK:
 
         # Try loading cache first
         if os.path.exists(self.cache_path) and (not self.Visualization):
-            logger_mp.info(f"[G1_29_ArmIK] >>> Loading cached robot model: {self.cache_path}")
+            logger_mp.info(f"[ArmIK {robot_env.ROBOT}] >>> Loading cached robot model: {self.cache_path}")
             self.robot, self.reduced_robot = self.load_cache()
         else:
-            logger_mp.info("[G1_29_ArmIK] >>> Loading URDF (slow)...")
+            logger_mp.info(f"[ArmIK {robot_env.ROBOT}] >>> Loading URDF (slow)...")
             self.robot = pin.RobotWrapper.BuildFromURDF(self.urdf_path, self.model_dir)
 
             self.mixed_jointsToLockIDs = list(robot_env.CFG["ik"]["lock_joints"])   # robot.yaml ik.lock_joints
@@ -121,7 +123,14 @@ class G1_29_ArmIK:
             self.var_q,
             self.reduced_robot.model.upperPositionLimit)
         )
-        self.opti.minimize(50 * self.translational_cost + self.rotation_cost + 0.02 * self.regularization_cost + 0.1 * self.smooth_cost)
+        # 비용 가중치 — robot.yaml ik.cost (G1 기본 50 / 1.0 / 0.02 / 0.1, H2 공식 50 / 0.8 / 0.01 / 0.1)
+        _c = robot_env.CFG["ik"].get("cost") or {}
+        _w_t = float(_c.get("translation", 50)); _w_r = float(_c.get("rotation", 1.0))
+        _w_g = float(_c.get("regularization", 0.02)); _w_s = float(_c.get("smooth", 0.1))
+        if _c:
+            self.opti.minimize(_w_t * self.translational_cost + _w_r * self.rotation_cost + _w_g * self.regularization_cost + _w_s * self.smooth_cost)
+        else:
+            self.opti.minimize(50 * self.translational_cost + self.rotation_cost + 0.02 * self.regularization_cost + 0.1 * self.smooth_cost)
 
         opts = {
             # CasADi-level options
@@ -275,6 +284,10 @@ class G1_29_ArmIK:
             # return sol_q, sol_tauff
             return current_lr_arm_motor_q, np.zeros(self.reduced_robot.model.nv)
         
+
+# 예전 이름 (호환용) — 내용은 위 ArmIK (ROBOT 에 따라 G1/H2)
+G1_29_ArmIK = ArmIK
+
 if __name__ == "__main__":
     arm_ik = G1_29_ArmIK(Unit_Test = True, Visualization = False)
     print(arm_ik.reduced_robot.model.frames[0].name) 

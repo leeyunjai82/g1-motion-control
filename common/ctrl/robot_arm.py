@@ -28,6 +28,9 @@ WEIGHT_SLOT  = int(_J["weight_slot"])               # arm_sdk weight (motor_cmd[
 INIT_SLOTS   = [int(i) for i in _J["init_slots"]]   # 시작 시 mode/kp/kd/q 설정 슬롯
 WRIST_SLOTS  = {int(i) for i in _J["wrist"]}
 WEAK_SLOTS   = {int(i) for i in _J["weak"]}
+# 허리를 시작 시 현재각으로만 잡고 이후 명령하지 않음 (xr_teleoperate H2_ArmController 와 같음). G1 false = 허리 명령 (기존)
+WAIST_HOLD   = bool(_J.get("waist_hold_initial", False))
+ARM_VEL_LIMIT = float(_G.get("arm_velocity_limit", 20.0))   # 팔 관절 속도 제한 [rad/s] (G1 20 → speed_gradual_max 로 30, H2 공식 30)
 
 class MotorState:
     def __init__(self):
@@ -51,9 +54,12 @@ class DataBuffer:
         with self.lock:
             self.data = data
 
-class G1_29_ArmController:
+class ArmController:
+    """양팔(+허리) arm_sdk/lowcmd 송신 — 로봇별 값은 robots/<ROBOT>/robot.yaml (joints, gains, lowcmd, sdk).
+    G1 = xr_teleoperate G1_29_ArmController, H2 = xr_teleoperate 817fb00 H2_ArmController 와 같은 슬롯·게인·헤더
+    (+ H2 EnableArmSDK — 실기에서 이것 없이는 팔이 안 움직임)."""
     def __init__(self, motion_mode = False, simulation_mode = False):
-        logger_mp.info("G1_29_ArmController 초기화 중...")
+        logger_mp.info(f"ArmController({robot_env.ROBOT}) 초기화 중...")
 
         # 제어 타겟 초기화
         self.q_target = np.zeros(14)        # 양팔 14축
@@ -75,7 +81,7 @@ class G1_29_ArmController:
         self.kp_head = _G.get("kp_head")
         self.kd_head = _G.get("kd_head")
 
-        self.arm_velocity_limit = 20.0
+        self.arm_velocity_limit = ARM_VEL_LIMIT
         self.control_dt = 1.0 / 250.0 # 250Hz
 
         # arm_sdk 가중치 (0.0=loco 소유 / 1.0=arm_sdk 소유). motion_mode 에서만 의미.
@@ -189,7 +195,7 @@ class G1_29_ArmController:
         self.publish_thread.daemon = True
         self.publish_thread.start()
 
-        logger_mp.info("G1_29_ArmController 초기화 완료!")
+        logger_mp.info(f"ArmController({robot_env.ROBOT}) 초기화 완료!")
 
     def _subscribe_motor_state(self):
         while True:
@@ -263,7 +269,8 @@ class G1_29_ArmController:
             # 속도 점진적 증가 처리
             if self._speed_gradual_max:
                 t_elapsed = start_time - self._gradual_start_time
-                self.arm_velocity_limit = 20.0 + (10.0 * min(1.0, t_elapsed / 5.0))
+                _top = max(30.0, ARM_VEL_LIMIT)          # G1: 20 → 30 (기존), H2: 30 그대로 (공식은 점진 증가 없음)
+                self.arm_velocity_limit = ARM_VEL_LIMIT + ((_top - ARM_VEL_LIMIT) * min(1.0, t_elapsed / 5.0))
 
             current_time = time.time()
             sleep_time = max(0, (self.control_dt - (current_time - start_time)))
@@ -279,6 +286,11 @@ class G1_29_ArmController:
     def ctrl_waist(self, q_target):
         """허리 관절(Yaw, Roll, Pitch) 목표 각도 설정"""
         if len(q_target) != 3:
+            return
+        if WAIST_HOLD:      # robot.yaml joints.waist_hold_initial — 시작 시 각도 유지, 명령 무시 (H2 공식과 같음)
+            if not getattr(self, "_waist_hold_logged", False):
+                logger_mp.warning("허리 명령 무시 (robot.yaml joints.waist_hold_initial: 시작 시 각도 유지)")
+                self._waist_hold_logged = True
             return
         with self.ctrl_lock:
             self.waist_q_target = np.array(q_target)
@@ -304,7 +316,8 @@ class G1_29_ArmController:
         with self.ctrl_lock:
             self.q_target = self.get_current_dual_arm_q()
             self.tauff_target = np.zeros(14)
-            self.waist_q_target = all_q[WAIST_SLOTS].copy()
+            if not WAIST_HOLD:
+                self.waist_q_target = all_q[WAIST_SLOTS].copy()
 
     def ramp_weight(self, dst, duration=2.0):
         """weight 를 현재값에서 dst 까지 duration 초 동안 선형 램프 (블로킹)."""
@@ -364,7 +377,8 @@ class G1_29_ArmController:
         logger_mp.info("양팔 홈 포지션 이동 시작...")
         with self.ctrl_lock:
             self.q_target = np.zeros(14)
-            self.waist_q_target = np.zeros(3)
+            if not WAIST_HOLD:
+                self.waist_q_target = np.zeros(3)
 
         time.sleep(2.0)
 
@@ -382,6 +396,10 @@ class G1_29_ArmController:
     def _Is_wrist_motor(self, motor_index):
         return int(motor_index) in WRIST_SLOTS         # robot.yaml joints.wrist
 
+
+
+# 예전 이름 (호환용) — 내용은 위 ArmController (ROBOT 에 따라 G1/H2)
+G1_29_ArmController = ArmController
 
 # ---- G1 참고용 관절 번호 (제어 코드는 위 robot.yaml 값만 사용 — 이 enum 은 참고/하위 호환용) ----
 class G1_29_JointArmIndex(IntEnum):

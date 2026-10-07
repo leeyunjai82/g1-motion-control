@@ -309,6 +309,9 @@ class GrabController:
             return False
 
     def _reset_waist(self):
+        if WAIST_LOCKED:
+            print("[WAIST] 고정(robot.yaml grab.waist_locked) — 리셋 생략")
+            return
         print(f"[WAIST] 리셋 (pitch={WAIST_BASE_PITCH})")
         if self.robot_available and self.arm is not None:
             self.arm.move_waist_smooth(yaw=0.0, roll=0.0, pitch=WAIST_BASE_PITCH, duration=1.5)
@@ -1262,9 +1265,17 @@ async def _execute_ik_frames(frames: List[IKMotionFrame]):
 # ==========================================
 # 잡기 — 모드 게이트 + grab_at
 # ==========================================
+_pose_thread: Optional[threading.Thread] = None   # 모드 전환 때 띄운 대기/park 자세 이동 스레드
+
+
 def _run_grab(req: GrabRequest):
     """별도 스레드에서 잡기 시퀀스 실행."""
     global grab_busy
+    # 모드 전환 직후 대기 자세 이동이 아직 진행 중이면 끝날 때까지 기다림 (겹치면 arm_server 가 409 로 거부해 잡기가 중단됨)
+    t = _pose_thread
+    if t is not None and t.is_alive():
+        print("[GRAB] 대기 자세 이동 중 — 끝난 뒤 시작")
+        t.join(timeout=8.0)
     grab.begin_log()
     try:
         if req.type == "marker":
@@ -1321,13 +1332,15 @@ async def set_mode(mode: str):
     print(f"[MODE] {prev} → {mode}")
 
     # 모드 전환 시 대기 자세 (잡기 중이 아닐 때만)
+    global _pose_thread
     if not grab_busy and not is_running and grab is not None:
         def _pose():
             if mode == "box":
                 grab.ready()      # 팔 들어 대기
             else:
                 grab.park()       # 팔 내림
-        threading.Thread(target=_pose, daemon=True).start()
+        _pose_thread = threading.Thread(target=_pose, daemon=True)
+        _pose_thread.start()
 
     return {"ok": True, "mode": ACTIVE_MODE}
 

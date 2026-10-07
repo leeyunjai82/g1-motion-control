@@ -3,14 +3,17 @@
 #   근거는 robots/h2/FACTS.md (출처·커밋 명시). 추측값 없음.
 #   ⚠️ enabled: false — 아래 "확인 필요" 가 채워지고 실기 확인이 끝나기 전에는 실행 거부.
 #
-#   범위 (2026-10 결정): 제자리에 서서 박스 잡아 건네기.
-#                        허리 pitch/roll 0 · yaw 만 사용, 손바닥 마주보기, 보행/추종 없음, 외부 D435i (mini PC USB).
+#   범위 (2026-10 결정): FSM 703 제자리에서 박스 잡아 제자리 내려놓기(Place)/정면 건네기(Center).
+#                        허리 고정, 손바닥 마주보기, 보행/추종 없음, 외부 D435i (mini PC USB).
+#   팔 제어·IK 는 xr_teleoperate 817fb00 H2_ArmController / H2_ArmIK 와 같게 맞춤 (2026-10-07, + EnableArmSDK)
 # ============================================================
 name: h2
 enabled: true                 # 2026-10-07 사용자 승인 — 실기 확인 완료: mode_machine 1, 팔 15–28 매핑, 기본 자세(703),
                               #   EnableArmSDK·FSM 703, 카메라 K·숙임·x·z 보정, 손→마커. (y 좌우 보정만 남음)
-urdf: H2.urdf                 # unitree_ros 5994d4f robots/h2_description (h2-motion-control.red 와 동일)
-ik_cache: h2_model_cache.pkl  # 첫 실행 시 URDF 에서 생성
+urdf: H2.urdf                 # xr_teleoperate 817fb00 assets/h2/H2.urdf + meshes 그대로 (2026-10-07 공식과 일치)
+                              #   0c1b4a2 에서 팔 관절 10개 한계 축소 (예: elbow 상한 176° → 91.7°, shoulder_yaw ±150° → ±90°).
+                              #   이전 unitree_ros h2_description 과 관절 원점·축은 같음 (손 링크·카메라/IMU 프레임만 없음)
+ik_cache: h2_xr817fb00_model_cache.pkl   # 첫 실행 시 URDF 에서 생성. URDF 를 바꾸면 이름도 바꿀 것 (예전 캐시가 쓰이지 않게)
 
 sdk:
   loco_module: unitree_sdk2py.h2.loco.h2_loco_client
@@ -40,7 +43,8 @@ joints:
   # URDF 관절 이름 → 모터 슬롯
   #   팔 15–28              : ✓ 실기 확인 2026-10-07 (utils/arm_sdk_test.py 슬롯별 ±8°, 14개 모두 이름대로 움직임 — 사용자 육안)
   #   헤드·weight            : SDK / xr_teleoperate / h2-motion-control.red 일치
-  #   허리 순서               : h2-motion-control.red 기준, 미확인 (arm_sdk 로 허리가 안 움직여 실기 판정 불가 — xr 817fb00 은 12 roll/13 pitch/14 yaw)
+  #   허리 순서               : xr_teleoperate 817fb00 "[fix] H2 waist's joint index" (12 roll / 13 pitch / 14 yaw, SDK low-level 예제도 같음).
+  #                            실기 미확인 — arm_sdk 로 허리가 안 움직이고 아래 waist_hold_initial 로 명령도 안 보내므로 동작 영향 없음
   #   발목 4/5               : h2-motion-control.red 기준 (이번 범위에서 사용 안 함)
   map:
     left_hip_pitch_joint:        0
@@ -55,9 +59,9 @@ joints:
     right_knee_joint:            9
     right_ankle_roll_joint:     10
     right_ankle_pitch_joint:    11
-    waist_yaw_joint:            12
-    waist_roll_joint:           13
-    waist_pitch_joint:          14
+    waist_roll_joint:           12
+    waist_pitch_joint:          13
+    waist_yaw_joint:            14
     left_shoulder_pitch_joint:  15
     left_shoulder_roll_joint:   16
     left_shoulder_yaw_joint:    17
@@ -75,14 +79,16 @@ joints:
     head_pitch_joint:           29
     head_yaw_joint:             30
   arm: [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
-  waist: [12, 13, 14]         # yaw, roll, pitch — yaw 만 움직이고 roll/pitch 는 0
+  waist: [14, 12, 13]         # yaw, roll, pitch 순서의 슬롯 (map 과 같게)
+  waist_hold_initial: true    # 허리는 시작 시 현재각으로 잡고 이후 명령 안 함 (xr_teleoperate H2_ArmController 와 같음)
   head: [29, 30]              # arm_sdk 동안 현재각 유지 (kp_head/kd_head)
   weight_slot: 31             # SDK arm_sdk 예제 / xr_teleoperate / h2 repo 실기
-  # 시작 시 mode/kp/kd/q 설정 슬롯 — weight 슬롯(31) 제외 (h2-motion-control.red robot_arm.py 실기 동작 그대로)
+  # 시작 시 mode 1 / kp / kd / q=현재각 설정 슬롯 — xr_teleoperate H2_ArmController 와 같이 H2_JointIndex 전부 (0–34, weight 31·미사용 32–34 포함)
   init_slots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-               15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+               15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+               31, 32, 33, 34]
   wrist: [19, 20, 21, 26, 27, 28]
-  weak: [4, 10, 15, 16, 17, 18, 22, 23, 24, 25]  # h2-motion-control.red 값 그대로 (G1 에서 복사된 목록 — 다리 슬롯 의미는 확인 필요)
+  weak: [5, 11, 15, 16, 17, 18, 22, 23, 24, 25]  # xr_teleoperate H2 _Is_weak_motor: 발목 pitch 5/11 + 어깨 3축·팔꿈치 (이전 4/10 은 G1 목록)
 
 gains:                        # xr_teleoperate 817fb00 H2_ArmController (팔 = kp_low/kd_low, 손목 = kp_wrist/kd_wrist)
   # 이전 h2-motion-control.red 값 80/3 · 40/1.5 · 300/3 → 실기 2026-10-07 어깨 +8° 명령에 4.6–5.5° 만 따라옴
@@ -92,12 +98,13 @@ gains:                        # xr_teleoperate 817fb00 H2_ArmController (팔 = k
   kd_low: 3.0
   kp_wrist: 50.0
   kd_wrist: 2.0
-  kp_waist: 150.0
-  kd_waist: 3.0
-  kp_head: 30.0               # SDK arm_sdk 예제도 head kp 30 / kd 1
-  kd_head: 1.0
+  kp_waist: 300.0             # 공식: 허리는 weak 아님 → kp_high/kd_high (시작 시 각도 유지만)
+  kd_waist: 5.0
+  kp_head: 300.0              # 공식: 머리 29/30 도 kp_high/kd_high (이전 30/1 은 SDK arm_sdk 예제 값)
+  kd_head: 5.0
+  arm_velocity_limit: 30.0    # 공식 H2 set_arm_velocity_limit 기본 30 rad/s (G1 은 20 에서 30 까지 점진)
 
-ik:                           # xr_teleoperate / h2 repo robot_arm_ik.py 와 같은 축소 모델
+ik:                           # xr_teleoperate 817fb00 H2_ArmIK 와 같은 축소 모델·비용
   lock_joints: [left_hip_pitch_joint, left_hip_roll_joint, left_hip_yaw_joint,
                 left_knee_joint, left_ankle_pitch_joint, left_ankle_roll_joint,
                 right_hip_pitch_joint, right_hip_roll_joint, right_hip_yaw_joint,
@@ -106,6 +113,7 @@ ik:                           # xr_teleoperate / h2 repo robot_arm_ik.py 와 같
                 head_pitch_joint, head_yaw_joint]
   ee_joints: [left_wrist_yaw_joint, right_wrist_yaw_joint]
   ee_offset: [0.05, 0.0, 0.0]
+  cost: {translation: 50, rotation: 0.8, regularization: 0.01, smooth: 0.1}   # 공식 H2_ArmIK (0c1b4a2). G1 기본 50 / 1.0 / 0.02 / 0.1
 
 # 기본 팔 자세 [deg] — 실측 2026-10-07: FSM 703 (4 → 703) 직후, arm_sdk 쓰기 전, 거치대 (utils/check_robot_id.py 슬롯 15–28)
 #   좌우 대칭 (pitch 8.2/8.1, roll 18.2/−18.2, yaw −12.1/12.4, elbow 73.7/73.4). 601 실측값(이전): [6.2, 23.7, −25.8, 63.8, ...]

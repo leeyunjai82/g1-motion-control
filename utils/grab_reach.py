@@ -12,7 +12,7 @@ grab_reach.py — 박스 위치별로 잡기 시퀀스를 '서버와 같은 IK' 
   방법
    - robot_server.GrabController 를 그대로 써서 대기자세(ready) → grab_box → place/center 의 손 목표를 기록
      (박스 L/R/윗면 중심은 sim_server 와 같은 가정: 윗면 좌우 변 중점에서 안쪽 2 cm)
-   - 각 이동을 arm_controller_wrapper.move_hands 처럼 보간(smoothstep, 25 Hz)하며 robot_arm_ik.G1_29_ArmIK.solve_ik
+   - 각 이동을 arm_controller_wrapper.move_hands 처럼 보간(smoothstep, 25 Hz)하며 robot_arm_ik.ArmIK.solve_ik
      (casadi, 서버와 같은 비용·관절 한계·스무딩 필터) 로 풀고, 이동 끝의 관절각 FK 와 목표의 차이를 잰다
    - 시작 팔 자세 = robot.yaml default_arm_deg
   판정: 모든 단계에서 위치 오차 < 2 cm, 손 자세 오차 < 10° 이면 O
@@ -38,9 +38,9 @@ HZ = 25
 
 def build():
     import robot_server as rsv
-    from ctrl.robot_arm_ik import G1_29_ArmIK
+    from ctrl.robot_arm_ik import ArmIK
     rsv.time.sleep = lambda *_a, **_k: None          # 시퀀스 안의 대기 생략 (기록만)
-    return rsv, G1_29_ArmIK()
+    return rsv, ArmIK()
 
 
 def box_cam(rsv, x, y, top, W):

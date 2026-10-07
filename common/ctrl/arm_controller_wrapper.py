@@ -16,8 +16,8 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 import robot_env
-from ctrl.robot_arm import G1_29_ArmController, G1_29_JointArmIndex
-from ctrl.robot_arm_ik import G1_29_ArmIK
+from ctrl.robot_arm import ArmController, G1_29_JointArmIndex
+from ctrl.robot_arm_ik import ArmIK
 
 # Locomotion 관련 임포트
 try:
@@ -105,10 +105,10 @@ class ArmControllerWrapper:
     def __init__(self, motion_mode=True, simulation_mode=False, visualization=False, use_motor_control=True):
         self.use_motor_control = use_motor_control
         self.visualization = visualization
-        self.arm_ik = G1_29_ArmIK()
+        self.arm_ik = ArmIK()
 
         if use_motor_control:
-            self.arm_ctrl = G1_29_ArmController(motion_mode=motion_mode, simulation_mode=simulation_mode)
+            self.arm_ctrl = ArmController(motion_mode=motion_mode, simulation_mode=simulation_mode)
         else:
             self.arm_ctrl = None
 
@@ -425,7 +425,7 @@ class ArmControllerWrapper:
 class ArmIKOnly:
     """FastAPI 서버 등에서 사용하는 경량 IK 클래스"""
     def __init__(self, visualization=False):
-        self.arm_ik = G1_29_ArmIK(Unit_Test=True, Visualization=visualization)
+        self.arm_ik = ArmIK(Unit_Test=True, Visualization=visualization)
         self._init_q = np.zeros(14)
 
     def solve(self, left_xyz, right_xyz, left_rpy=None, right_rpy=None):

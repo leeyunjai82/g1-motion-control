@@ -318,12 +318,7 @@ async def freeze():
     except Exception:
         pass
     try:
-        ctrl = arm.arm_ctrl
-        all_q = np.asarray(ctrl.get_current_motor_q(), dtype=float)
-        with ctrl.ctrl_lock:
-            ctrl.q_target = np.asarray(ctrl.get_current_dual_arm_q(), dtype=float)
-            ctrl.tauff_target = np.zeros(14)
-            ctrl.waist_q_target = all_q[12:15].copy()
+        arm.arm_ctrl.sync_targets_to_current()   # 팔 = 현재각, 토크 0, 허리 = 현재각 (robot.yaml joints.waist 슬롯, 허리 유지 로봇은 그대로)
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)})
     return {"ok": True}

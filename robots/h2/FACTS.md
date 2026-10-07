@@ -3,19 +3,22 @@
 H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요한 값**을 나눠 기록합니다.
 추측한 값은 넣지 않습니다. 실기에서 확인하면 이 표를 갱신한 뒤 config(`robot.yaml`)로 옮깁니다.
 
-> 현재 `robots/h2/robot.yaml` 은 `enabled: false` — 모든 스크립트/서버가 **실행 거부** (명령 경로 닫힘).
-> 아래 "확인 필요" 항목이 모두 정리되기 전에는 열지 않습니다.
+> 현재 `robots/h2/robot.yaml` 은 `enabled: true` (2026-10-07 사용자 승인, 실기 확인 항목은 아래 표).
 >
-> **오프라인 검증 (2026-10):** `robot.yaml` 값으로 공통 `robot_arm.py` 를 가짜 DDS 로 초기화한 LowCmd 35 슬롯
-> (mode/q/dq/tau/kp/kd, weight 31, head 이득, 초기화 슬롯 0–30) 이 **h2-motion-control.red `robot_arm.py`(실기 동작)와 완전히 동일**.
+> **공식 xr_teleoperate `817fb00` 와 일치 (2026-10-07, 사용자 지시 "공식이랑 똑같이"):**
+> 공통 `common/ctrl/robot_arm.py` `ArmController` / `robot_arm_ik.py` `ArmIK` (예전 이름 `G1_29_*` 는 별칭) 를 `ROBOT=h2` 로 띄운 결과가
+> 공식 `H2_ArmController` / `H2_ArmIK` 와 같음 — 같은 가짜 DDS 로 LowCmd 35 슬롯 (mode/q/dq/tau/kp/kd) · 헤더 · 속도 제한(clip 경로 포함),
+> 같은 목표 40개 `solve_ik` 결과 차이 0, 축소 모델 관절 한계 동일.
+> 공식과 다른 점은 하나: **`EnableArmSDK` 호출** (실기에서 없으면 팔이 안 움직임 — 아래 표).
+> 맞춘 항목: URDF·메시 (`assets/h2`, 0c1b4a2 팔 관절 한계 축소), IK 비용 0.8 / 0.01, 초기화 슬롯 0–34, weak 5/11 + 어깨·팔꿈치,
+> 허리·머리 kp 300 / kd 5, 허리 12 roll / 13 pitch / 14 yaw 및 시작 각도 유지(명령 안 함), 팔 속도 제한 30 rad/s.
 
 ## 작업 범위 (2026-10 결정)
 
-- **제자리에 서서** 박스를 잡아 **옆으로 옮겨 내려놓기**만 합니다.
-- 보행 중 잡기, 들고 걷기, 마커 추종은 하지 않습니다 (`/follow`, `/loco` 비활성 예정).
-- 시퀀스: G1 박스 잡기 흐름 그대로 — 인식 → **허리 yaw 로 박스 쪽 정렬** → 접근 → 잡기 → 들기 → **건네기 (정면/좌/우 yaw)** (G1 box 모드: 2초 대기 후 손 벌림) → 복귀.
-- **허리 pitch/roll 0, yaw 만 사용** (앞으로 숙이지 않아 넘어짐 방지) — `robot.yaml grab.waist_base_pitch_deg: 0`, `waist_locked: false`. H2 waist_yaw 한계 ±1.7453 rad (±100°, URDF).
-- ⚠️ yaw 를 실제로 움직이므로 **허리 슬롯 순서(12 = yaw)가 틀리면 숙이거나 기울어집니다.** 첫 실행은 매달기/지지 상태에서 작은 각도(5° 정도)로 12번이 몸통을 수직축으로 돌리는지 확인.
+- **FSM 703 에서 제자리에 서서** (거치대) 테이블 위 박스를 잡아 **제자리에 다시 내려놓기(Place, 기본)** 또는 **정면 건네기(Center)**.
+- 보행 중 잡기, 들고 걷기, 마커 추종은 하지 않습니다 (`features.locomotion: false`).
+- 시퀀스: 인식 → 접근 → 측면 하강 → 잡기 → 끌어당기기 → 대칭 정렬 → 들기 → Place(원래 자리 위 → 내려놓기 → 손 벌림 → 손 위로 → Home) / Center(건네기, 2초 뒤 손 벌림).
+- **허리 고정** — arm_sdk 로 허리가 안 움직임 (실기 2026-10-07). `grab.waist_locked: true`, `joints.waist_hold_initial: true` (시작 각도 유지, 명령 안 보냄 — 공식과 같음).
 - **손바닥 마주보기**로 양손 파지 (G1 과 같은 단위 회전 — 아래 "손 자세" 참고).
 - **테이블을 높여서** 맞춤 (아래 "시퀀스 IK 가능 범위" 참고).
 
@@ -55,7 +58,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | arm_sdk 지원 FSM | SDK master `814556d` 예제 `ARM_SDK_SUPPORTED_FSM_IDS = {4, 703}` + `EnableArmSDK()` (601 은 목록에 없음) | SDK 예제. 601 에서 jog 했을 때 팔이 안 움직였다는 사용자 보고 있음 (2026-10-07) |
 | FSM 4 상태 | `GetFsmId` (0, 4), `GetFsmMode` (0, 0), **`GetArmSdkStatus` (0, True)** — EnableArmSDK 호출 없이 True. rt/arm_sdk 240 Hz 수신, weight 1.0, 팔 명령 vs 실측 차이 ≤ 1.3° | 실측 2026-10-07 `start_fsm.sh no-bal` 후. jog 추종 여부는 확인 중 |
 | LowCmd 헤더 `mode_machine` | xr_teleoperate `817fb00` `H2_ArmController`: `msg.mode_pr = 0`, `msg.mode_machine = lowstate.mode_machine`. 이 repo·H2R 는 0 을 보냄 → `robot.yaml lowcmd.mode_machine: lowstate` 로 변경 (2026-10-07). 실기 효과는 `utils/arm_sdk_test.py` 로 확인 중 | XR, H2R |
-| 허리 슬롯 (충돌 추가) | xr_teleoperate `817fb00` "[fix] H2 waist's joint index": **12 WaistRoll, 13 WaistPitch, 14 WaistYaw** — 현재 yaml(12 yaw / 13 roll / 14 pitch, H2R 기준)과 다름 → `/check` jog 로 실기 판정 | XR |
+| 허리 슬롯 | xr_teleoperate `817fb00` "[fix] H2 waist's joint index": **12 WaistRoll, 13 WaistPitch, 14 WaistYaw** (SDK low-level 예제도 같음) → **2026-10-07 공식 순서로 변경** (이전 yaml 12 yaw / 13 roll / 14 pitch 는 H2R 기준). arm_sdk 로 허리가 안 움직여 실기 판정은 못 함 — 허리에 명령을 안 보내므로 동작 영향 없음 | XR |
 | **EnableArmSDK 필요** | 호출 없이: FSM 4·601, LowCmd mode_machine 0·1, 메시지 구성(이 repo / 공식 예제) 모두 팔 0.0° (`GetArmSdkStatus` 는 True 로 나옴). 공식 예제(SDK `814556d`, `EnableArmSDK` 결과 0) 에서는 팔이 움직임 — Stage 1(0자세로) 중 팔이 부딪혀 충돌음, 1.1 s 에 Ctrl+C | 실기 2026-10-07 → `robot.yaml sdk.enable_arm_sdk: true` (robot_arm.py 송신 전 호출, arm_server 종료 시 weight 0 후 Disable) |
 | **허리 12–14 는 arm_sdk 로 안 움직임** | FSM 4 + EnableArmSDK 상태에서 팔은 움직이는데 허리 3축 모두 반응 없음 (simulator 에서 명령). SDK `814556d` 공식 예제의 `upper_body_joints` 도 팔 14 + 머리 2 뿐 (허리 없음) | 실기 2026-10-07 사용자 → `grab.waist_locked: true` (정면 건네기만) |
 | 팔 추종 | `arm_sdk_test --enable` 슬롯 15 +5° 명령 → +2.7° (kp 80 / kd 3, robot.yaml gains 의 kp_low). xr_teleoperate H2 는 팔 kp 140 / kd 3, 손목 50 / 2 | 실기 2026-10-07 |
@@ -74,7 +77,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | 항목 | SDK-arm | SDK-low | XR | H2R |
 | --- | --- | --- | --- | --- |
 | 손목 19/20/21 (오른 26/27/28) | Roll/Pitch/Yaw | **Yaw/Pitch/Roll** | Roll/Pitch/Yaw | Roll/Pitch/Yaw ← 채택 (사용자 실기 확인) |
-| 허리 12/13/14 | Yaw/Roll/Pitch | Roll/Pitch/Yaw | Roll/Pitch/Yaw | **Yaw/Roll/Pitch** ← 채택 (사용자 실기 확인) |
+| 허리 12/13/14 | Yaw/Roll/Pitch | **Roll/Pitch/Yaw** | **Roll/Pitch/Yaw** ← 채택 (2026-10-07, XR 최신 fix) | Yaw/Roll/Pitch (이전 채택) |
 | 발목 4/5 (우리 기능 무관) | Pitch/Roll | Roll/Pitch | Roll/Pitch | Roll/Pitch |
 | arm_sdk 허용 FSM | {4, 703} + `EnableArmSDK()` 필요 | — | (검사 없음) | 601 에서 동작 (실기) |
 
@@ -193,7 +196,7 @@ detect_box 의 K(640×480)로 계산. 박스 중심 x 0.45 m 일 때 화면에 �
 
 | 확인 대상 | 방법 | 이번에 특히 볼 것 |
 | --- | --- | --- |
-| 허리 12/13/14 | 명령 ±5° | 12 = yaw (몸통 수직축 회전) 인지 — 공식 자료끼리 다름 |
+| 허리 12/13/14 | (arm_sdk 로 안 움직여 확인 불가) | 공식 XR 순서 12 roll / 13 pitch / 14 yaw 사용, 명령 안 보냄 |
 | 손목 19–21, 26–28 | 명령 ±5° | roll/pitch/yaw 순서 — 공식 자료끼리 다름 |
 | 어깨·팔꿈치 15–18, 22–25 | 명령 ±5° | (자료 일치, 재확인) |
 | 헤드 29/30, 다리 0–11 | 제어권 반납 후 손으로 → Δ | 발목 4/5 순서 |
