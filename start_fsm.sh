@@ -1,7 +1,7 @@
 #!/bin/bash
 # 자세(FSM) 전환 — 사용: ROBOT=g1 ./start_fsm.sh [stand|sit|bal|damp|no-bal]
 #   ROBOT_CHECK=1 ROBOT=h2 ./start_fsm.sh stand   enabled: false 로봇(H2)은 모터 번호 확인 모드로만 (yes 확인)
-#     H2: stand = 1(Damp) → 5초 → 4(StandUp) → 10초 → 601  (h2-motion-control.red init_fsm.py 와 같은 순서)
+#     H2: stand = 1(Damp) → 5초 → 4(FixStand) → 10초 → 703(PhaseWalk) — robot.yaml fsm.run (601 은 arm_sdk 안 먹음)
 #         끝낼 때 = damp (1) — 거치대에 건 상태라 sit 은 쓰지 않음
 # sudo 는 환경변수를 지우므로 ROBOT / check 는 init_fsm.py 인자로 넘긴다.
 # sudoers NOPASSWD 규칙의 python 경로는 아래 TV_PY 와 정확히 같아야 한다 (INSTALL.md 8단계).
