@@ -137,7 +137,9 @@ GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_
 #   · 카메라→torso_link 좌표 vs IK(pelvis 기준, 허리 0 고정) 기준 차이 z 4.4cm (PELVIS_TO_TORSO)
 #   · IK 목표점 L_ee/R_ee = 손목 yaw 에서 +5cm 지점 (손바닥 접촉면 아님)
 #   좌표 변환을 pelvis 기준으로 정확히 고치면 이 값을 0.044 줄여야 같은 높이가 된다.
-GRAB_X_OFFSET  = -0.15
+GRAB_X_OFFSET  = float(robot_env.CFG["grab"].get("grab_x_offset", -0.15))
+# ↑ 좁혀 잡을 때 손 x 를 박스 중심에서 이만큼 옮김 (robot.yaml grab.grab_x_offset). G1 −0.15 (실험값, 몸쪽으로 당김).
+#   H2 는 카메라를 마커로 보정했으므로 0 (박스 옆면 가운데를 그대로 잡음).
 HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
 LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽, G1 0.0)
 WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # 기본 상체 각도 (0=중립, G1 -3.0)
