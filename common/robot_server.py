@@ -138,7 +138,7 @@ GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_
 #   · IK 목표점 L_ee/R_ee = 손목 yaw 에서 +5cm 지점 (손바닥 접촉면 아님)
 #   좌표 변환을 pelvis 기준으로 정확히 고치면 이 값을 0.044 줄여야 같은 높이가 된다.
 GRAB_X_OFFSET  = -0.15
-HANDOVER_X     = 0.30
+HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
 LEFT_HAND_Y_OFFSET = 0.0
 WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # 기본 상체 각도 (0=중립, G1 -3.0)
 # 허리 고정 (robot.yaml grab.waist_locked) — true 면 잡기/건네기 중 허리 yaw 를 쓰지 않는다

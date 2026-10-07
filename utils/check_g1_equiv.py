@@ -47,6 +47,8 @@ check("robot_server CAMERA_PITCH_URDF (비트)", c["CAMERA_PITCH_URDF"], RE.CAME
 check("GRAB_Z_OFFSET", c["GRAB_Z_OFFSET"], float(RE.CFG["grab"]["z_offset"]))
 check("PELVIS_TO_TORSO", c["PELVIS_TO_TORSO"], tuple(float(v) for v in RE.CFG["frames"]["pelvis_to_torso"]))
 check("robot_server DEFAULT_ARM_DEG", c["DEFAULT_ARM_DEG"], [float(v) for v in RE.CFG["default_arm_deg"]])
+c = consts(H("robot_server.py"), {"HANDOVER_X"})
+check("HANDOVER_X", c["HANDOVER_X"], float(RE.CFG["grab"]["handover_x"]))
 c = consts(H("robot_server.py"), {"WAIST_BASE_PITCH"})
 check("WAIST_BASE_PITCH", c["WAIST_BASE_PITCH"], float(RE.CFG["grab"]["waist_base_pitch_deg"]))
 check("G1 waist_locked = false (yaw 정렬·좌우 건네기 유지)", False, bool(RE.CFG["grab"].get("waist_locked", False)))
