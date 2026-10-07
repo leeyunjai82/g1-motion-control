@@ -5,8 +5,8 @@
 #         끝낼 때 = damp (1) — 거치대에 건 상태라 sit 은 쓰지 않음
 # sudo 는 환경변수를 지우므로 ROBOT / check 는 init_fsm.py 인자로 넘긴다.
 # sudoers NOPASSWD 규칙의 python 경로는 아래 TV_PY 와 정확히 같아야 한다 (INSTALL.md 8단계).
-if [ "$#" -ne 1 ] || { [ "$1" != "stand" ] && [ "$1" != "sit" ] && [ "$1" != "bal" ] && [ "$1" != "damp" ] && [ "$1" != "no-bal" ]; }; then
-    echo "Usage: ROBOT=<robot> $0 [stand|sit|bal|damp|no-bal]"
+if [ "$#" -ne 1 ] || { [ "$1" != "stand" ] && [ "$1" != "sit" ] && [ "$1" != "bal" ] && [ "$1" != "damp" ] && [ "$1" != "no-bal" ] && ! [[ "$1" =~ ^[0-9]+$ ]]; }; then
+    echo "Usage: ROBOT=<robot> $0 [stand|sit|bal|damp|no-bal|<FSM ID>]   (FSM ID 는 robot.yaml fsm.names 에 있는 것만)"
     echo "       ROBOT_CHECK=1 ROBOT=h2 $0 [stand|damp|...]   (모터 번호 확인 모드)"
     exit 1
 fi

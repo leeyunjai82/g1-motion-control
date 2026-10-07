@@ -69,7 +69,7 @@ def ours_gain(s):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--slot", type=int, default=ARM[0], help=f"팔 슬롯 {ARM[0]}~{ARM[-1]} (기본 {ARM[0]})")
+    ap.add_argument("--slot", type=int, default=ARM[0], help=f"팔 슬롯 {ARM[0]}~{ARM[-1]} 또는 허리 {WAIST} (기본 {ARM[0]})")
     ap.add_argument("--deg", type=float, default=5.0, help=f"움직일 각도 (|deg| ≤ {MAX_DEG})")
     ap.add_argument("--style", choices=("sdk", "ours"), default="ours")
     ap.add_argument("--allow-fsm", type=int, action="append", default=[],
@@ -78,8 +78,10 @@ def main():
                     help="시작 전 EnableArmSDK(7109), 끝나면 DisableArmSDK — 공식 예제와 같은 절차 (결과 코드 0 아니면 중단)")
     ap.add_argument("--mm", default=None, help='LowCmd.mode_machine: "lowstate" 또는 숫자 (기본: robot.yaml lowcmd.mode_machine)')
     a = ap.parse_args()
-    if a.slot not in ARM:
-        sys.exit(f"❌ --slot 은 팔 슬롯만: {ARM}")
+    if a.slot not in ARM and a.slot not in WAIST:
+        sys.exit(f"❌ --slot 은 팔 {ARM} 또는 허리 {WAIST} 만")
+    if a.slot in WAIST and abs(a.deg) > 5.0:
+        sys.exit("❌ 허리는 |deg| ≤ 5 (넘어짐 위험)")
     if not (0 < abs(a.deg) <= MAX_DEG):
         sys.exit(f"❌ --deg 는 0 < |deg| ≤ {MAX_DEG}")
 

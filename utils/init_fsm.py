@@ -6,14 +6,14 @@ import time
 #   python init_fsm.py <stand|sit|bal|damp|no-bal> <robot> [check]
 #   check : 모터 번호 확인 모드 (ROBOT_CHECK=1) — enabled: false 로봇(H2) 기립/앉기용. start_fsm.sh 가 확인 후 넘긴다.
 # FSM ID 는 robots/<robot>/robot.yaml fsm (G1: damp 1 / lock 4 / run 501 / sit 3).
-if len(sys.argv) < 3 or sys.argv[1] not in ("stand", "sit", "bal", "damp", "no-bal"):
-    print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal] <robot> [check]")
+if len(sys.argv) < 3 or not (sys.argv[1] in ("stand", "sit", "bal", "damp", "no-bal") or sys.argv[1].isdigit()):
+    print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot> [check]")
     sys.exit(1)
 
 os.environ["ROBOT"] = sys.argv[2]
 if len(sys.argv) > 3:
     if sys.argv[3] != "check":
-        print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal] <robot> [check]")
+        print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot> [check]")
         sys.exit(1)
     os.environ["ROBOT_CHECK"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "common"))
@@ -78,3 +78,11 @@ elif mode == "no-bal":
 elif mode == "damp":
     time.sleep(3)
     setfsmid(DAMP)
+elif mode.isdigit():
+    # FSM ID 직접 — robot.yaml fsm.names 에 있는 ID 만 (오타·임의 ID 방지)
+    fid = int(mode)
+    if fid not in {int(k) for k in F["names"]}:
+        print(f"[init_fsm] ❌ FSM {fid} 는 robot.yaml fsm.names 에 없음 — 거부 ({sorted(int(k) for k in F['names'])})")
+        sys.exit(1)
+    time.sleep(3)
+    setfsmid(fid)
