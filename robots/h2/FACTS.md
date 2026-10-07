@@ -57,6 +57,8 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | LowCmd 헤더 `mode_machine` | xr_teleoperate `817fb00` `H2_ArmController`: `msg.mode_pr = 0`, `msg.mode_machine = lowstate.mode_machine`. 이 repo·H2R 는 0 을 보냄 → `robot.yaml lowcmd.mode_machine: lowstate` 로 변경 (2026-10-07). 실기 효과는 `utils/arm_sdk_test.py` 로 확인 중 | XR, H2R |
 | 허리 슬롯 (충돌 추가) | xr_teleoperate `817fb00` "[fix] H2 waist's joint index": **12 WaistRoll, 13 WaistPitch, 14 WaistYaw** — 현재 yaml(12 yaw / 13 roll / 14 pitch, H2R 기준)과 다름 → `/check` jog 로 실기 판정 | XR |
 | **EnableArmSDK 필요** | 호출 없이: FSM 4·601, LowCmd mode_machine 0·1, 메시지 구성(이 repo / 공식 예제) 모두 팔 0.0° (`GetArmSdkStatus` 는 True 로 나옴). 공식 예제(SDK `814556d`, `EnableArmSDK` 결과 0) 에서는 팔이 움직임 — Stage 1(0자세로) 중 팔이 부딪혀 충돌음, 1.1 s 에 Ctrl+C | 실기 2026-10-07 → `robot.yaml sdk.enable_arm_sdk: true` (robot_arm.py 송신 전 호출, arm_server 종료 시 weight 0 후 Disable) |
+| **허리 12–14 는 arm_sdk 로 안 움직임** | FSM 4 + EnableArmSDK 상태에서 팔은 움직이는데 허리 3축 모두 반응 없음 (simulator 에서 명령). SDK `814556d` 공식 예제의 `upper_body_joints` 도 팔 14 + 머리 2 뿐 (허리 없음) | 실기 2026-10-07 사용자 → `grab.waist_locked: true` (정면 건네기만) |
+| 팔 추종 | `arm_sdk_test --enable` 슬롯 15 +5° 명령 → +2.7° (kp 80 / kd 3, robot.yaml gains 의 kp_low). xr_teleoperate H2 는 팔 kp 140 / kd 3, 손목 50 / 2 | 실기 2026-10-07 |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)

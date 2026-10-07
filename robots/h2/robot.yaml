@@ -134,7 +134,8 @@ camera:
 grab:
   z_offset: 0.036             # 시작값 = G1 실효값 (0.08 − G1 좌표 차이 0.044, robot_server 주석). 정확 변환 기준. H2 실험으로 재조정
   waist_base_pitch_deg: 0.0   # 허리 pitch/roll 0 — 앞으로 숙이지 않음 (넘어짐 방지)
-  waist_locked: false         # yaw 는 사용: 박스 쪽 yaw 정렬 + 좌우 건네기 (기본 ±30°, URDF 한계 ±100°)
+  waist_locked: true          # 실기 2026-10-07: FSM 4 + EnableArmSDK 에서 rt/arm_sdk 로 허리 3축 모두 안 움직임
+                              # (SDK 공식 예제도 팔+머리만 명령) → yaw 정렬·좌우 건네기 없음, 정면 건네기만
   handover_x: 0.45            # 건네기 때 손 x (IK 좌표). 들기 높이 pelvis+0.35 에서 x 0.50 까지 IK 가능 (오프라인 계산)
                               # → 잡는 위치(박스 x 0.45 − 0.15 = 0.30)보다 15 cm 앞으로 내민다. G1 값 0.30 이면 앞으로 안 나감
 
