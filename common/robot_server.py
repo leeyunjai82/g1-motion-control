@@ -141,6 +141,8 @@ GRAB_X_OFFSET  = float(robot_env.CFG["grab"].get("grab_x_offset", -0.15))
 # ↑ 좁혀 잡을 때 손 x 를 박스 중심에서 이만큼 옮김 (robot.yaml grab.grab_x_offset). G1 −0.15 (실험값, 몸쪽으로 당김).
 #   H2 는 카메라를 마커로 보정했으므로 0 (박스 옆면 가운데를 그대로 잡음).
 PULL_X = float(robot_env.CFG["grab"].get("pull_x", 0.0))
+ALIGN_TO_HANDS = bool(robot_env.CFG["grab"].get("align_to_hands", False))
+# ↑ 잡은 뒤 '대칭 정렬'·들기·놓기 기준을 실제 잡은 손 위치로 (H2 true). false = 박스 중심 추정값 기준 + y 0 대칭 (G1 기존)
 # ↑ 좁혀 잡은 '뒤' 그 높이 그대로 x 로 끌어당김 [m] (− = 몸쪽). robot.yaml grab.pull_x. G1 0 (기존 동작 그대로)
 HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
 LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽, G1 0.0)
@@ -320,24 +322,25 @@ class GrabController:
 
     # ---- 공통 후반부: 대칭→들기→handover→복귀 ----
     def _finish_sequence(self, grab_x_base, grp_off_L, grp_off_R,
-                         grab_z, lift_z, l_rot, r_rot):
+                         grab_z, lift_z, l_rot, r_rot, yc=0.0):
+        # yc: 양손 중심 y (G1 = 0 — 허리 yaw 로 박스를 정면에 맞춘 뒤라 0 가정. H2 align_to_hands = 실제 잡은 손 중심)
         self.speak(self.MSG_PICKED)
 
-        sym_L = [grab_x_base, +grp_off_L + LEFT_HAND_Y_OFFSET, grab_z]
-        sym_R = [grab_x_base, -grp_off_R, grab_z]
+        sym_L = [grab_x_base, yc + grp_off_L + LEFT_HAND_Y_OFFSET, grab_z]
+        sym_R = [grab_x_base, yc - grp_off_R, grab_z]
         self._stage("들기")
         if not self._move(sym_L, sym_R, 1.5, "⑥' 대칭 정렬", l_rot, r_rot):
             return
         time.sleep(STEP_PAUSE)
 
-        ll = [grab_x_base, +grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
-        rl = [grab_x_base, -grp_off_R, lift_z]
+        ll = [grab_x_base, yc + grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
+        rl = [grab_x_base, yc - grp_off_R, lift_z]
         if not self._move(ll, rl, 1.5, "⑦ 들기", l_rot, r_rot):
             return
         time.sleep(STEP_PAUSE)
 
         if self.handover_direction == "place":
-            self._place_back(grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot)
+            self._place_back(grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot, yc)
             return
 
         if self.handover_direction == "left":
@@ -356,8 +359,8 @@ class GrabController:
             self.arm.move_waist_smooth(yaw=hy, roll=0.0, pitch=WAIST_BASE_PITCH, duration=yaw_dur)
             time.sleep(WAIST_SETTLE)
 
-        hl = [HANDOVER_X, +grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
-        hr = [HANDOVER_X, -grp_off_R, lift_z]
+        hl = [HANDOVER_X, yc + grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
+        hr = [HANDOVER_X, yc - grp_off_R, lift_z]
         if not self._move(hl, hr, 1.5, "⑧ 건네기", l_rot, r_rot):
             return
         time.sleep(STEP_PAUSE)
@@ -389,18 +392,18 @@ class GrabController:
 
         if received:
             # 받음 — 그 높이에서 손 벌려 놓기
-            open_L = [HANDOVER_X, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, lift_z]
-            open_R = [HANDOVER_X, -grp_off_R - 0.10, lift_z]
+            open_L = [HANDOVER_X, yc + grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, lift_z]
+            open_R = [HANDOVER_X, yc - grp_off_R - 0.10, lift_z]
             self._move(open_L, open_R, 1.0, "⑩ 손 벌림 (놓기)", l_rot, r_rot)
         else:
             # 못 받음 — 약간 내려서 살포시 놓고 손 벌림
             down_z = lift_z - 0.12
-            dl = [HANDOVER_X, +grp_off_L + LEFT_HAND_Y_OFFSET, down_z]
-            dr = [HANDOVER_X, -grp_off_R, down_z]
+            dl = [HANDOVER_X, yc + grp_off_L + LEFT_HAND_Y_OFFSET, down_z]
+            dr = [HANDOVER_X, yc - grp_off_R, down_z]
             self._move(dl, dr, 1.2, "⑩ 내려놓기", l_rot, r_rot)
             time.sleep(0.2)
-            open_L = [HANDOVER_X, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, down_z]
-            open_R = [HANDOVER_X, -grp_off_R - 0.10, down_z]
+            open_L = [HANDOVER_X, yc + grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, down_z]
+            open_R = [HANDOVER_X, yc - grp_off_R - 0.10, down_z]
             self._move(open_L, open_R, 1.0, "⑩' 손 벌림 (놓기)", l_rot, r_rot)
         time.sleep(0.3)
 
@@ -411,29 +414,29 @@ class GrabController:
         self.speak(self.MSG_HOME)
 
     # ---- place: 들었던 자리에 다시 내려놓기 (사람 없이 반복 시연) ----
-    def _place_back(self, grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot):
+    def _place_back(self, grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot, yc=0.0):
         # 잡기에서 박스를 몸쪽으로 (GRAB_X_OFFSET + PULL_X) 만큼 당겼으므로, 원래 자리(박스 중심 x)로 다시 밀어 놓는다
         #   → 다음 회에도 같은 자리에서 인식·잡기 (반복 시연). 들어 올린 높이에서 앞으로 → 내려놓기
         px = grab_x_base - GRAB_X_OFFSET - PULL_X
         print(f"[PLACE] 들어 올린 채 {PLACE_HOLD_SEC:.1f}초")
         time.sleep(PLACE_HOLD_SEC)
         self._stage("놓기")
-        fl = [px, +grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
-        fr = [px, -grp_off_R, lift_z]
+        fl = [px, yc + grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
+        fr = [px, yc - grp_off_R, lift_z]
         if not self._move(fl, fr, 1.5, "⑨ 원래 자리 위로", l_rot, r_rot):
             return
         down_z = grab_z + PLACE_Z_CLEAR
-        dl = [px, +grp_off_L + LEFT_HAND_Y_OFFSET, down_z]
-        dr = [px, -grp_off_R, down_z]
+        dl = [px, yc + grp_off_L + LEFT_HAND_Y_OFFSET, down_z]
+        dr = [px, yc - grp_off_R, down_z]
         if not self._move(dl, dr, 1.5, "⑨' 제자리 내려놓기", l_rot, r_rot):
             return
         time.sleep(0.3)
-        ol = [px, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, down_z]
-        orr = [px, -grp_off_R - 0.10, down_z]
+        ol = [px, yc + grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, down_z]
+        orr = [px, yc - grp_off_R - 0.10, down_z]
         if not self._move(ol, orr, 1.0, "⑩ 손 벌림", l_rot, r_rot):
             return
-        ul = [px, +grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, lift_z]
-        ur = [px, -grp_off_R - 0.10, lift_z]
+        ul = [px, yc + grp_off_L + 0.10 + LEFT_HAND_Y_OFFSET, lift_z]
+        ur = [px, yc - grp_off_R - 0.10, lift_z]
         if not self._move(ul, ur, 1.0, "⑩' 손 위로 (박스에서 떨어지기)", l_rot, r_rot):
             return
         self.speak(self.MSG_PLACED)
@@ -615,11 +618,21 @@ class GrabController:
             time.sleep(0.2)
 
         # 대칭 정렬용 파라미터: 잡은 뒤 양손을 평행/대칭으로 정리
-        grab_x_base = cx + GRAB_X_OFFSET + PULL_X
-        grp_off_L = abs(Ly - cy)
-        grp_off_R = abs(Ry - cy)
+        if ALIGN_TO_HANDS:
+            # 실제로 잡은 손 위치 기준 (H2) — 박스 중심 추정(cx, cy)과 L/R 점이 어긋나도 잡은 손이 튀지 않게.
+            #   x = 양손 x 평균 (+당긴 거리), y = 양손 중심 기준 대칭 (왼손 보정 제외하고 계산)
+            grab_x_base = (gripL[0] + gripR[0]) / 2 + PULL_X
+            yL = gripL[1] - LEFT_HAND_Y_OFFSET
+            yc = (yL + gripR[1]) / 2
+            grp_off_L = yL - yc
+            grp_off_R = yc - gripR[1]
+        else:
+            grab_x_base = cx + GRAB_X_OFFSET + PULL_X
+            grp_off_L = abs(Ly - cy)
+            grp_off_R = abs(Ry - cy)
+            yc = 0.0
         self._finish_sequence(grab_x_base, grp_off_L, grp_off_R,
-                              grab_z, lift_z, l_rot, r_rot)
+                              grab_z, lift_z, l_rot, r_rot, yc)
 
 
 
