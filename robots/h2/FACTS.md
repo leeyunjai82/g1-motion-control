@@ -49,6 +49,8 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | **`LowState_.mode_machine`** | **1** (`mode_pr` 0, `version` [0, 0]) | 실측 2026-10-07 `utils/check_robot_id.py` 부팅 직후, 20회 관측 모두 1 → `robot.yaml identity.mode_machine` |
 | 살아 있는 모터 슬롯 | 0–30 (31개). 31–34 온도·전압 0 (weight 슬롯 31 에 모터 없음) | 실측 2026-10-07 |
 | 부팅 직후 다리 0–3, 6–9 | `mode 10`, `vol 0.00` (온도는 정상 출력). 발목 4/5/10/11·상체는 `mode 1`, 73.5–74.0 V | 실측 2026-10-07. mode 10 의미는 확인 필요 (이번 범위에서 다리 미사용) |
+| 기본 팔 자세 (FSM 601, arm_sdk 전) | 슬롯 15–28 [deg] = [6.2, 23.7, -25.8, 63.8, 0.6, 0.3, 0.1, 3.2, -19.9, 18.4, 62.6, -0.3, 0.7, 0.1] | 실측 2026-10-07 거치대, 1회 → `robot.yaml default_arm_deg`. 좌우 어깨 roll(16 +, 23 −)·yaw(17 −, 24 +) 부호가 대칭 → 15–18/22–25 배치와 일치. 손목 6개는 모두 ≈0 이라 순서 판정 불가 (jog 로 확인) |
+| 601 기립 후 다리 0–3, 6–9 | 여전히 `mode 10`, `vol 0.00` → 부팅 직후와 같음 (기립·밸런스 중에도 이 값) | 실측 2026-10-07 |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)
@@ -76,7 +78,6 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | H2 기본(헤드) 카메라 | 2차 자료상 140° 광각 **바이노큘러 RGB** (unitree.com 직접 확인 못 함). 깊이 출력·공장 intrinsics API 근거 없음. teleimager(`f883d6a`)는 컬러 JPEG 만 전송 (depth/intrinsics 는 RealSense 백엔드에서만 읽고 전송 안 함). 일부 판매처 상품명의 "depth camera" 는 실체 미확인 → H2 PC 에서 `lsusb` / `rs-enumerate-devices` 로 RealSense 존재 여부 확인 필요 |
 | 테이블 높이 | 아래 시퀀스 IK 가능 범위 + 실측 pelvis 높이로 결정 |
 | 서 있을 때 pelvis 높이 | H2R `GROUND_TO_PELVIS = 0.782` 는 G1 값 복사. URDF 다리 편 자세 ankle_roll_link = pelvis −0.985 m |
-| 기본 팔 자세 (`DEFAULT_ARM_DEG`) | 601 기립 상태에서 실측 |
 | IMU | URDF 에 `imu_in_torso`, `imu_in_pelvis` 링크. `rt/lowstate.imu_state` 가 어느 쪽인지 확인 필요 |
 
 ## IK 도달 범위 (오프라인 근사, 2026-10)
