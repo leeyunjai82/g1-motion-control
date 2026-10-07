@@ -7,8 +7,8 @@
 #                        허리 pitch/roll 0 · yaw 만 사용, 손바닥 마주보기, 보행/추종 없음, 외부 D435i (mini PC USB).
 # ============================================================
 name: h2
-enabled: false
-disabled_reason: "실기 잡기 시연 전 사용자 승인 대기 (확인 항목 완료: mode_machine, 팔 매핑, 기본 자세, EnableArmSDK·703, 카메라 보정)"
+enabled: true                 # 2026-10-07 사용자 승인 — 실기 확인 완료: mode_machine 1, 팔 15–28 매핑, 기본 자세(703),
+                              #   EnableArmSDK·FSM 703, 카메라 K·숙임·x·z 보정, 손→마커. (y 좌우 보정만 남음)
 urdf: H2.urdf                 # unitree_ros 5994d4f robots/h2_description (h2-motion-control.red 와 동일)
 ik_cache: h2_model_cache.pkl  # 첫 실행 시 URDF 에서 생성
 

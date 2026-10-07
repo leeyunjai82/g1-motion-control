@@ -72,6 +72,10 @@ sweep_zombies "cleanup"
 source "$ROOT/activate_tv.sh" || exit 1
 cd "$ROOT/common"
 
+# 보행·마커 추종이 없는 로봇(robot.yaml features.locomotion: false, H2)은 마커 인식(detect_marker)을 띄우지 않는다
+LOCO=$(python -c 'import sys,yaml; print(1 if (yaml.safe_load(open(sys.argv[1])).get("features") or {}).get("locomotion", True) else 0)' \
+       "$ROOT/robots/$ROBOT/robot.yaml") || exit 1
+
 PIDS=()
 NAMES=()
 
@@ -144,16 +148,19 @@ python -u dashboard.py          > >(stamp >> "$LOG_DIR/dashboard_$DAY.log")     
 PIDS+=($!); NAMES+=("dashboard")
 sleep 2
 
-echo "[start] detect_marker (50011) ..."
-python -u ctrl/detect_marker.py > >(stamp >> "$LOG_DIR/detect_marker_$DAY.log") 2>&1 &
-PIDS+=($!); NAMES+=("detect_marker")
-sleep 1
+if [ "$LOCO" = "1" ]; then
+  echo "[start] detect_marker (50011) ..."
+  python -u ctrl/detect_marker.py > >(stamp >> "$LOG_DIR/detect_marker_$DAY.log") 2>&1 &
+  PIDS+=($!); NAMES+=("detect_marker")
+  sleep 1
+fi
 
 echo "[start] detect_box    (50010) ..."
 python -u ctrl/detect_box.py    > >(stamp >> "$LOG_DIR/detect_box_$DAY.log")    2>&1 &
 PIDS+=($!); NAMES+=("detect_box")
 sleep 1
 
+if [ "$LOCO" = "1" ]; then
 cat <<EOF
   ✓ 6개 서버 실행 중  (ROBOT=$ROBOT)
     - arm_server    : http://localhost:50022/status    (팔 전용 — arm_sdk 단독 점유)
@@ -169,6 +176,24 @@ cat <<EOF
     3) 자동: 인식 웹(50011/50010)에서 자동 ON + 영역 설정
        수동: 50000 웹의 [수동 잡기]
     4) 로봇 시각화는 http://localhost:50003/dashboard
+EOF
+else
+cat <<EOF
+  ✓ 5개 서버 실행 중  (ROBOT=$ROBOT, 보행·마커 추종 없음 → detect_marker 생략)
+    - arm_server    : http://localhost:50022/status    (팔 전용 — arm_sdk 단독 점유)
+    - Robot control : http://localhost:50000/          (제어 + 잡기)
+    - Dashboard     : http://localhost:50003/dashboard (3D viewer + video + depth)
+    - rs_stream     : http://localhost:50001/video_feed
+    - detect_box    : http://localhost:50010/          (박스 인식)
+
+  사용:
+    1) http://localhost:50000/ 접속 (제어)
+    2) Grab Mode → Box, Handover → Place(내려놓기) 또는 Center(건네기)
+    3) [Grab Now] (수동) — 자동은 50010 웹에서 자동 ON + 영역 설정
+    4) 로봇 시각화는 http://localhost:50003/dashboard
+EOF
+fi
+cat <<EOF
 
   로그: $LOG_DIR  (하루 단위 _$DAY + append + 타임스탬프)
   실시간: tail -f $LOG_DIR/robot_server_$DAY.log
