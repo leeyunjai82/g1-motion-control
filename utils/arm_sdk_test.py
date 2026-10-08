@@ -12,10 +12,12 @@ arm_sdk_test.py — rt/arm_sdk 로 팔 관절 하나만 조금 움직여 보고,
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --style sdk   # 공식 SDK 예제 구성
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --allow-fsm 601  # 리모컨 운동제어 모드 등 목록 밖 FSM
   ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --enable      # EnableArmSDK → 시험 → DisableArmSDK (공식 예제 절차)
+  ROBOT_CHECK=1 ROBOT=h2 python utils/arm_sdk_test.py --enable --style sdk --slot 30 --deg 10   # 머리 yaw (29 = pitch)
   안전: 시험 슬롯 외 팔·허리 슬롯이 시작 대비 8° 넘게 움직이면 즉시 weight 반납
 
   --style sdk  : unitree_sdk2_python h2_arm_sdk_dds_example.py 와 같은 구성
-                 팔 14 슬롯만 q / kp 80 / kd 1.5, mode 는 건드리지 않음(0). (허리는 현재각 유지 kp 150 / kd 3 추가)
+                 팔 14 슬롯 kp 80 / kd 1.5 + 머리 29/30 kp 30 / kd 1.0, mode 는 건드리지 않음(0).
+                 (허리는 현재각 유지 robot.yaml kp_waist / kd_waist 추가)
   --style ours : robot_arm.py 와 같은 구성 — init_slots(0–30) 전부 mode 1 + robot.yaml gains, q = 현재각
 
 순서 (50 Hz, SDK 예제와 같은 주기)
@@ -69,7 +71,8 @@ def ours_gain(s):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--slot", type=int, default=ARM[0], help=f"팔 슬롯 {ARM[0]}~{ARM[-1]} 또는 허리 {WAIST} (기본 {ARM[0]})")
+    ap.add_argument("--slot", type=int, default=ARM[0],
+                    help=f"팔 슬롯 {ARM[0]}~{ARM[-1]}, 허리 {WAIST} 또는 머리 {HEAD} (기본 {ARM[0]})")
     ap.add_argument("--deg", type=float, default=5.0, help=f"움직일 각도 (|deg| ≤ {MAX_DEG})")
     ap.add_argument("--style", choices=("sdk", "ours"), default="ours")
     ap.add_argument("--allow-fsm", type=int, action="append", default=[],
@@ -78,8 +81,8 @@ def main():
                     help="시작 전 EnableArmSDK(7109), 끝나면 DisableArmSDK — 공식 예제와 같은 절차 (결과 코드 0 아니면 중단)")
     ap.add_argument("--mm", default=None, help='LowCmd.mode_machine: "lowstate" 또는 숫자 (기본: robot.yaml lowcmd.mode_machine)')
     a = ap.parse_args()
-    if a.slot not in ARM and a.slot not in WAIST:
-        sys.exit(f"❌ --slot 은 팔 {ARM} 또는 허리 {WAIST} 만")
+    if a.slot not in ARM and a.slot not in WAIST and a.slot not in HEAD:
+        sys.exit(f"❌ --slot 은 팔 {ARM}, 허리 {WAIST}, 머리 {HEAD} 만")
     if a.slot in WAIST and abs(a.deg) > 5.0:
         sys.exit("❌ 허리는 |deg| ≤ 5 (넘어짐 위험)")
     if not (0 < abs(a.deg) <= MAX_DEG):
@@ -128,9 +131,9 @@ def main():
     q_all = np.array([float(st["msg"].motor_state[i].q) for i in range(len(st["msg"].motor_state))])
     q0 = float(q_all[a.slot])
     if a.style == "sdk":
-        slots = ARM + WAIST
+        slots = ARM + HEAD + WAIST
         for s in slots:
-            kp, kd = (80.0, 1.5) if s in ARM else (G["kp_waist"], G["kd_waist"])
+            kp, kd = (80.0, 1.5) if s in ARM else (30.0, 1.0) if s in HEAD else (G["kp_waist"], G["kd_waist"])
             cmd.motor_cmd[s].kp, cmd.motor_cmd[s].kd = kp, kd
     else:
         slots = INIT
