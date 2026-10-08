@@ -11,8 +11,8 @@ H2 D435i 카메라 거치대 (FDM PLA, 3부품) — 등판 M6 4개 → 어깨 �
             구멍은 등 커버의 지름 10 mm 우물 바닥에 있음 → 스피곳이 우물에 들어가 바닥(나사 시작면)에 닿게 조임.
 
 부품
-  yoke_L / yoke_R : 등 받침판 + 어깨 넘는 띠 한 덩어리. 출력: 바깥면을 바닥에. 받침판 아래 혀 밑에만 서포트.
-  camera_bar      : 가로대 + 45° 카메라 자리 (1/4-20 나사). 출력: 아랫면을 바닥에, 서포트 없음.
+  yoke_L / yoke_R : 등 받침판 + 어깨 넘는 띠 한 덩어리. 출력: 바깥면을 바닥에 (혀 밑은 팔 범위 밖까지 경사로 채움).
+  camera_bar      : 가로대 + 45° 카메라 자리 + 뒤판 (D435i 뒷면 M3 2개, 간격 45). 출력: 아랫면을 바닥에, 서포트 없음.
 피하는 것: 머리 전 범위 (숙임 −30..48°, 좌우 ±100° → 띠는 |y| ≥ 105), 잡기 시퀀스 팔 이동 범위
           (등 쪽 띠는 z 335 부터, 아래 구멍 둘레 혀는 바깥 끝 y 95.5, 앞 발·가로대는 z 338 부터).
 """
@@ -34,6 +34,10 @@ BAND = (105.0, 129.0)                     # 띠 y (머리 이동 범위 밖)
 Z_BACK0 = 335.0                           # 등 쪽 띠·받침판 위쪽 시작 z (팔 최고 325)
 PAD = dict(y0=66.0, y1=105.5, z1=405.0)   # 받침판 (위 구멍) z Z_BACK0..405
 LOBE = dict(y0=71.5, y1=94.5, z0=281.5, chamfer=4.0)   # 아래 구멍 둘레 혀 (바깥 아래 모서리 45° 모따기 — 팔 회피)
+# 혀 바깥(y 94–129) 채움: 잡기 시퀀스 팔 이동 범위(받침판 앞뒤 5 mm, 좌우 5 mm 여유) + 4 mm 위로, 출력 기울기 ≤ 약 50°
+#   (y, 아래 경계 z) — y 129 가 출력 바닥면. 이 아래(z 작은 쪽)는 팔이 지나가는 자리라 비워 둠
+FILL_PROFILE = [(129.0, 328.3), (125.0, 328.3), (124.5, 327.7), (124.0, 327.3), (122.0, 327.3), (117.0, 321.3),
+                (116.5, 320.9), (114.5, 320.9), (110.0, 315.5), (109.5, 315.2), (107.5, 315.2), (94.0, 299.0)]
 R = 30.0                                  # 굽힘 중심선 반경
 Z_TOP_C = 432.0                           # 어깨 위 수평부 중심선 z (아랫면 427.5, 어깨 윗면 최고 408.5)
 X_FRONT_C = 85.0                          # 앞 수직부 중심선 x
@@ -43,12 +47,12 @@ SPIGOT_D, BOSS_D, BOLT_D = 9.3, 14.0, 6.6
 M4 = ((104.0, 350.0), (115.0, 350.0))     # 띠 발 – 가로대 M4 (x, z)
 M4_D, M4_CB_D, M4_CB_H = 4.4, 8.0, 4.5
 NUT_AF, NUT_T, NUT_FROM_END = 7.4, 3.6, 10.0
-# 카메라 D435i (90×25×25, 바닥 1/4-20 — 데이터시트 확인 필요)
+# 카메라 D435i (90×25×25 — 데이터시트 확인 필요)
 LENS = (130.0, 350.0); PITCH = 45.0       # 렌즈 앞면 중심 (x, z), 아래로 숙임
 CAM_W, CAM_H, CAM_D = 90.0, 25.0, 25.0
 SEAT_HALF = 52.0                          # 45° 자리 |y|
-LIP_T, LIP_H = 4.0, 8.0
-SLOT_HALF, SLOT_W, CB_W, SCREW_GRIP = 15.0, 6.8, 11.0, 5.0   # 1/4-20 홈 ±15 (카메라 나사 위치 흡수), 머리 자리 폭, 머리 밑 살 두께
+# 카메라 고정: D435i 뒷면 M3 2개 (간격 45 — 사용자 기존 거치대 실측) + 아래는 45° 자리에 얹힘
+BACK_T, BACK_HALF, M3_D, M3_PITCH = 4.0, 32.0, 3.4, 45.0
 
 
 def box(x0, x1, y0, y1, z0, z1):
@@ -88,6 +92,8 @@ def yoke_left():
     xb = (PX0 + PX1) / 2
     s = box(PX0, PX1, PAD["y0"], y1, Z_BACK0, PAD["z1"])                                  # 받침판 + 띠 뒤 수직 (한 판)
     s = s.union(box(PX0, PX1, LOBE["y0"], LOBE["y1"], LOBE["z0"], Z_BACK0 + 1))           # 아래 혀
+    fill = [(FILL_PROFILE[0][0], Z_BACK0 + 1)] + FILL_PROFILE + [(FILL_PROFILE[-1][0], Z_BACK0 + 1)]
+    s = s.union(cq.Workplane("YZ", origin=(PX0, 0, 0)).polyline(fill).close().extrude(T))   # 혀 바깥 채움 (팔 범위 밖)
     c = LOBE["chamfer"]
     s = s.cut(cq.Workplane("YZ", origin=(PX0 - 1, 0, 0))
               .polyline([(LOBE["y1"] - c, LOBE["z0"] - 0.01), (LOBE["y1"] + 0.01, LOBE["z0"] - 0.01), (LOBE["y1"] + 0.01, LOBE["z0"] + c)])
@@ -122,10 +128,11 @@ def camera_bar():
         return box(s0, s1, y0, y1, t0, t1).rotate((0, 0, 0), (0, 1, 0), PITCH).translate((b0[0], 0, b0[1]))
     b = box(BAR["x0"], BAR["x1"], -BAR["half"], BAR["half"], BAR["z0"], BAR["z1"])
     b = b.cut(local(-40, 40, -SEAT_HALF, SEAT_HALF, 0, 40))                              # 45° 카메라 자리
-    b = b.union(local(-CAM_D / 2 - LIP_T, -CAM_D / 2, -SEAT_HALF + 2, SEAT_HALF - 2, -3, LIP_H))   # 뒤 턱
-    hole_len = (b0[1] - BAR["z0"]) / u[1] + 2                                              # 자리 → 아랫면 (u 방향)
-    b = b.cut(local(-SLOT_W / 2, SLOT_W / 2, -SLOT_HALF, SLOT_HALF, -hole_len, 1))
-    b = b.cut(local(-CB_W / 2, CB_W / 2, -SLOT_HALF - 3, SLOT_HALF + 3, -hole_len - 5, -SCREW_GRIP))   # 머리 자리 (아래에서)
+    b = b.union(local(-CAM_D / 2 - BACK_T, -CAM_D / 2, -BACK_HALF, BACK_HALF, -3, CAM_H))      # 카메라 뒤판
+    for yy in (-M3_PITCH / 2, M3_PITCH / 2):                                                      # M3 구멍 (뒷면 가운데 높이)
+        b = b.cut(cq.Workplane().add(cq.Solid.makeCylinder(M3_D / 2, BACK_T + 2, cq.Vector(-CAM_D / 2 - BACK_T - 1, yy, CAM_H / 2),
+                                                              cq.Vector(1, 0, 0)))
+                  .rotate((0, 0, 0), (0, 1, 0), PITCH).translate((b0[0], 0, b0[1])))
     for sgn in (-1, 1):
         end = sgn * BAR["half"]
         for (x, z) in M4:
