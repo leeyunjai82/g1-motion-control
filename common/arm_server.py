@@ -10,6 +10,7 @@ HTTP API 를 통해서만 지령한다. arm_sdk 직접 송신 프로세스는 �
   - /joints               : 팔 14축 관절각 보간 (deg)
   - /hands                : IK 좌표 이동 (torso 기준 xyz + 쿼터니언/RPY)
   - /waist                : 허리 3축 (deg)
+  - /head  (GET/POST)     : 머리 [pitch, yaw] (deg, H2 29/30) — 목표만 바꾸고 바로 응답 (이동은 송신 루프가 속도 제한)
   - /park                 : 기본 자세 복귀 (허리 중립 + DEFAULT_ARM_DEG)
   - /freeze /stop_motion  : 현재 자세 동결 / 보간 중단
   - /pose /status         : 실측·타겟·weight 조회
@@ -70,6 +71,10 @@ class WaistReq(BaseModel):
     roll: float = 0.0
     pitch: float = 0.0
     duration: float = 1.5
+
+class HeadReq(BaseModel):
+    pitch: float = 0.0             # deg, + = 숙임
+    yaw: float = 0.0               # deg, + = 왼쪽
 
 class HandsReq(BaseModel):
     left_xyz: List[float]
@@ -265,6 +270,34 @@ async def waist(req: WaistReq):
     return {"ok": True}
 
 
+def _head_state(target=None):
+    c = arm.arm_ctrl
+    t = c.get_head_target() if target is None else target
+    return {"ok": True, "target": [round(float(v), 2) for v in np.degrees(t)],
+            "meas": [round(float(v), 2) for v in np.degrees(c.get_head_q())]}
+
+
+@app.get("/head")
+async def head_get():
+    """머리 [pitch, yaw] 목표·실측 (deg)."""
+    if not arm or not arm.arm_ctrl:
+        raise HTTPException(503, "Arm 미초기화")
+    if not arm.arm_ctrl.has_head():
+        raise HTTPException(409, "머리 없음 (robot.yaml joints.head_range_deg)")
+    return _head_state()
+
+
+@app.post("/head")
+async def head(req: HeadReq):
+    """머리 목표 (deg). robot.yaml joints.head_range_deg 로 잘림, 블로킹 없음 — 머리 추종(head_track)이 10 Hz 로 보냄."""
+    if not arm or not arm.arm_ctrl:
+        raise HTTPException(503, "Arm 미초기화")
+    q = arm.arm_ctrl.ctrl_head(np.radians([req.pitch, req.yaw]))
+    if q is None:
+        raise HTTPException(409, "머리 없음 (robot.yaml joints.head_range_deg)")
+    return _head_state(q)
+
+
 @app.post("/hands")
 async def hands(req: HandsReq):
     if not arm:
@@ -310,7 +343,7 @@ async def stop_motion():
 
 @app.post("/freeze")
 async def freeze():
-    """보간 중단 + 팔·허리 타겟을 현재 실측각으로 동결."""
+    """보간 중단 + 팔·허리·머리 타겟을 현재 실측각으로 동결."""
     if not arm:
         raise HTTPException(503, "Arm 미초기화")
     try:

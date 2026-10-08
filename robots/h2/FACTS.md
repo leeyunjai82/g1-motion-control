@@ -109,6 +109,7 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | 손 종류 / SDK | H2R 는 G1 과 같은 `mandro3.py` 포함 — 실제 장착 손 확인 |
 | D435i 장착 위치·외부 파라미터 | **외부 D435i 를 mini PC USB 에 연결** (G1 과 같은 방식, 헤드 내장 카메라 미사용). `robot.yaml camera` 는 **임시값**(가슴 고정 가정: x 0.10, z 0.35, 아래 50°) — 실장착 후 4개 값만 수정. 목 관절이 있으므로 torso 고정 권장 |
 | H2 기본(헤드) 카메라 | 쌍안. 공식 문서 'Bilateral Data Stream Acquisition Interface' (2026-08-11 판, 사용자 제공): 앱에서 video_hub 끄고 'Stereo patch PC1' 서비스 켬 (자동 시작 아님). RGB = RTP/H264 UDP 유니캐스트 → 수신 IP (기본 192.168.123.170, `http://192.168.123.161:9080/set?ip=…` 후 서비스 재시작): 5002 원본 쌍안 1920×1080 15 fps(왜곡 보정 전) / 5004 왼눈 · 5006 오른눈 544×448 10 fps. **깊이** = PC1 TCP 5000, Y16 544×448 10 fps, mm (0·65535 무효), 헤더 36 B `<IQQIIII` (magic 0x59313620) — 공식 deb `unitree-dep-img` 1.0.0 의 dep_img_client.c 확인. 확인용 `utils/check_head_cam.py` (deb 없이 직접 수신). **내부 파라미터·깊이↔왼눈 정렬·머리 링크 기준 위치는 문서에 없음** (URDF 에 카메라 프레임 없음, 머리 29/30 관절 따라 움직임) → 실측 필요. 문서의 설치 패키지 2·3 이름이 바뀌어 있음 (2 = v4l2loopback-dkms, 3 = v4l-utils). 실기 수신 확인 필요 |
+| 머리 29/30 arm_sdk 명령 | 공식 SDK `h2_arm_sdk_dds_example.py` 는 FSM 4/703 + EnableArmSDK 에서 팔 14 + 머리 2 를 명령 (머리 kp 30 / kd 1). 이 repo: `arm_server` `POST /head` (robot.yaml `joints.head_range_deg` pitch −25..40 · yaw ±90, `gains.head_velocity_limit` 1 rad/s), `common/head_track.py` 얼굴·사람 추종. fake_robot 시뮬에서만 확인 — 실기는 `utils/arm_sdk_test.py --enable --style sdk --slot 30 --deg 10` 먼저 |
 | 테이블 높이 | 아래 시퀀스 IK 가능 범위 + 실측 pelvis 높이로 결정 |
 | IMU | URDF 에 `imu_in_torso`, `imu_in_pelvis` 링크. `rt/lowstate.imu_state` 가 어느 쪽인지 확인 필요 |
 

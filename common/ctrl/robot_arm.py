@@ -31,6 +31,12 @@ WEAK_SLOTS   = {int(i) for i in _J["weak"]}
 # 허리를 시작 시 현재각으로만 잡고 이후 명령하지 않음 (xr_teleoperate H2_ArmController 와 같음). G1 false = 허리 명령 (기존)
 WAIST_HOLD   = bool(_J.get("waist_hold_initial", False))
 ARM_VEL_LIMIT = float(_G.get("arm_velocity_limit", 20.0))   # 팔 관절 속도 제한 [rad/s] (G1 20 → speed_gradual_max 로 30, H2 공식 30)
+# 머리 [pitch, yaw] 슬롯 (robot.yaml joints.map head_pitch_joint / head_yaw_joint — G1 은 없음).
+# 명령은 joints.head_range_deg 안으로 자르고, 송신 루프가 gains.head_velocity_limit 속도로 목표까지 옮김
+HEAD_ORDER   = [int(_J["map"][k]) for k in ("head_pitch_joint", "head_yaw_joint") if k in (_J.get("map") or {})]
+_HR          = _J.get("head_range_deg") or {}
+HEAD_RANGE   = (np.radians([_HR["pitch"], _HR["yaw"]]) if HEAD_ORDER and "pitch" in _HR and "yaw" in _HR else None)
+HEAD_VEL_LIMIT = float(_G.get("head_velocity_limit", 1.0))   # [rad/s]
 
 class MotorState:
     def __init__(self):
@@ -145,6 +151,8 @@ class ArmController:
         current_all_q = self.get_current_motor_q()
         self.q_target = self.get_current_dual_arm_q()
         self.waist_q_target = current_all_q[WAIST_SLOTS]   # robot.yaml joints.waist (G1: 12, 13, 14번)
+        self.head_q_target = current_all_q[HEAD_ORDER] if HEAD_ORDER else np.zeros(0)   # [pitch, yaw] — 시작 각도 유지
+        self.head_q_cmd = self.head_q_target.copy()       # 속도 제한을 거친 실제 송신값
 
         logger_mp.info("모든 관절 고정 설정 중 (팔/허리 제외)...")
         arm_indices = set(ARM_SLOTS)
@@ -236,6 +244,7 @@ class ArmController:
                 arm_q_target     = self.q_target
                 arm_tauff_target = self.tauff_target
                 waist_q_target   = self.waist_q_target
+                head_q_target    = self.head_q_target
 
             # 1. 팔 제어 업데이트
             if self.simulation_mode:
@@ -254,7 +263,16 @@ class ArmController:
                 self.msg.motor_cmd[joint_idx].dq  = 0
                 self.msg.motor_cmd[joint_idx].tau = 0
 
-            # 3. CRC 계산 및 전송 (예외 시에도 루프 유지 - 송신 중단은 낙상 위험)
+            # 3. 머리 (H2 29/30) — 목표까지 head_velocity_limit 로 이동
+            if HEAD_ORDER:
+                step = HEAD_VEL_LIMIT * self.control_dt
+                self.head_q_cmd = self.head_q_cmd + np.clip(head_q_target - self.head_q_cmd, -step, step)
+                for i, joint_idx in enumerate(HEAD_ORDER):
+                    self.msg.motor_cmd[joint_idx].q   = self.head_q_cmd[i]
+                    self.msg.motor_cmd[joint_idx].dq  = 0
+                    self.msg.motor_cmd[joint_idx].tau = 0
+
+            # 4. CRC 계산 및 전송 (예외 시에도 루프 유지 - 송신 중단은 낙상 위험)
             try:
                 self.msg.crc = self.crc.Crc(self.msg)
                 self.lowcmd_publisher.Write(self.msg)
@@ -295,6 +313,24 @@ class ArmController:
         with self.ctrl_lock:
             self.waist_q_target = np.array(q_target)
 
+    def has_head(self):
+        """머리 명령 가능 여부 (robot.yaml joints.map 에 머리 관절 + joints.head_range_deg)."""
+        return HEAD_RANGE is not None
+
+    def ctrl_head(self, q_target):
+        """머리 [pitch, yaw] 목표 [rad] (pitch + = 숙임, yaw + = 왼쪽). head_range_deg 로 자른 값을 돌려줌, 머리 없으면 None.
+        실제 이동은 송신 루프가 head_velocity_limit 로 천천히."""
+        if HEAD_RANGE is None:
+            return None
+        q = np.clip(np.asarray(q_target, dtype=float), HEAD_RANGE[:, 0], HEAD_RANGE[:, 1])
+        with self.ctrl_lock:
+            self.head_q_target = q
+        return q.copy()
+
+    def get_head_target(self):
+        with self.ctrl_lock:
+            return self.head_q_target.copy()
+
     # ==================== arm_sdk 제어권 (hold/release) ====================
 
     def disable_arm_sdk(self):
@@ -318,6 +354,9 @@ class ArmController:
             self.tauff_target = np.zeros(14)
             if not WAIST_HOLD:
                 self.waist_q_target = all_q[WAIST_SLOTS].copy()
+            if HEAD_ORDER:
+                self.head_q_target = all_q[HEAD_ORDER].copy()
+                self.head_q_cmd = self.head_q_target.copy()
 
     def ramp_weight(self, dst, duration=2.0):
         """weight 를 현재값에서 dst 까지 duration 초 동안 선형 램프 (블로킹)."""
@@ -370,6 +409,11 @@ class ArmController:
         """현재 허리 관절각 [yaw, roll, pitch] (rad)"""
         q = self.get_current_motor_q()
         return q[WAIST_SLOTS].copy()
+
+    def get_head_q(self):
+        """현재 머리 관절각 [pitch, yaw] (rad), 머리 없으면 빈 배열"""
+        q = self.get_current_motor_q()
+        return q[HEAD_ORDER].copy() if HEAD_ORDER else np.zeros(0)
 
     # ==================== 유틸리티 ====================
 

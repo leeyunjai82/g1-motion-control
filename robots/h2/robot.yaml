@@ -81,7 +81,10 @@ joints:
   arm: [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]
   waist: [14, 12, 13]         # yaw, roll, pitch 순서의 슬롯 (map 과 같게)
   waist_hold_initial: true    # 허리는 시작 시 현재각으로 잡고 이후 명령 안 함 (xr_teleoperate H2_ArmController 와 같음)
-  head: [29, 30]              # arm_sdk 동안 현재각 유지 (kp_head/kd_head)
+  head: [29, 30]              # arm_sdk 동안 현재각 유지 (kp_head/kd_head), arm_server /head 로 명령
+  # 머리 명령 범위 [deg] (+ pitch = 숙임, + yaw = 왼쪽) — URDF 한계 pitch −30..+48 / yaw ±100 에서 5–10° 여유.
+  #   카메라 거치대(robots/h2/cad/camera_bracket)는 머리 전 범위를 피하도록 확인됨
+  head_range_deg: {pitch: [-25.0, 40.0], yaw: [-90.0, 90.0]}
   weight_slot: 31             # SDK arm_sdk 예제 / xr_teleoperate / h2 repo 실기
   # 시작 시 mode 1 / kp / kd / q=현재각 설정 슬롯 — xr_teleoperate H2_ArmController 와 같이 H2_JointIndex 전부 (0–34, weight 31·미사용 32–34 포함)
   init_slots: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
@@ -103,6 +106,7 @@ gains:                        # xr_teleoperate 817fb00 H2_ArmController (팔 = k
   kp_head: 300.0              # 공식: 머리 29/30 도 kp_high/kd_high (이전 30/1 은 SDK arm_sdk 예제 값)
   kd_head: 5.0
   arm_velocity_limit: 30.0    # 공식 H2 set_arm_velocity_limit 기본 30 rad/s (G1 은 20 에서 30 까지 점진)
+  head_velocity_limit: 1.0    # 머리 목표 변화 최대 속도 [rad/s] (57°/s) — 송신 루프에서 제한
 
 ik:                           # xr_teleoperate 817fb00 H2_ArmIK 와 같은 축소 모델·비용
   lock_joints: [left_hip_pitch_joint, left_hip_roll_joint, left_hip_yaw_joint,
@@ -193,6 +197,26 @@ fsm:                          # unitree_sdk2py h2_loco_client.py + h2-motion-con
     lock_button: "FixStand"
     run_button: "PhaseWalk (balance)"
     run_enter: "PhaseWalk(703)"
+
+# 머리 추종 (common/head_track.py :50013) — 머리 카메라 왼눈 영상에서 가장 큰 얼굴(없으면 사람)을 화면 가운데로
+head_track:
+  port: 50013
+  mode: auto                  # face | person | auto (얼굴 우선, 얼굴이 person_after_s 동안 없으면 사람)
+  device: CPU                 # OpenVINO 장치 (CPU / GPU / NPU / AUTO) — utils/get_dev.py 로 확인
+  face_conf: 0.6
+  person_conf: 0.5
+  person_after_s: 1.0
+  person_aim: 0.12            # 사람 박스 위에서 이 비율 아래를 봄 (≈ 머리)
+  hfov_deg: 90.0              # 머리 카메라 왼눈 544×448 화각 — 문서에 없음 (확인 필요). 이득 환산용이라 대략이면 됨
+  vfov_deg: 75.0
+  gain: 0.5                   # 한 프레임에 화면 오차의 이만큼 머리를 돌림 (지연 0.1–0.2 s → 0.3–0.6 권장)
+  deadband: 0.06              # 화면 가운데 ±6 % 안이면 안 움직임 (화각 90° 면 약 ±3°, 120° 면 약 ±5°)
+  max_speed_deg: 40.0         # 추종 최대 속도 [deg/s]
+  switch_ratio: 1.3           # 다른 얼굴이 지금 대상보다 1.3 배 커야 바꿈
+  confirm_frames: 3           # 새 대상은 3 프레임(0.3 s) 연속 보여야 따라감 — 한 프레임 오검출 무시
+  lost_s: 2.5                 # 대상이 이 시간 없으면 home 으로 천천히
+  home_deg: {pitch: 10.0, yaw: 0.0}
+  home_speed_deg: 15.0
 
 features:
   locomotion: false           # 보행/마커 추종 비활성 (이번 범위) — 4단계에서 /follow, /loco 차단에 사용

@@ -29,174 +29,18 @@ check_head_cam.py — H2 머리 쌍안 카메라 수신 확인: 왼눈(또는 �
 import argparse
 import json
 import os
-import re
 import shutil
-import socket
-import struct
-import subprocess
-import threading
+import sys
 import time
 import urllib.request
 
 import cv2
 import numpy as np
 
-PC1 = "192.168.123.161"
-RGB_PORTS = {"left": 5004, "right": 5006, "raw": 5002}
-RTP_CAPS = "application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96"
-MAGIC = 0x59313620                       # 'Y16 '
-HDR = struct.Struct("<IQQIIII")          # 36 B, packed
-MAGIC_BYTES = struct.pack("<I", MAGIC)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "common"))
+from ctrl.head_cam import PC1, RGB_PORTS, DepthRx, RgbRx, my_ip   # noqa: E402
+
 WIN = "H2 head camera (q quit, s save, click = depth)"
-
-
-def my_ip(peer):
-    """peer 로 나가는 이 PC 의 IP (패킷은 보내지 않음)."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect((peer, 9))
-        return s.getsockname()[0]
-    except OSError:
-        return "?"
-    finally:
-        s.close()
-
-
-class DepthRx(threading.Thread):
-    """PC1 TCP 깊이 수신 (끊기면 1 초 뒤 다시 접속)."""
-
-    def __init__(self, host, port):
-        super().__init__(daemon=True)
-        self.host, self.port = host, port
-        self.lock = threading.Lock()
-        self.frame = None            # (uint16 h×w [mm], seq, 보낸 시각 us, 받은 시각 s)
-        self.count = 0
-        self.seq_gaps = 0
-        self.err = "아직 접속 안 됨"
-        self.stop = False
-
-    @staticmethod
-    def _read(sock, n):
-        buf = bytearray()
-        while len(buf) < n:
-            chunk = sock.recv(n - len(buf))
-            if not chunk:
-                raise ConnectionError("서버가 연결을 끊음")
-            buf += chunk
-        return bytes(buf)
-
-    def run(self):
-        last_seq = None
-        while not self.stop:
-            try:
-                with socket.create_connection((self.host, self.port), timeout=3.0) as sock:
-                    sock.settimeout(3.0)
-                    self.err = ""
-                    buf = b""
-                    while not self.stop:
-                        buf += self._read(sock, HDR.size - len(buf))
-                        magic, seq, ts, w, h, _fmt, size = HDR.unpack(buf)
-                        if magic != MAGIC:                       # 동기 다시 맞추기
-                            k = buf.find(MAGIC_BYTES, 1)
-                            buf = buf[k:] if k >= 0 else buf[-3:]
-                            continue
-                        if not (0 < w <= 4096 and 0 < h <= 4096) or size != w * h * 2:
-                            raise ValueError(f"헤더 이상: {w}x{h}, data_size {size}")
-                        data = self._read(sock, size)
-                        buf = b""
-                        d = np.frombuffer(data, dtype=np.uint16).reshape(h, w)
-                        with self.lock:
-                            if last_seq is not None and seq != last_seq + 1:
-                                self.seq_gaps += 1
-                            last_seq = seq
-                            self.frame = (d, seq, ts, time.time())
-                            self.count += 1
-            except (OSError, ConnectionError, ValueError) as e:
-                self.err = f"{self.host}:{self.port} {e}"
-                last_seq = None
-                time.sleep(1.0)
-
-    def latest(self):
-        with self.lock:
-            return self.frame
-
-
-class RgbRx(threading.Thread):
-    """gst-launch-1.0 로 RTP/H264 → BGR 원시 프레임을 stdout 으로 받아 읽음 (pip opencv 는 GStreamer 없음)."""
-
-    def __init__(self, port):
-        super().__init__(daemon=True)
-        self.port = port
-        self.lock = threading.Lock()
-        self.frame = None            # (BGR h×w×3, 받은 시각 s)
-        self.size = None             # (w, h)
-        self.caps_fps = "?"
-        self.count = 0
-        self.err = "아직 수신 없음"
-        self.stop = False
-        self.proc = None
-
-    def probe(self, timeout):
-        """공식 문서 방식 (fakesink -v 의 caps) 으로 해상도·fps 확인. 성공하면 True."""
-        cmd = ["gst-launch-1.0", "-v", "udpsrc", f"port={self.port}", "buffer-size=2097152", "!", RTP_CAPS, "!",
-               "rtph264depay", "!", "avdec_h264", "!", "fakesink"]
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        found = []
-
-        def reader():
-            for line in p.stdout:
-                m = re.search(r"video/x-raw.*?width=\(int\)(\d+).*?height=\(int\)(\d+)", line)
-                if m:
-                    fr = re.search(r"framerate=\(fraction\)(\d+/\d+)", line)
-                    found.append((int(m.group(1)), int(m.group(2)), fr.group(1) if fr else "?"))
-                    return
-        t = threading.Thread(target=reader, daemon=True)
-        t.start()
-        t.join(timeout)
-        p.kill()
-        p.wait()
-        if not found:
-            return False
-        w, h, self.caps_fps = found[0]
-        self.size = (w, h)
-        return True
-
-    def run(self):
-        w, h = self.size
-        stride = (w * 3 + 3) // 4 * 4                   # GStreamer BGR 줄 정렬 4 B
-        n = stride * h
-        cmd = ["gst-launch-1.0", "-q", "udpsrc", f"port={self.port}", "buffer-size=2097152", "!", RTP_CAPS, "!",
-               "rtph264depay", "!", "avdec_h264", "!", "videoconvert", "!", f"video/x-raw,format=BGR,width={w},height={h}",
-               "!", "fdsink", "fd=1", "sync=false"]
-        while not self.stop:
-            self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
-            self.err = ""
-            try:
-                while not self.stop:
-                    buf = bytearray()
-                    while len(buf) < n:
-                        chunk = self.proc.stdout.read(n - len(buf))
-                        if not chunk:
-                            raise ConnectionError("gst-launch 종료")
-                        buf += chunk
-                    img = np.frombuffer(bytes(buf), np.uint8).reshape(h, stride)[:, :w * 3].reshape(h, w, 3)
-                    with self.lock:
-                        self.frame = (img, time.time())
-                        self.count += 1
-            except ConnectionError as e:
-                self.err = str(e)
-                time.sleep(1.0)
-            finally:
-                self.kill()
-
-    def kill(self):
-        if self.proc is not None and self.proc.poll() is None:
-            self.proc.kill()
-            self.proc.wait()
-
-    def latest(self):
-        with self.lock:
-            return self.frame
 
 
 def colorize(d, rng):
