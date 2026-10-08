@@ -53,6 +53,9 @@ CAM_W, CAM_H, CAM_D = 90.0, 25.0, 25.0
 SEAT_HALF = 52.0                          # 45° 자리 |y|
 # 카메라 고정: D435i 뒷면 M3 2개 (간격 45 — 사용자 기존 거치대 실측) + 아래는 45° 자리에 얹힘
 BACK_T, BACK_HALF, M3_D, M3_PITCH = 4.0, 32.0, 3.4, 45.0
+# USB-C 플러그 자리: 카메라 끝면(|y| 45) 가운데에서 옆으로 나가는 플러그(단면 약 14×9, 길이 ~35) + 위로 꺾이는 케이블.
+#   포트가 어느 쪽 끝인지 확인 필요 → 양쪽 다. 가로대 끝 M4 체결부(|y| 86–105) 는 남김
+USB_CUT = dict(s=10.0, t0=2.0, t1=40.0, y0=44.0, y1=84.0)    # 카메라 몸통 중심 기준 앞뒤 ±s, 바닥에서 t0..t1, |y| y0..y1
 
 
 def box(x0, x1, y0, y1, z0, z1):
@@ -128,6 +131,9 @@ def camera_bar():
         return box(s0, s1, y0, y1, t0, t1).rotate((0, 0, 0), (0, 1, 0), PITCH).translate((b0[0], 0, b0[1]))
     b = box(BAR["x0"], BAR["x1"], -BAR["half"], BAR["half"], BAR["z0"], BAR["z1"])
     b = b.cut(local(-40, 40, -SEAT_HALF, SEAT_HALF, 0, 40))                              # 45° 카메라 자리
+    for sgn in (-1, 1):                                                                    # USB-C 플러그·케이블 자리 (양 끝)
+        ya, yb = sorted((sgn * USB_CUT["y0"], sgn * USB_CUT["y1"]))
+        b = b.cut(local(-USB_CUT["s"], USB_CUT["s"], ya, yb, USB_CUT["t0"], USB_CUT["t1"]))
     b = b.union(local(-CAM_D / 2 - BACK_T, -CAM_D / 2, -BACK_HALF, BACK_HALF, -3, CAM_H))      # 카메라 뒤판
     for yy in (-M3_PITCH / 2, M3_PITCH / 2):                                                      # M3 구멍 (뒷면 가운데 높이)
         b = b.cut(cq.Workplane().add(cq.Solid.makeCylinder(M3_D / 2, BACK_T + 2, cq.Vector(-CAM_D / 2 - BACK_T - 1, yy, CAM_H / 2),
