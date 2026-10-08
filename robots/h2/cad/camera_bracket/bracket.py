@@ -12,7 +12,8 @@ H2 D435i 카메라 거치대 (FDM PLA, 3부품) — 등판 M6 4개 → 어깨 �
 
 부품
   yoke_L / yoke_R : 등 받침판 + 어깨 넘는 띠 한 덩어리. 출력: 바깥면을 바닥에 (혀 밑은 팔 범위 밖까지 경사로 채움).
-연결: 등판 M6×40 4개, 요크–가로대 M6×30 4개 (너트 홈), 카메라 M3 2개 (D435i 뒷면 나사).
+연결: M6 접시머리 — 등판 위 M6×50 2개 · 아래 M6×40 2개, 요크–가로대 M6×40 4개 + 너트 4개, 카메라 M3×5 2개 (D435i 뒷면 나사).
+한 파일: out/h2_cam_bracket_all.step (부품 + 카메라 더미 + 볼트·너트·와셔, 로봇 좌표)
   camera_bar      : 가로대 + 45° 카메라 자리 + 뒤판 (D435i 뒷면 M3 2개, 간격 45). 출력: 아랫면을 바닥에, 서포트 없음.
 피하는 것: 머리 전 범위 (숙임 −30..48°, 좌우 ±100° → 띠는 |y| ≥ 105), 잡기 시퀀스 팔 이동 범위
           (등 쪽 띠는 z 335 부터, 아래 구멍 둘레 혀는 바깥 끝 y 95.5, 앞 발·가로대는 z 338 부터).
@@ -45,20 +46,21 @@ X_FRONT_C = 85.0                          # 앞 수직부 중심선 x
 FOOT = dict(x0=80.5, x1=121.0, z0=338.0, z1=362.0)
 BAR = dict(x0=98.0, x1=121.0, z0=338.0, z1=362.0, half=105.0)
 SPIGOT_D, BOSS_D, BOLT_D = 9.3, 14.0, 6.6
-# 요크 발 – 가로대: M6×30 2개 (위아래), 너트는 위 볼트 = 윗면 홈, 아래 볼트 = 아랫면 홈 (끝에서 8 mm)
-#   머리 밑 16 (발 24 − 머리 자리 8) + 8 + 너트 5 = 29 → M6×30 이 너트 밖으로 1 mm. 볼트 끝 |y| 91 (USB 자리 84 밖)
+# 볼트: M6 접시머리 렌치볼트 (사용자 모델 M6.stl: 머리 Ø11.1·90°, 길이 = 머리 포함 전체), 와셔 없음
+CSK_D = 11.6                              # 90° 접시 자리 윗지름 (머리 11.1 + 0.5) → 머리 윗면이 면보다 0.25 들어감
+LOWER_PAD = 3.0                           # 아래 등판 구멍만 3 mm 돋움 (M6×40 박힘 10.6, 도면 나사 깊이 13) — 위는 M6×50 면 맞춤 (박힘 15.6, 깊이 18)
+# 요크 발 – 가로대: M6×40 2개 (위아래), 바깥면 접시 자리. 너트(10×10×5) 홈은 끝에서 8 mm, 위아래로 뚫림
+#   볼트 끝 |y| 88.75 → 너트(92–97) 밖으로 3 mm, 막힌 구멍 끝 87, USB 자리 84 밖
 JOINT = ((109.5, 356.5), (109.5, 343.5))  # (x, z) — 위, 아래
-J_CB_D, J_CB_H = 11.0, 8.0                # 요크 바깥면 머리 자리 (M6 렌치볼트 머리 Ø10 × 6 → 2 mm 들어감)
-NUT_AF, NUT_T, NUT_FROM_END = 10.4, 5.4, 8.0    # M6 너트 (맞변 10, 두께 5) 홈
+NUT_AF, NUT_T, NUT_FROM_END = 10.4, 5.4, 8.0    # 너트 홈 (너트 10 × 10 × 5)
 J_HOLE_DEPTH = 18.0
-# 위 등판 구멍 머리 자리 (와셔 Ø12 + 공차) — 등판 볼트 4개를 모두 M6×40 으로 (위 와셔 1장 박힘 10.0, 아래 와셔 2장 10.1)
-U_CB_D, U_CB_H = 13.0, 6.3
 # 카메라 D435i (90×25×25 — 데이터시트 확인 필요)
 LENS = (130.0, 350.0); PITCH = 45.0       # 렌즈 앞면 중심 (x, z), 아래로 숙임
 CAM_W, CAM_H, CAM_D = 90.0, 25.0, 25.0
 SEAT_HALF = 52.0                          # 45° 자리 |y|
 # 카메라 고정: D435i 뒷면 M3 2개 (간격 45 — 사용자 기존 거치대 실측) + 아래는 45° 자리에 얹힘
 BACK_T, BACK_HALF, M3_D, M3_PITCH = 4.0, 32.0, 3.4, 45.0
+M3_CB_D, M3_CB_H = 6.5, 2.0               # M3×5 머리 자리 → 머리 밑 판 2 mm, 카메라에 3 mm 박힘 (기존 거치대 판 2 mm 와 같음)
 # USB-C 플러그 자리: 카메라 끝면(|y| 45) 가운데에서 옆으로 나가는 플러그(단면 약 14×9, 길이 ~35) + 위로 꺾이는 케이블.
 #   포트가 어느 쪽 끝인지 확인 필요 → 양쪽 다. 가로대 끝 M6 체결부(|y| 84–105) 는 남김
 USB_CUT = dict(s=10.0, t0=2.0, t1=40.0, y0=44.0, y1=84.0)    # 카메라 몸통 중심 기준 앞뒤 ±s, 바닥에서 t0..t1, |y| y0..y1
@@ -87,6 +89,15 @@ def tear_x(r, x0, x1, y, z, tip, rmax=None):
         a, b = sorted((y + tip * rmax, y + tip * 2 * r))
         t = t.cut(box(x0 - 1, x1 + 1, a, b, z - r - 1, z + r + 1))
     return t
+
+
+def csk(face, y, z, d):
+    """90° 접시 자리 (윗지름 CSK_D → BOLT_D). face: x 값(+ y, z) 또는 (x, y, z) 점, d: 볼트 들어가는 방향."""
+    p = cq.Vector(face, y, z) if y is not None else cq.Vector(*face)
+    dv = cq.Vector(*d)
+    h = (CSK_D - BOLT_D) / 2
+    cone = cq.Solid.makeCone(CSK_D / 2 + 1.0, BOLT_D / 2, h + 1.0, p - dv * 1.0, dv)
+    return cq.Workplane().add(cone)
 
 
 def arc_quarter(cx, cz, rin, rout, y0, y1, qx):
@@ -120,13 +131,15 @@ def yoke_left():
         else:   # 아래 보스는 짧고(3.8 mm) 팔 쪽이라 눈물방울 끝 없이 Ø12
             s = s.union(cyl_x(6.0, PX1 - 0.5, be, h["y"], h["z"]))
         s = s.union(tear_x(SPIGOT_D / 2, be - 0.5, h["floor_x"], h["y"], h["z"], +1, rmax=WELL_D / 2 - 0.15))
-        s = s.cut(tear_x(BOLT_D / 2, PX0 - 1, be, h["y"], h["z"], -1))
+        face = PX0 - (LOWER_PAD if h is HOLE_L else 0.0)                                    # 볼트 머리 쪽 면 x
+        if h is HOLE_L:
+            s = s.union(cyl_x(8.0, face, PX0 + 0.5, h["y"], h["z"]))                         # 아래 구멍 3 mm 돋움 (둥글게 — 팔 쪽)
+        s = s.cut(tear_x(BOLT_D / 2, face - 1, be, h["y"], h["z"], -1))
         s = s.cut(cyl_x(BOLT_D / 2, be - 1, h["floor_x"] + 1, h["y"], h["z"]))
-        if h is HOLE_U:     # 머리 자리: 위 볼트도 M6×40 (와셔 1장) — 아래는 와셔 2장으로 같은 길이
-            s = s.cut(tear_x(U_CB_D / 2, PX0 - 1, PX0 + U_CB_H, h["y"], h["z"], -1))
+        s = s.cut(csk(face, h["y"], h["z"], (1, 0, 0)))                                       # 접시 자리
     for (x, z) in JOINT:
         s = s.cut(cyl_y(BOLT_D / 2, y0 - 1, y1 + 1, x, z))
-        s = s.cut(cyl_y(J_CB_D / 2, y1 - J_CB_H, y1 + 1, x, z))                             # 바깥면 머리 자리
+        s = s.cut(csk((x, y1, z), None, None, (0, -1, 0)))                                     # 바깥면 접시 자리
     return s
 
 
@@ -147,6 +160,9 @@ def camera_bar():
         b = b.cut(cq.Workplane().add(cq.Solid.makeCylinder(M3_D / 2, BACK_T + 2, cq.Vector(-CAM_D / 2 - BACK_T - 1, yy, CAM_H / 2),
                                                               cq.Vector(1, 0, 0)))
                   .rotate((0, 0, 0), (0, 1, 0), PITCH).translate((b0[0], 0, b0[1])))
+        b = b.cut(cq.Workplane().add(cq.Solid.makeCylinder(M3_CB_D / 2, M3_CB_H + 1, cq.Vector(-CAM_D / 2 - BACK_T - 1, yy, CAM_H / 2),
+                                                              cq.Vector(1, 0, 0)))
+                  .rotate((0, 0, 0), (0, 1, 0), PITCH).translate((b0[0], 0, b0[1])))   # 뒷면 머리 자리
     for sgn in (-1, 1):
         end = sgn * BAR["half"]
         for i, (x, z) in enumerate(JOINT):
@@ -154,12 +170,62 @@ def camera_bar():
             b = b.cut(cyl_y(BOLT_D / 2, a, c, x, z))
             yn = end - sgn * NUT_FROM_END
             na, nc = sorted((yn, yn - sgn * NUT_T))
-            if i == 0:   # 위 볼트 너트: 윗면에서
-                b = b.cut(box(x - NUT_AF / 2, x + NUT_AF / 2, na, nc, z - NUT_AF / 2, BAR["z1"] + 1))
-            else:        # 아래 볼트 너트: 아랫면에서
-                b = b.cut(box(x - NUT_AF / 2, x + NUT_AF / 2, na, nc, BAR["z0"] - 1, z + NUT_AF / 2))
+            # 너트 홈: 위아래로 뚫린 홈 하나 (위 너트는 윗면, 아래 너트는 아랫면에서 넣음 — 육각 꼭짓점 11.5 가 들어가게)
+            b = b.cut(box(x - NUT_AF / 2, x + NUT_AF / 2, na, nc, BAR["z0"] - 1, BAR["z1"] + 1))
     cam = local(-CAM_D / 2, CAM_D / 2, -CAM_W / 2, CAM_W / 2, 0, CAM_H)
-    return b, cam
+    return b, cam, b0
+
+
+# ---------- 볼트·너트·와셔 (조립 확인용 모델, 나사산 생략) ----------
+def _plane(origin, d):
+    d = cq.Vector(*d).normalized()
+    x = cq.Vector(0, 0, 1) if abs(d.z) < 0.9 else cq.Vector(1, 0, 0)
+    x = (x - d * x.dot(d)).normalized()
+    return cq.Plane(origin=cq.Vector(*origin), xDir=x, normal=d)
+
+
+def socket_screw(seat, d, dia, length, head_d, head_h, af):
+    """렌치볼트: seat = 머리 밑면 중심, d = 나사 방향."""
+    pl = _plane(seat, d)
+    shank = cq.Workplane(pl).circle(dia / 2).extrude(length)
+    head = cq.Workplane(pl).circle(head_d / 2).extrude(-head_h)
+    sock = cq.Workplane(_plane(cq.Vector(*seat) - cq.Vector(*d).normalized() * head_h, d)).polygon(6, af / math.cos(math.pi / 6)).extrude(head_h * 0.6)
+    return shank.union(head).cut(sock)
+
+
+def csk_screw(top, d, length, head_d=11.1, dia=6.0, af=4.0):
+    """접시머리 렌치볼트: top = 머리 윗면 중심, d = 나사 방향, length = 머리 포함 전체 (사용자 M6.stl 치수)."""
+    pl = _plane(top, d)
+    hh = (head_d - dia) / 2
+    head = cq.Workplane().add(cq.Solid.makeCone(head_d / 2, dia / 2, hh, cq.Vector(*top), cq.Vector(*d)))
+    shank = cq.Workplane(pl).circle(dia / 2).extrude(length)
+    sock = cq.Workplane(pl).polygon(6, af / math.cos(math.pi / 6)).extrude(hh * 0.9)
+    return shank.union(head).cut(sock)
+
+
+def square_nut(face, d, a=10.0, t=5.0, hole=6.0):
+    """사용자 M6.stl 너트: 10 × 10 × 5."""
+    return cq.Workplane(_plane(face, d)).rect(a, a).circle(hole / 2).extrude(t)
+
+
+def hardware(b0):
+    """(이름, 모델, 색) 목록 — torso_link mm, 조립 위치."""
+    out = []
+    steel = cq.Color(0.75, 0.75, 0.78)
+    sink = (CSK_D - 11.1) / 2                 # 머리 윗면이 면보다 들어가는 깊이
+    for sgn, side in ((1, "L"), (-1, "R")):
+        hu, hl = HOLE_U, HOLE_L
+        out.append((f"M6x50_csk_up_{side}", csk_screw((PX0 + sink, sgn * hu["y"], hu["z"]), (1, 0, 0), 50.0), steel))
+        out.append((f"M6x40_csk_low_{side}", csk_screw((PX0 - LOWER_PAD + sink, sgn * hl["y"], hl["z"]), (1, 0, 0), 40.0), steel))
+        for (x, z), tag in zip(JOINT, ("top", "bot")):
+            out.append((f"M6x40_csk_{tag}_{side}", csk_screw((x, sgn * (BAND[1] - sink), z), (0, -sgn, 0), 40.0), steel))
+            out.append((f"nut_M6_{tag}_{side}", square_nut((x, sgn * (BAR["half"] - NUT_FROM_END), z), (0, -sgn, 0)), steel))
+    # 카메라 M3×5 (머리 자리 바닥 → 카메라 쪽으로)
+    ph = math.radians(PITCH); f = cq.Vector(math.cos(ph), 0, -math.sin(ph)); u = cq.Vector(math.sin(ph), 0, math.cos(ph))
+    for yy in (-M3_PITCH / 2, M3_PITCH / 2):
+        seat = cq.Vector(b0[0], yy, b0[1]) + f * (-CAM_D / 2 - BACK_T + M3_CB_H) + u * (CAM_H / 2)
+        out.append((f"M3x5_cam_{'L' if yy > 0 else 'R'}", socket_screw((seat.x, seat.y, seat.z), (f.x, f.y, f.z), 3.0, 5.0, 5.5, 3.0, 2.5), steel))
+    return out
 
 
 def to_bed(part, axis, angle):
@@ -170,7 +236,7 @@ def to_bed(part, axis, angle):
 
 if __name__ == "__main__":
     YL = yoke_left(); YR = YL.mirror("XZ")
-    BARP, CAMBOX = camera_bar()
+    BARP, CAMBOX, B0 = camera_bar()
     parts = {"yoke_L": YL, "yoke_R": YR, "camera_bar": BARP}
     for name, part in list(parts.items()) + [("D435i_dummy", CAMBOX)]:
         v = part.val(); bb = v.BoundingBox()
@@ -182,8 +248,13 @@ if __name__ == "__main__":
         print(f"출력 {name:12s} {bb.xlen:5.0f} × {bb.ylen:5.0f} × 높이 {bb.zlen:4.0f} mm")
         cq.exporters.export(part, f"{OUT}/{name}_print.stl", tolerance=0.05, angularTolerance=0.1)
         cq.exporters.export(part, f"{OUT}/{name}_print.step")
-    asm = cq.Assembly()
+    # 한 파일 통합: 부품 3 + 카메라 더미 + 볼트·너트·와셔 (torso_link 좌표, mm)
+    asm = cq.Assembly(name="h2_cam_bracket")
     asm.add(YL, name="yoke_L", color=cq.Color(0.9, 0.35, 0.2)).add(YR, name="yoke_R", color=cq.Color(0.9, 0.35, 0.2))
     asm.add(BARP, name="camera_bar", color=cq.Color(0.2, 0.5, 0.9)).add(CAMBOX, name="D435i_dummy", color=cq.Color(0.15, 0.15, 0.15))
-    asm.export(f"{OUT}/h2_cam_bracket_assembly_torso_frame.step")
+    hw = hardware(B0)
+    for name, part, color in hw:
+        asm.add(part, name=name, color=color)
+    asm.export(f"{OUT}/h2_cam_bracket_all.step")
+    print("하드웨어", len(hw), "개:", ", ".join(n for n, _, _ in hw))
     print("ok")
