@@ -32,6 +32,8 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | XR | `unitreerobotics/xr_teleoperate` master `817fb00` (2026-09-07) `teleop/robot_control/robot_arm.py` |
 | ROS | `unitreerobotics/unitree_ros` `5994d4f` (2026-09-30) `robots/h2_description/H2.urdf` |
 | H2R | `leeyunjai82/h2-motion-control.red` `8e7996d` — **실기에서 simulator 동작 확인** (사용자 보고, 2026-10) |
+| STEP | Unitree 공식 H2 단순화 모델 `H2_简化模型_260601.STEP` (oss-global-cdn.unitree.com/static/7585d210dc9b47b6907b70f46f8c24ac.zip, 2026-06-01, 190 MB — repo 미포함). URDF `torso_link` 메시에 정합: STEP→torso x = 0.6932 − y_s, y = x_s − 0.0011, z = z_s − 0.4729 [m] (중앙 오차 1.2 mm) |
+| 등판도면 | 사용자 제공 등판 도면 — 위 2×M6×18 간격 150, 아래 2×M6×13 간격 176, 위아래 100 |
 
 ## 확인된 값
 
@@ -71,6 +73,18 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | D435i 마커 보정 | depth 기준 2점(0.45/0.55, 테이블 렌즈 아래 0.51 m): 축척 0.101/0.100, 숙임 35.2°, camera.x 0.075 (두 점 오차 0). IMU 는 같은 때 36.3° (앞서 39.1° — 로봇 자세 차이 추정). PnP(마커 크기) 거리는 이 조건에서 10 cm 이동을 5 cm 로 냄 → 사용 안 함. ⚠️ 마커·IMU 숙임각은 둘 다 중력 기준 — 로봇이 뒤로 기운 만큼 몸통 기준(`camera.pitch_deg` 의 뜻)과 다름 (사용자: 로봇이 약간 뒤로 서 있음). 몸통 기준은 `utils/check_rsimu.py` (D435i IMU − 로봇 IMU pitch − 허리 pitch) 로 재측정 예정. 마커 35.2° vs IMU 36.3° 의 1.1° 차이 원인은 확인 필요 (테이블 기울기 / D435i IMU 보정·축 정렬) | 실측 2026-10-07 `utils/cam_marker_check.py` |
 | 서 있을 때 높이 (FSM 703) | 바닥→허리 관절(torso_link 원점) **1.13 m** → pelvis ≈ **1.01 m** (URDF 다리 편 자세 1.04 보다 3 cm 낮음), 바닥→D435i 렌즈 1.51 m | 실측 2026-10-07 |
 | IK 축소 모델 | 다리 12 + 허리 3 + head 2 잠금, 팔 14, `L_ee`/`R_ee` = `*_wrist_yaw_joint` + x 0.05 m | XR `robot_arm_ik.py`, H2R. G1 과 같은 구조 |
+
+## 등판 M6 장착 구멍 (STEP + 등판도면, 2026-10-08)
+
+| 항목 | 값 (torso_link, mm) | 근거 |
+| --- | --- | --- |
+| 위 2×M6 | y ±75, z 389.1, 나사 시작면 x −55.3, 축 = x (수평 앞뒤) | 도면 150 / STEP 원통 r2.5 21 mm (도면 나사 깊이 18) |
+| 아래 2×M6 | y ±88, z 289.1, 나사 시작면 x −63.3 | 도면 176 · 100 / STEP 원통 r2.5 13 mm (도면 13) |
+| 우물 | 구멍마다 등 커버에 지름 10 mm 우물 — 테두리→바닥 위 약 13.9, 아래 약 12.4 | STEP (단순화 모델 — 실물 버니어 확인 필요) |
+| 나사 쪽 재질 | STEP 에서는 커버와 한 덩어리 (인서트 여부 모름) | 확인 필요 — 체결 토크 낮게 |
+| 머리 이동 범위 | 숙임 −30..+48°, 좌우 ±100° 에서 머리·목이 차지하는 공간: \|y\| ≥ 105 면 없음, 가슴 앞 가운데는 z 0.41 이상 | URDF 관절 + STEP 머리 형상 |
+
+→ 카메라 거치대: `robots/h2/cad/camera_bracket/` (3부품, 설계값 camera x 0.130 · z 0.350 · pitch 45°, 장착 후 보정)
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)
 
