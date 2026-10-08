@@ -12,6 +12,7 @@ H2 D435i 카메라 거치대 (FDM PLA, 3부품) — 등판 M6 4개 → 어깨 �
 
 부품
   yoke_L / yoke_R : 등 받침판 + 어깨 넘는 띠 한 덩어리. 출력: 바깥면을 바닥에 (혀 밑은 팔 범위 밖까지 경사로 채움).
+연결: 등판 M6×40 4개, 요크–가로대 M6×30 4개 (너트 홈), 카메라 M3 2개 (D435i 뒷면 나사).
   camera_bar      : 가로대 + 45° 카메라 자리 + 뒤판 (D435i 뒷면 M3 2개, 간격 45). 출력: 아랫면을 바닥에, 서포트 없음.
 피하는 것: 머리 전 범위 (숙임 −30..48°, 좌우 ±100° → 띠는 |y| ≥ 105), 잡기 시퀀스 팔 이동 범위
           (등 쪽 띠는 z 335 부터, 아래 구멍 둘레 혀는 바깥 끝 y 95.5, 앞 발·가로대는 z 338 부터).
@@ -44,9 +45,14 @@ X_FRONT_C = 85.0                          # 앞 수직부 중심선 x
 FOOT = dict(x0=80.5, x1=121.0, z0=338.0, z1=362.0)
 BAR = dict(x0=98.0, x1=121.0, z0=338.0, z1=362.0, half=105.0)
 SPIGOT_D, BOSS_D, BOLT_D = 9.3, 14.0, 6.6
-M4 = ((104.0, 350.0), (115.0, 350.0))     # 띠 발 – 가로대 M4 (x, z)
-M4_D, M4_CB_D, M4_CB_H = 4.4, 8.0, 4.5
-NUT_AF, NUT_T, NUT_FROM_END = 7.4, 3.6, 10.0
+# 요크 발 – 가로대: M6×30 2개 (위아래), 너트는 위 볼트 = 윗면 홈, 아래 볼트 = 아랫면 홈 (끝에서 8 mm)
+#   머리 밑 16 (발 24 − 머리 자리 8) + 8 + 너트 5 = 29 → M6×30 이 너트 밖으로 1 mm. 볼트 끝 |y| 91 (USB 자리 84 밖)
+JOINT = ((109.5, 356.5), (109.5, 343.5))  # (x, z) — 위, 아래
+J_CB_D, J_CB_H = 11.0, 8.0                # 요크 바깥면 머리 자리 (M6 렌치볼트 머리 Ø10 × 6 → 2 mm 들어감)
+NUT_AF, NUT_T, NUT_FROM_END = 10.4, 5.4, 8.0    # M6 너트 (맞변 10, 두께 5) 홈
+J_HOLE_DEPTH = 18.0
+# 위 등판 구멍 머리 자리 (와셔 Ø12 + 공차) — 등판 볼트 4개를 모두 M6×40 으로 (위 와셔 1장 박힘 10.0, 아래 와셔 2장 10.1)
+U_CB_D, U_CB_H = 13.0, 6.3
 # 카메라 D435i (90×25×25 — 데이터시트 확인 필요)
 LENS = (130.0, 350.0); PITCH = 45.0       # 렌즈 앞면 중심 (x, z), 아래로 숙임
 CAM_W, CAM_H, CAM_D = 90.0, 25.0, 25.0
@@ -54,7 +60,7 @@ SEAT_HALF = 52.0                          # 45° 자리 |y|
 # 카메라 고정: D435i 뒷면 M3 2개 (간격 45 — 사용자 기존 거치대 실측) + 아래는 45° 자리에 얹힘
 BACK_T, BACK_HALF, M3_D, M3_PITCH = 4.0, 32.0, 3.4, 45.0
 # USB-C 플러그 자리: 카메라 끝면(|y| 45) 가운데에서 옆으로 나가는 플러그(단면 약 14×9, 길이 ~35) + 위로 꺾이는 케이블.
-#   포트가 어느 쪽 끝인지 확인 필요 → 양쪽 다. 가로대 끝 M4 체결부(|y| 86–105) 는 남김
+#   포트가 어느 쪽 끝인지 확인 필요 → 양쪽 다. 가로대 끝 M6 체결부(|y| 84–105) 는 남김
 USB_CUT = dict(s=10.0, t0=2.0, t1=40.0, y0=44.0, y1=84.0)    # 카메라 몸통 중심 기준 앞뒤 ±s, 바닥에서 t0..t1, |y| y0..y1
 
 
@@ -116,9 +122,11 @@ def yoke_left():
         s = s.union(tear_x(SPIGOT_D / 2, be - 0.5, h["floor_x"], h["y"], h["z"], +1, rmax=WELL_D / 2 - 0.15))
         s = s.cut(tear_x(BOLT_D / 2, PX0 - 1, be, h["y"], h["z"], -1))
         s = s.cut(cyl_x(BOLT_D / 2, be - 1, h["floor_x"] + 1, h["y"], h["z"]))
-    for (x, z) in M4:
-        s = s.cut(cyl_y(M4_D / 2, y0 - 1, y1 + 1, x, z))
-        s = s.cut(cyl_y(M4_CB_D / 2, y1 - M4_CB_H, y1 + 1, x, z))                           # 바깥면 머리 자리
+        if h is HOLE_U:     # 머리 자리: 위 볼트도 M6×40 (와셔 1장) — 아래는 와셔 2장으로 같은 길이
+            s = s.cut(tear_x(U_CB_D / 2, PX0 - 1, PX0 + U_CB_H, h["y"], h["z"], -1))
+    for (x, z) in JOINT:
+        s = s.cut(cyl_y(BOLT_D / 2, y0 - 1, y1 + 1, x, z))
+        s = s.cut(cyl_y(J_CB_D / 2, y1 - J_CB_H, y1 + 1, x, z))                             # 바깥면 머리 자리
     return s
 
 
@@ -141,12 +149,15 @@ def camera_bar():
                   .rotate((0, 0, 0), (0, 1, 0), PITCH).translate((b0[0], 0, b0[1])))
     for sgn in (-1, 1):
         end = sgn * BAR["half"]
-        for (x, z) in M4:
-            a, c = sorted((end, end - sgn * 19))
-            b = b.cut(cyl_y(M4_D / 2, a, c, x, z))
+        for i, (x, z) in enumerate(JOINT):
+            a, c = sorted((end, end - sgn * J_HOLE_DEPTH))
+            b = b.cut(cyl_y(BOLT_D / 2, a, c, x, z))
             yn = end - sgn * NUT_FROM_END
             na, nc = sorted((yn, yn - sgn * NUT_T))
-            b = b.cut(box(x - NUT_AF / 2, x + NUT_AF / 2, na, nc, z - NUT_AF / 2, BAR["z1"] + 1))   # 너트 홈 (윗면에서)
+            if i == 0:   # 위 볼트 너트: 윗면에서
+                b = b.cut(box(x - NUT_AF / 2, x + NUT_AF / 2, na, nc, z - NUT_AF / 2, BAR["z1"] + 1))
+            else:        # 아래 볼트 너트: 아랫면에서
+                b = b.cut(box(x - NUT_AF / 2, x + NUT_AF / 2, na, nc, BAR["z0"] - 1, z + NUT_AF / 2))
     cam = local(-CAM_D / 2, CAM_D / 2, -CAM_W / 2, CAM_W / 2, 0, CAM_H)
     return b, cam
 
