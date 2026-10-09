@@ -89,6 +89,8 @@
     'RGB 없음': 'no RGB',
     '로봇 없음': 'no robot',
     '자동 ON': 'auto ON',
+    '이 PC': 'this PC', '장치': 'Device', '사용률': 'Usage', '모델': 'Model',
+    '박스 seg': 'box seg', '얼굴·사람': 'face·person', '사물': 'objects',
     'start_grab_sim.sh — 가상 로봇에는 FSM 없음': 'start_grab_sim.sh — the virtual robot has no FSM',
     '시뮬': 'sim',
     '⚠ 걷기 프레임 — 재생 시 건너뜀 (보행 없음)': '⚠ walk frame — skipped on playback (no walking)',
