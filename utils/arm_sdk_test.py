@@ -169,8 +169,12 @@ def main():
                 raise RuntimeError(f"슬롯 {s_} ({NAME.get(s_, '')}) 가 시작 대비 {d:+.1f}° 움직임 — 예상 밖")
 
     try:
+        ms0 = st["msg"].motor_state[a.slot]
+        print(f"[test] 슬롯 {a.slot} 시작 상태: mode {ms0.mode}, 온도 {list(ms0.temperature)}, motorstate {ms0.motorstate}, "
+              f"tau {ms0.tau_est:+.2f} Nm")
         for name, dur in phases:
             n = int(round(dur / DT))
+            tau_pk, dq_pk = 0.0, 0.0
             for i in range(1, n + 1):
                 r = i / n
                 q_slot = q0
@@ -187,10 +191,14 @@ def main():
                 send(weight, q_slot)
                 time.sleep(DT)
                 check_watch()
+                ms = st["msg"].motor_state[a.slot]
+                tau_pk, dq_pk = max(tau_pk, abs(ms.tau_est)), max(dq_pk, abs(ms.dq))
             meas = float(st["msg"].motor_state[a.slot].q)
             if name == "유지":
                 held = meas
-            print(f"  {name:10s} 끝: 명령 {np.degrees(q_slot):+6.1f}°  실측 {np.degrees(meas):+6.1f}°  weight {weight:.2f}")
+            # 토크가 안 오르면 명령이 모터에 안 닿는 것 (FSM 이 그 관절을 arm_sdk 에 안 넘김), 오르는데 안 움직이면 막힘·다른 제어와 충돌
+            print(f"  {name:10s} 끝: 명령 {np.degrees(q_slot):+6.1f}°  실측 {np.degrees(meas):+6.1f}°  weight {weight:.2f}"
+                  f"   |tau| 최대 {tau_pk:5.2f} Nm  |dq| 최대 {dq_pk:5.2f} rad/s")
     except (KeyboardInterrupt, RuntimeError) as e:
         print(f"\n[test] 중단 ({e or 'Ctrl+C'}) — weight 를 0 으로 내림")
         for i in range(25):
