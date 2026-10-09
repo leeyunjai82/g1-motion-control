@@ -3,6 +3,10 @@
 H2 등판 손잡이 (미니 PC 걸이) — 카메라 거치대 요크 받침판 위에 겹쳐 등판 M6 4개로 같이 고정.
 사용자 back.stl(고리 달린 판, 수정 없이 사용)의 고리를 손잡이 핀(fin) 윗변에 걸어 둠.
 
+  v2 (2026-10-09): 위 볼트를 손으로 돌릴 수 있게 — v1 은 머리가 받침대 속 Ø12.5 구멍 31 mm 안쪽이라 손이 안 들어감.
+      위 볼트 둘레를 뒤에서 R 12 로 파서 머리가 5 mm 얇은 판 위에 드러나게 (아래 볼트처럼 면에 바로).
+      받침대·핀은 볼트 안쪽 |y| 48–62 로, 띠를 안쪽으로 넓힌 판(TAB, 앞면 x −94, 두께 8)에 붙임.
+
   python handle.py <out> [back.stl]   # out/handle_print.stl·step (출력 방향), handle_torso_frame.stl, (back.stl 주면) 걸린 모습
 
 좌표: torso_link [mm] (x 앞, y 왼쪽, z 위). 요크 받침판 뒷면 x −90 (위 구멍 둘레), 아래 구멍 3 mm 돋움 뒷면 x −93.
@@ -10,7 +14,7 @@ back.stl 고리 단면 (실측): 입구 7 mm (z_part 8–15), 입구→천장 22
 걸린 자세: back.stl 의 x_part → 아래, z_part → 로봇 쪽(앞), 밑판(z_part 0)이 바깥 = 미니 PC 쪽 (사용자 그림).
 
 볼트 (모두 M6 접시머리, 머리 Ø11.1 · 90°):
-  위 구멍 2: M6×50 (지금 것 그대로) — 머리가 손잡이 안 x −95 에 앉음 (뒤에서 Ø12.5 구멍으로 렌치), 박힘 10.55 (도면 깊이 18)
+  위 구멍 2: M6×50 (지금 것 그대로) — 머리가 x −95 판(두께 5)에 앉음, 뒤·위·바깥쪽이 트여 손·L 렌치가 바로 닿음. 박힘 10.55 (도면 깊이 18)
   아래 구멍 2: M6×40 → M6×50 로 교체 — 손잡이 뒷면 x −102 에 앉음, 박힘 11.55 (도면 깊이 13)
 """
 import math, os, sys
@@ -25,10 +29,11 @@ PAD_X, BOSS_X, BOSS_R = -90.0, -93.0, 8.0        # 요크 받침판 뒷면, 아�
 BACK_X = -102.0                                  # 손잡이 띠 뒷면
 STEP_Z = 315.0                                   # 이 아래는 띠 앞면 x −93 (돋움에 얹힘), 위는 −90 (받침판에 얹힘)
 TOP_Z = 400.0                                    # 띠·받침대·핀 윗면 (출력 바닥면)
-FIN = dict(x0=-126.0, x1=-120.0, h=26.0, half=66.0)   # 핀: 두께 6 (고리 입구 7), 높이 26 (입구→천장 22 + 4)
-POST = dict(y0=48.0, y1=84.0, z0=372.0)          # 받침대 (띠 ↔ 핀), 고리 판(폭 87 → |y| 43.5)과 4.5 mm
-ACCESS_D = 12.5                                  # 위 볼트 렌치·머리 구멍 (뒤에서)
-U_SEAT_X = -95.0                                 # 위 볼트 머리 자리 (띠 5 mm 남김)
+FIN = dict(x0=-126.0, x1=-120.0, h=26.0, half=62.0)   # 핀: 두께 6 (고리 입구 7), 높이 26 (입구→천장 22 + 4)
+POST = dict(y0=48.0, y1=62.0, z0=360.0)          # 받침대 (띠 ↔ 핀) — 위 볼트 안쪽. 고리 판(폭 87 → |y| 43.5)과 4.5 mm
+TAB = dict(x1=-94.0, y0=48.0, y1=80.0, z0=360.0) # 받침대를 붙이는 띠 안쪽 넓힘 (앞면 −94: 등 가운데 위쪽이 −88 까지 나옴)
+U_SEAT_X = -95.0                                 # 위 볼트 머리 자리 (그 앞 판 5 mm)
+SPOT_R = 12.0                                    # 위 볼트 둘레 파기 반경 (뒤에서 머리 자리까지, 위로 트임)
 BOLT_D, CSK_D = 6.6, 11.6
 
 
@@ -38,6 +43,14 @@ def box(x0, x1, y0, y1, z0, z1):
 
 def cyl_x(r, x0, x1, y, z):
     return cq.Workplane().add(cq.Solid.makeCylinder(r, x1 - x0, cq.Vector(x0, y, z), cq.Vector(1, 0, 0)))
+
+
+def tear_x(r, x0, x1, y, z):
+    """x 방향 눈물방울 기둥 — 뾰족한 쪽 −z (출력은 뒤집어 하므로 출력 때 위쪽 = 받침 없는 천장 없음)."""
+    k = r / math.sqrt(2)
+    tri = (cq.Workplane("YZ", origin=(x0, 0, 0))
+           .polyline([(y - k, z - k), (y, z - r * math.sqrt(2)), (y + k, z - k)]).close().extrude(x1 - x0))
+    return cyl_x(r, x0, x1, y, z).union(tri)
 
 
 def csk(x, y, z):
@@ -59,6 +72,7 @@ def strap_left():
     hull = [tuple(map(float, np.array(P)[i])) for i in H.vertices]
     s = cq.Workplane("YZ", origin=(BACK_X, 0, 0)).polyline(hull).close().extrude(PAD_X - BACK_X)
     s = s.cut(box(BOSS_X, PAD_X + 1, 0, 200, 0, STEP_Z))                 # 아래쪽 앞면 x −93 (돋움에 얹힘)
+    s = s.union(box(BACK_X, TAB["x1"], TAB["y0"], TAB["y1"], TAB["z0"], TOP_Z))   # 안쪽 넓힘 (받침대 자리)
     return s
 
 
@@ -69,8 +83,8 @@ def handle():
     s = s.union(box(FIN["x0"], FIN["x1"], -FIN["half"], FIN["half"], TOP_Z - FIN["h"], TOP_Z))   # 핀
     for sg in (1, -1):
         yu, yl = sg * HOLE_U["y"], sg * HOLE_L["y"]
-        # 위 볼트: 뒤(핀 쪽)에서 머리 자리까지 Ø12.5, x −95 에 접시, 앞쪽 Ø6.6
-        s = s.cut(cyl_x(ACCESS_D / 2, FIN["x0"] - 1, U_SEAT_X, yu, HOLE_U["z"]))
+        # 위 볼트: 뒤에서 머리 자리(x −95)까지 R 12 로 파서 머리가 판 위에 드러남 (위로 트임), 접시, 앞쪽 Ø6.6
+        s = s.cut(tear_x(SPOT_R, FIN["x0"] - 1, U_SEAT_X, yu, HOLE_U["z"]))
         s = s.cut(csk(U_SEAT_X, yu, HOLE_U["z"]))
         s = s.cut(cyl_x(BOLT_D / 2, U_SEAT_X - 1, PAD_X + 1, yu, HOLE_U["z"]))
         # 아래 볼트: 뒷면 x −102 접시
