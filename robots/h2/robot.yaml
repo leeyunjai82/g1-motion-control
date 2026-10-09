@@ -208,9 +208,14 @@ vision:
   box_device: intel:gpu       # detect_box OpenVINO (ultralytics: intel:cpu / intel:gpu / intel:npu). 없는 장치면 ultralytics 가 AUTO 로
 
 # ⚠️ 실기 2026-10-09: 703 에서 rt/arm_sdk 로 머리 29/30 이 안 움직임 (토크 0, FACTS.md) → --drive 해도 머리 안 돎, 보기(얼굴 박스)만 동작
-# 머리 추종 (common/head_track.py :50013) — 머리 카메라 왼눈 영상에서 가장 큰 얼굴(없으면 사람)을 화면 가운데로
+# 머리 카메라 인식 (common/head_track.py :50013, start_robot.sh 가 띄움) — 왼눈 얼굴·사람(+머리 추종), 오른눈 사물
 head_track:
   port: 50013
+  fps: 5                      # 눈별 인식 횟수 [회/s] (사용자 2026-10-09: 5 fps 면 충분)
+  # 오른눈 사물 인식 (COCO 80종) — common/models/yolo11s_openvino_model (yolo11s.pt → OpenVINO FP16, imgsz 448)
+  objects: {enabled: true, model: yolo11s_openvino_model, device: "intel:npu", conf: 0.45, imgsz: 448,
+            exclude: [person], max: 6}   # device 는 ultralytics 형식, 없는 장치면 AUTO. person 은 왼눈이 맡음
+  strip: {height: 72, max_left: 3}       # 제어 화면 Head Vision 한 줄: 인식된 것만 잘라 높이 72 px
   mode: auto                  # face | person | auto (얼굴 우선, 얼굴이 person_after_s 동안 없으면 사람)
   device: NPU                 # 얼굴·사람 OpenVINO 장치 (사용자 2026-10-09: NPU). 안 되면 HETERO:NPU,CPU → CPU 자동 — utils/get_dev.py
   face_conf: 0.6

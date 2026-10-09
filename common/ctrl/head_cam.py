@@ -12,6 +12,7 @@ head_cam.py — H2 머리 쌍안 카메라 수신 (공식 'Bilateral Data Stream
 쓰는 곳: utils/check_head_cam.py (수신 확인), common/head_track.py (얼굴·사람 따라 머리 돌리기)
 """
 import re
+import shutil
 import socket
 import struct
 import subprocess
@@ -26,6 +27,28 @@ RTP_CAPS = "application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,pa
 MAGIC = 0x59313620                       # 'Y16 '
 HDR = struct.Struct("<IQQIIII")          # 36 B, packed
 MAGIC_BYTES = struct.pack("<I", MAGIC)
+
+
+def _pdeathsig_ok():
+    """setpriv --pdeathsig (util-linux 2.33+) 가 있는지."""
+    if not shutil.which("setpriv"):
+        return False
+    try:
+        return "pdeathsig" in subprocess.run(["setpriv", "--help"], capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+_PDEATH = None
+
+
+def gst_cmd(args):
+    """gst-launch-1.0 명령줄. 가능하면 setpriv --pdeathsig 로 감싸 부모(이 파이썬)가 SIGKILL 로 죽어도 같이 죽게 —
+    안 그러면 수신 gst 가 UDP 포트를 잡은 채 남아 다음 실행이 영상을 못 받음."""
+    global _PDEATH
+    if _PDEATH is None:
+        _PDEATH = _pdeathsig_ok()
+    return (["setpriv", "--pdeathsig", "KILL", "--"] if _PDEATH else []) + ["gst-launch-1.0"] + list(args)
 
 
 def all_ips():
@@ -133,8 +156,8 @@ class RgbRx(threading.Thread):
 
     def probe(self, timeout):
         """공식 문서 방식 (fakesink -v 의 caps) 으로 해상도·fps 확인. 성공하면 True."""
-        cmd = ["gst-launch-1.0", "-v", "udpsrc", f"port={self.port}", "buffer-size=2097152", "!", RTP_CAPS, "!",
-               "rtph264depay", "!", "avdec_h264", "!", "fakesink"]
+        cmd = gst_cmd(["-v", "udpsrc", f"port={self.port}", "buffer-size=2097152", "!", RTP_CAPS, "!",
+                       "rtph264depay", "!", "avdec_h264", "!", "fakesink"])
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         found = []
 
@@ -160,9 +183,9 @@ class RgbRx(threading.Thread):
         w, h = self.size
         stride = (w * 3 + 3) // 4 * 4                   # GStreamer BGR 줄 정렬 4 B
         n = stride * h
-        cmd = ["gst-launch-1.0", "-q", "udpsrc", f"port={self.port}", "buffer-size=2097152", "!", RTP_CAPS, "!",
-               "rtph264depay", "!", "avdec_h264", "!", "videoconvert", "!", f"video/x-raw,format=BGR,width={w},height={h}",
-               "!", "fdsink", "fd=1", "sync=false"]
+        cmd = gst_cmd(["-q", "udpsrc", f"port={self.port}", "buffer-size=2097152", "!", RTP_CAPS, "!",
+                       "rtph264depay", "!", "avdec_h264", "!", "videoconvert", "!", f"video/x-raw,format=BGR,width={w},height={h}",
+                       "!", "fdsink", "fd=1", "sync=false"])
         while not self.stop:
             self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
             self.err = ""
