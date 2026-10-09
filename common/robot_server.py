@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# Version: 1.8
+# Version: 1.9
 # Changes:
+#   1.9 - H2 전용: 보행(/loco)·마커 추종(/follow)·마커 잡기·허리 yaw 정렬·좌우 건네기 삭제
 #   1.8 - /viz 에 비교용 다른 박스 추정 방식(other) + 차이(cmp) 추가 — 표시 전용, 잡기는 detect_box BOX_METHOD 값
 #   1.7 - 잡기 단계별 소요 시간 기록 + GET /grab_history (최근 5회) — 표시용
 #   1.6 - 잡기 진행 단계(stage) 노출(/status, /grab_status), 3D 시각화용 GET /viz (박스·손 목표)
@@ -20,23 +21,18 @@
 #   0.2 - viewer 제거(dashboard 담당), robot_web.html 분리
 #   0.1 - run_motion + grab_core 통합 초기본
 """
-robot_server.py — G1 통합 로봇 제어 서버 (arm 제어 유일 프로세스)
+robot_server.py — H2 잡기 제어 서버 (포트 50000)
 
-run_motion.py 기능:
   · 관절/IK 모션 실행 (/run, /run_ik, /motions/run)
-  · Loco 방향키 (/loco/move, /loco/stop)
-  · 컨트롤 웹 UI (viewer는 dashboard.py)
-
-추가 (잡기):
-  · GrabController (grab_core.py) — marker/box 잡기 시퀀스
-  · POST /grab_at      — 인식 파일이 좌표 주면 잡기 실행
+  · 컨트롤 웹 UI (robot_web.html, 3D 뷰어는 dashboard.py)
+  · GrabController — 박스 잡기 시퀀스 (대기 → 접근 → 하강 → 잡기 → 당기기 → 들기 → 놓기/건네기 → 복귀)
+  · POST /grab_at      — 인식(detect_box :50010)이 좌표 주면 잡기 실행
   · GET  /active_mode  — 현재 모드 (인식 파일이 폴링)
-  · POST /set_mode     — 웹에서 marker/box/none 전환
+  · POST /set_mode     — 웹에서 box/none 전환
   · GET  /grab_status  — busy 등
 
-인식은 별도 프로세스 (detect_marker.py:50011, detect_box.py:50010)가
-담당하고 결과 좌표만 POST /grab_at 로 전달한다.
-이 파일만 ArmControllerWrapper(arm)를 점유한다.
+팔 명령은 arm_server(:50022, rt/arm_sdk 단독 점유)를 HTTP 로 거친다.
+H2: 보행 없음, 허리 고정(arm_sdk 로 안 움직임) — 건네기는 정면(center) / 제자리(place) 만.
 """
 
 import os
@@ -61,9 +57,9 @@ from pydantic import BaseModel
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
-import robot_env   # ROBOT 미지정/미지원이면 여기서 종료
+import robot_env   # robots/h2/robot.yaml (H2 전용)
 
-# ===== 경로 (로봇별 파일은 robots/<ROBOT>/) =====
+# ===== 경로 (robots/h2/) =====
 MOTIONS_DIR = Path(robot_env.MOTIONS_DIR)
 MOTIONS_DIR.mkdir(exist_ok=True)
 ASSETS_DIR  = robot_env.ROBOT_DIR
@@ -72,7 +68,7 @@ MESH_DIR    = robot_env.MESH_DIR
 VENDOR_DIR  = robot_env.VENDOR_DIR
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
-from ctrl.arm_controller_wrapper import LocoClientWrapper, GLOBAL_TO_INTERNAL
+from ctrl.arm_controller_wrapper import GLOBAL_TO_INTERNAL
 from ctrl.arm_http import ArmHttpClient
 from ctrl.hw_usage import HwUsage
 
@@ -82,7 +78,7 @@ from ctrl.hw_usage import HwUsage
 # ==========================================
 # 카메라 → torso 좌표 변환 (ik_box와 동일 상수)
 # ==========================================
-# D435i 장착값 — robots/<ROBOT>/robot.yaml camera (G1: 0.0576235, 0.03003, 0.42987, 47.6도)
+# D435i 장착값 — robots/h2/robot.yaml camera (torso_link 기준)
 CAMERA_X          = robot_env.CAMERA_X
 CAMERA_Y          = robot_env.CAMERA_Y
 CAMERA_Z          = robot_env.CAMERA_Z
@@ -99,55 +95,20 @@ def camera_to_torso(cx, cy, cz):
             float(-cy_r + CAMERA_Z))
 
 
-def camera_dir_to_torso(dx, dy, dz):
-    cos_p, sin_p = np.cos(CAMERA_PITCH_URDF), np.sin(CAMERA_PITCH_URDF)
-    dx_r =  dx
-    dy_r =  dy * cos_p + dz * sin_p
-    dz_r = -dy * sin_p + dz * cos_p
-    return float(dz_r), float(-dx_r), float(-dy_r)
-
-
-def marker_x_axis_in_torso(rvec):
-    """마커 X축을 torso XY 평면에 투영한 grip 방향."""
-    try:
-        rv = np.asarray(rvec, dtype=np.float64).reshape(3, 1)
-        R, _ = cv2.Rodrigues(rv)
-        x_cam = R[:, 0]
-        tx, ty, tz = camera_dir_to_torso(x_cam[0], x_cam[1], x_cam[2])
-        v = np.array([tx, ty, tz])
-        if np.linalg.norm(v) < 1e-6:
-            return np.array([0.0, 1.0, 0.0])
-        v[2] = 0.0
-        n = np.linalg.norm(v)
-        if n < 1e-6:
-            return np.array([0.0, 1.0, 0.0])
-        return v / n
-    except Exception as e:
-        print(f"[marker_x_axis] 오류, 기본 방향 사용: {e}")
-        return np.array([0.0, 1.0, 0.0])
-
-
 # ==========================================
-# 잡기 파라미터 (ik_box와 동일)
+# 잡기 파라미터 — robots/h2/robot.yaml grab
 # ==========================================
-GRIP_EXTRA     = -0.050
-APPROACH_EXTRA = float(robot_env.CFG["grab"].get("approach_extra", 0.10))   # 접근 때 박스 옆면에서 바깥으로 더 벌림 [m] (G1 0.10)
-GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_offset (G1 0.08)
-# ↑ 실험으로 맞춘 값. grab_z = 박스 윗면 - h/2 + GRAB_Z_OFFSET.
-#   아래를 함께 흡수하고 있다 (h=9cm 예: IK 목표 윗면+3.5cm → 실제 손 윗면 약 -0.9cm):
-#   · 카메라→torso_link 좌표 vs IK(pelvis 기준, 허리 0 고정) 기준 차이 z 4.4cm (PELVIS_TO_TORSO)
-#   · IK 목표점 L_ee/R_ee = 손목 yaw 에서 +5cm 지점 (손바닥 접촉면 아님)
-#   좌표 변환을 pelvis 기준으로 정확히 고치면 이 값을 0.044 줄여야 같은 높이가 된다.
-GRAB_X_OFFSET  = float(robot_env.CFG["grab"].get("grab_x_offset", -0.15))
-# ↑ 좁혀 잡을 때 손 x 를 박스 중심에서 이만큼 옮김 (robot.yaml grab.grab_x_offset). G1 −0.15 (실험값, 몸쪽으로 당김).
-#   H2 는 카메라를 마커로 보정했으므로 0 (박스 옆면 가운데를 그대로 잡음).
+APPROACH_EXTRA = float(robot_env.CFG["grab"]["approach_extra"])   # 접근 때 박스 옆면에서 바깥으로 더 벌림 [m]
+GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])          # grab_z = 박스 윗면 − H/2 + z_offset (실기 보정값)
+GRAB_X_OFFSET  = float(robot_env.CFG["grab"].get("grab_x_offset", 0.0))
+# ↑ 좁혀 잡을 때 손 x 를 박스 중심에서 이만큼 옮김. H2 0 (박스 옆면 가운데를 그대로 잡음)
 GRAB_INSET_FRAC = float(robot_env.CFG["grab"].get("grab_inset_frac", 0.0))
 GRAB_INSET_X = float(robot_env.CFG["grab"].get("grab_inset_x", 0.0))
 GRAB_INSET_MARGIN = 0.03     # 손 x 가 박스 앞면(몸쪽 면)에서 최소 이만큼 안쪽
-# ↑ 접근·하강·잡기·제자리 놓기 손 x 를 모두 박스 중심보다 몸쪽으로 (G1 둘 다 0 = 기존 그대로).
+# ↑ 접근·하강·잡기·제자리 놓기 손 x 를 모두 박스 중심보다 몸쪽으로.
 #   grab_inset_frac: 윗면 앞뒤 길이 D(인식된 윗면 좌/우 변 길이) 의 비율. 0.25 = 윗면 중심과 몸쪽 끝변의 가운데.
 #   grab_inset_x: D 를 못 받았을 때 고정값 [m].
-#   GRAB_X_OFFSET 과 달리 하강 전부터 같은 x 라 좁힐 때 손이 앞뒤로 움직이지 않음. 팔을 덜 뻗어 손이 더 내려감.
+#   하강 전부터 같은 x 라 좁힐 때 손이 앞뒤로 움직이지 않음. 팔을 덜 뻗어 손이 더 내려감.
 
 
 def grab_inset(box_d):
@@ -156,61 +117,43 @@ def grab_inset(box_d):
         return min(GRAB_INSET_FRAC * box_d, max(0.0, box_d / 2 - GRAB_INSET_MARGIN))
     return GRAB_INSET_X
 PULL_X = float(robot_env.CFG["grab"].get("pull_x", 0.0))
-ALIGN_TO_HANDS = bool(robot_env.CFG["grab"].get("align_to_hands", False))
-# ↑ 잡은 뒤 '대칭 정렬'·들기·놓기 기준을 실제 잡은 손 위치로 (H2 true). false = 박스 중심 추정값 기준 + y 0 대칭 (G1 기존)
-# ↑ 좁혀 잡은 '뒤' 그 높이 그대로 x 로 끌어당김 [m] (− = 몸쪽). robot.yaml grab.pull_x. G1 0 (기존 동작 그대로)
-HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
-READY_XYZ      = [float(v) for v in robot_env.CFG["grab"].get("ready_xyz", [0.15, 0.25, 0.20])]
-LIFT_ABOVE     = float(robot_env.CFG["grab"].get("lift_above", 0.15))
+# ↑ 좁혀 잡은 '뒤' 그 높이 그대로 x 로 끌어당김 [m] (− = 몸쪽). 팔을 덜 뻗은 자세에서 들기 위해
+ALIGN_TO_HANDS = bool(robot_env.CFG["grab"].get("align_to_hands", True))
+# ↑ 잡은 뒤 '대칭 정렬'·들기·놓기 기준을 실제 잡은 손 위치로 (박스 중심 추정과 L/R 점이 어긋나도 손이 튀지 않게)
+HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표)
+READY_XYZ      = [float(v) for v in robot_env.CFG["grab"]["ready_xyz"]]
+# ↑ Box 버튼(대기 자세)·잡기 끝 복귀(⑪ Home) 왼손 [x, y, z] (IK 좌표, 오른손은 y 반대)
+LIFT_ABOVE     = float(robot_env.CFG["grab"]["lift_above"])
+# ↑ 들기 높이 = 박스 윗면 + lift_above [m] — 몸쪽으로 당겨 높이 들면 어깨가 카메라 거치대 요크에 닿음
 WRIST_RPY_DEG  = [float(v) for v in robot_env.CFG["grab"].get("wrist_rpy_deg", [0.0, 0.0, 0.0])]
-# ↑ 손목 RPY 기본값 [roll, pitch, yaw] deg, 양손 같게 (robot.yaml grab.wrist_rpy_deg). 웹 Wrist RPY 로 바꾸면 그 값
-# ↑ 들기 높이 = 박스 윗면 + lift_above [m] (robot.yaml grab.lift_above, 기본 0.15). H2 0.10 — 몸쪽으로 당겨 높이 들면 어깨가 거치대 요크에 닿음
-# ↑ Box 버튼(대기 자세)·잡기 끝 복귀(⑪ Home) 왼손 [x, y, z] (IK 좌표, 오른손은 y 반대) — robot.yaml grab.ready_xyz (G1 기본 0.15, 0.25, 0.20)
-LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽, G1 0.0)
-WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # 기본 상체 각도 (0=중립, G1 -3.0)
-# 허리 고정 (robot.yaml grab.waist_locked) — true 면 잡기/건네기 중 허리 yaw 를 쓰지 않는다
-#   (박스 쪽 yaw 정렬 생략, 건네기 방향은 center 만). H2: 넘어짐 방지로 허리 0.
-WAIST_LOCKED = bool(robot_env.CFG["grab"].get("waist_locked", False))
-# 보행 사용 여부 (robot.yaml features.locomotion) — false 면 /follow, /loco, 모션 파일의 걷기 프레임 거부
-LOCOMOTION = bool(robot_env.CFG.get("features", {}).get("locomotion", True))
+# ↑ 손목 RPY 기본값 [roll, pitch, yaw] deg, 양손 같게. 웹 Wrist RPY 로 바꾸면 그 값
+LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽)
+WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # Home(pose=zero) 허리 pitch (H2 허리는 arm_sdk 로 안 움직임)
 
 # 잡은 뒤 → 건네기 구간 타이밍 (s)
-STEP_PAUSE        = 0.1   # 대칭정렬/들기/건네기 동작 사이 정지 (구 0.3/0.2/0.3)
-WAIST_SETTLE      = 0.2   # 허리 회전 후 안정 대기 (구 0.5)
-HANDOVER_HOLD_SEC = 2.0   # box: 건넨 뒤 손 벌리기까지 대기 (구 3.0)
+STEP_PAUSE        = 0.1   # 대칭정렬/들기/건네기 동작 사이 정지
+HANDOVER_HOLD_SEC = 2.0   # center: 건넨 뒤 손 벌리기까지 대기
 PLACE_HOLD_SEC    = 1.5   # place: 들어 올린 채 보여 주는 시간
 PLACE_Z_CLEAR     = 0.005 # place: 내려놓을 때 잡았던 높이보다 이만큼 위에서 놓기 (테이블 누름 방지)
-HANDOVER_MODES = ("center", "left", "right", "place")
-DEFAULT_HANDOVER = str(robot_env.CFG["grab"].get("default_handover", "center"))   # robot.yaml (H2: place)
+HANDOVER_MODES = ("center", "place")   # 허리 고정이라 정면 건네기 / 제자리 내려놓기만
+DEFAULT_HANDOVER = str(robot_env.CFG["grab"].get("default_handover", "place"))
 assert DEFAULT_HANDOVER in HANDOVER_MODES, f"robot.yaml grab.default_handover: {DEFAULT_HANDOVER}"
 
 
 # ==========================================
 # 잡기 진행 단계 (웹 진행 표시 / 3D 시각화용)
 # ==========================================
-GRAB_STAGES = ["허리 정렬", "재검출", "위쪽 접근", "측면 하강", "잡기",
+GRAB_STAGES = ["재검출", "위쪽 접근", "측면 하강", "잡기",
                "들기", "건네기", "받기 대기", "놓기", "복귀"]
-if WAIST_LOCKED:   # 허리 고정 로봇(H2): 허리 정렬 단계 없음 (진행 표시에서도 뺌)
-    GRAB_STAGES = [s for s in GRAB_STAGES if s != "허리 정렬"]
 
 # IK 목표 좌표계 = pelvis 기준(허리 0 가정 축소모델). 카메라 좌표는 torso_link 기준.
-# torso_link 원점은 pelvis 에서 (-0.0039635, 0, 0.044) (URDF waist_roll_joint, 허리 0일 때).
 # /viz 는 모두 torso_link 기준으로 내보낸다 (dashboard 가 torso_link 에 붙여 그림).
-PELVIS_TO_TORSO = tuple(float(v) for v in robot_env.CFG["frames"]["pelvis_to_torso"])   # robot.yaml (G1 -0.0039635, 0, 0.044)
-
-# 카메라 → IK 목표 좌표 (robot.yaml frames.exact_ik_frame)
-#   false (G1): torso_link 좌표를 그대로 IK(pelvis) 목표로 쓴다. 두 좌표계 차이(z 4.4 cm)는
-#               GRAB_Z_OFFSET 실험값이 흡수 — 기존 동작 그대로.
-#   true  (H2): torso + PELVIS_TO_TORSO 로 정확히 변환. H2 는 차이가 z 12.3 cm 라 흡수 불가
-#               (그대로 쓰면 위쪽 접근 높이가 박스 윗면보다 낮아진다).
-EXACT_IK_FRAME = bool(robot_env.CFG["frames"].get("exact_ik_frame", False))
+PELVIS_TO_TORSO = tuple(float(v) for v in robot_env.CFG["frames"]["pelvis_to_torso"])   # robot.yaml frames.pelvis_to_torso
 
 
 def cam_to_ik(cx, cy, cz):
-    """잡기용: 카메라 좌표 → IK 목표 좌표 (exact_ik_frame 반영)."""
+    """잡기용: 카메라 좌표 → IK 목표 좌표 (torso + pelvis_to_torso, H2 는 차이 z 12.3 cm)."""
     x, y, z = camera_to_torso(cx, cy, cz)
-    if not EXACT_IK_FRAME:
-        return x, y, z
     return (x + PELVIS_TO_TORSO[0], y + PELVIS_TO_TORSO[1], z + PELVIS_TO_TORSO[2])
 
 
@@ -240,11 +183,7 @@ class GrabController:
             'right': {'roll': r, 'pitch': p, 'yaw': y},
         }
         # handover 방향
-        self.handover_direction = DEFAULT_HANDOVER   # center|left|right|place (place = 제자리 내려놓기)
-        self.handover_yaw_deg   = 30.0
-
-        # 박스 크기 (marker 모드 고정값, box 모드는 측정값 사용)
-        self.box_size = {"width": 0.28, "depth": 0.09, "height": 0.09}
+        self.handover_direction = DEFAULT_HANDOVER   # center (정면 건네기) | place (제자리 내려놓기)
 
         # TTS 멘트 (선물 컨셉 제거, 잡기 위주)
         self.MSG_PICKED   = "I got it."
@@ -257,17 +196,16 @@ class GrabController:
         self.HOME_LEFT  = [READY_XYZ[0],  READY_XYZ[1], READY_XYZ[2]]
         self.HOME_RIGHT = [READY_XYZ[0], -READY_XYZ[1], READY_XYZ[2]]
 
-        # 허리 정렬 후 재감지 콜백 (robot_server가 주입) — None이면 재감지 안 함
+        # 재감지 콜백 (robot_server가 주입, detect_box /pose) — None이면 재감지 안 함
         self.redetect = None
         # 진행 표시 / 시각화
         self.stage = None                  # GRAB_STAGES 중 하나 (None=대기)
         self._stage_log = []               # [(단계, 시작시각)] — 이번 잡기
         self.history = deque(maxlen=5)     # 최근 잡기 기록 (단계별 소요 시간)
         self.targets = None                # 마지막 IK 목표 {"L":[xyz],"R":[xyz]} (IK=pelvis 기준)
-        self._last_kind = "marker"   # 마지막 잡기 종류 (handover 가림 판정용)
 
     def _stage(self, name):
-        if name not in GRAB_STAGES:      # 이 로봇에 없는 단계 (예: 허리 고정 로봇의 '허리 정렬')
+        if name not in GRAB_STAGES:
             return
         self.stage = name
         self._stage_log.append((name, time.time()))
@@ -316,29 +254,6 @@ class GrabController:
             print(f"[IK] 오류: {e}")
             return False
 
-    def _reset_waist(self):
-        if WAIST_LOCKED:
-            print("[WAIST] 고정(robot.yaml grab.waist_locked) — 리셋 생략")
-            return
-        print(f"[WAIST] 리셋 (pitch={WAIST_BASE_PITCH})")
-        if self.robot_available and self.arm is not None:
-            self.arm.move_waist_smooth(yaw=0.0, roll=0.0, pitch=WAIST_BASE_PITCH, duration=1.5)
-        time.sleep(0.5)
-
-    def _align_waist_yaw(self, mx, my):
-        if WAIST_LOCKED:
-            print("[WAIST] 고정(robot.yaml grab.waist_locked) — yaw 정렬 생략")
-            return
-        yaw_deg = float(np.degrees(np.arctan2(my, mx)))
-        print(f"[WAIST] yaw: {yaw_deg:.1f}도")
-        if abs(yaw_deg) < 1.5:
-            return
-        if self.robot_available and self.arm is not None:
-            self.arm.move_waist_smooth(yaw=yaw_deg, roll=0.0, pitch=WAIST_BASE_PITCH, duration=1.0)
-        else:
-            time.sleep(1.0)
-        time.sleep(0.5)
-
     def _wrist_quats(self):
         lp = self.wrist_params['left']
         rp = self.wrist_params['right']
@@ -348,7 +263,7 @@ class GrabController:
     # ---- 공통 후반부: 대칭→들기→handover→복귀 ----
     def _finish_sequence(self, grab_x_base, grp_off_L, grp_off_R,
                          grab_z, lift_z, l_rot, r_rot, yc=0.0):
-        # yc: 양손 중심 y (G1 = 0 — 허리 yaw 로 박스를 정면에 맞춘 뒤라 0 가정. H2 align_to_hands = 실제 잡은 손 중심)
+        # yc: 양손 중심 y (align_to_hands = 실제 잡은 손 중심, 아니면 0)
         self.speak(self.MSG_PICKED)
 
         sym_L = [grab_x_base, yc + grp_off_L + LEFT_HAND_Y_OFFSET, grab_z]
@@ -368,22 +283,7 @@ class GrabController:
             self._place_back(grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot, yc)
             return
 
-        if self.handover_direction == "left":
-            hy = +self.handover_yaw_deg
-        elif self.handover_direction == "right":
-            hy = -self.handover_yaw_deg
-        else:
-            hy = 0.0
-        if WAIST_LOCKED:
-            hy = 0.0                       # 허리 고정 로봇은 정면으로만 건넨다
-        self._stage("건네기")
-        print(f"[GRAB] ⑦' 허리 yaw → {hy:.1f}도")
-        if self.robot_available and self.arm is not None:
-            # 회전 각도가 클수록 느리게 (기본 1.5초 + 30도당 1초)
-            yaw_dur = 1.5 + abs(hy) / 30.0
-            self.arm.move_waist_smooth(yaw=hy, roll=0.0, pitch=WAIST_BASE_PITCH, duration=yaw_dur)
-            time.sleep(WAIST_SETTLE)
-
+        self._stage("건네기")      # 정면 (허리 고정)
         hl = [HANDOVER_X, yc + grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
         hr = [HANDOVER_X, yc - grp_off_R, lift_z]
         if not self._move(hl, hr, 1.5, "⑧ 건네기", l_rot, r_rot):
@@ -392,25 +292,10 @@ class GrabController:
         self._stage("받기 대기")
         self.speak(self.MSG_HANDOVER)
 
-        # 받음 처리 — 종류별로 다름
-        received = False
-        if self._last_kind == "marker" and self.redetect is not None:
-            # 마커: 박스 윗면에 마커가 붙어있어 받으면 가려짐 → 가림 감지 (최대 8초)
-            start = time.time()
-            while time.time() - start < 8.0:
-                d = self.redetect("marker")
-                if d is None:
-                    received = True
-                    print(f"[HANDOVER] 마커 가림 → 받음 ({time.time()-start:.1f}s)")
-                    break
-                time.sleep(0.2)
-            if not received:
-                print("[HANDOVER] 타임아웃 → 그냥 놓음")
-        else:
-            # 박스: 받아도 계속 보이므로 고정 대기 후 놓기
-            print(f"[HANDOVER] 박스 — {HANDOVER_HOLD_SEC:.0f}초 대기 후 놓기")
-            time.sleep(HANDOVER_HOLD_SEC)
-            received = True
+        # 받음 처리 — 박스는 받아도 계속 보이므로 고정 대기 후 놓기
+        print(f"[HANDOVER] 박스 — {HANDOVER_HOLD_SEC:.0f}초 대기 후 놓기")
+        time.sleep(HANDOVER_HOLD_SEC)
+        received = True
 
         self.speak(self.MSG_RECEIVED if received else self.MSG_TIMEOUT)
         self._stage("놓기")
@@ -434,7 +319,6 @@ class GrabController:
 
         self._stage("복귀")
         print("[HANDOVER] ⑪ 복귀")
-        self._reset_waist()
         self._move(self.HOME_LEFT, self.HOME_RIGHT, 2.0, "⑪ Home")
         self.speak(self.MSG_HOME)
 
@@ -469,14 +353,12 @@ class GrabController:
         time.sleep(0.3)
         self._stage("복귀")
         print("[PLACE] ⑪ 복귀")
-        self._reset_waist()
         self._move(self.HOME_LEFT, self.HOME_RIGHT, 2.0, "⑪ Home")
 
     # ---- 대기 자세 (모드 선택 시) ----
     def ready(self):
         """잡을 준비 — 팔을 작업 대기 자세(HOME)로 들어 올림."""
         print("[READY] 대기 자세로")
-        self._reset_waist()
         l_rot, r_rot = self._wrist_quats()
         self._move(self.HOME_LEFT, self.HOME_RIGHT, 2.0, "READY 대기자세", l_rot, r_rot)
 
@@ -486,7 +368,6 @@ class GrabController:
         기동 자세를 캡처해두고 그 각도로 복귀하므로, 부팅 직후와 OFF 후의
         팔 위치가 같아진다. 캡처 실패 시에만 기존 IK 차렷 자세로 간다.
         """
-        self._reset_waist()
         if BOOT_ARM_DEG is not None and self.robot_available and self.arm is not None:
             print("[PARK] 팔 내림 — 기동 자세로 복귀")
             try:
@@ -497,92 +378,33 @@ class GrabController:
         print("[PARK] 팔 내림 (IK)")
         self._move([0.0, 0.28, -0.38], [0.0, -0.28, -0.38], 2.0, "PARK 팔내림")
 
-    # ---- marker 잡기 ----
-    def grab_marker(self, tvec, rvec):
-        """마커: 윗면 중심 tvec + 자세 rvec, box_size 고정."""
-        print("[GRAB-MARKER] 시작")
-        self._last_kind = "marker"
-        self._reset_waist()
-        mx, my, mz = cam_to_ik(tvec[0], tvec[1], tvec[2])
-        self._align_waist_yaw(mx, my)
-
-        # 허리 돌린 후 재감지 (카메라 좌표계 보정) — ik_box와 동일
-        if self.redetect is not None:
-            time.sleep(0.6)
-            d = self.redetect("marker")
-            if d and d.get("tvec"):
-                tvec = d["tvec"]
-                if d.get("rvec"): rvec = d["rvec"]
-                mx, my, mz = cam_to_ik(tvec[0], tvec[1], tvec[2])
-                print(f"[GRAB-MARKER] 재감지 torso=[{mx:.3f},{my:.3f},{mz:.3f}]")
-            else:
-                print("[GRAB-MARKER] 재감지 실패 — 원래 좌표 사용")
-
-        box_x_axis = marker_x_axis_in_torso(rvec)
-        if box_x_axis[1] < 0:
-            box_x_axis = -box_x_axis
-
-        half_w   = self.box_size["width"] / 2
-        height_b = self.box_size["height"]
-
-        grab_x_base = mx + GRAB_X_OFFSET
-        grab_z  = mz - height_b / 2 + GRAB_Z_OFFSET
-        above_z = mz + 0.10
-        lift_z  = mz + LIFT_ABOVE
-        app_off = half_w + GRIP_EXTRA + APPROACH_EXTRA
-        grp_off = half_w + GRIP_EXTRA
-
-        gd = box_x_axis
-        def offset_point(bx, by, z, off):
-            return ([bx + gd[0]*off, by + gd[1]*off + LEFT_HAND_Y_OFFSET, z],
-                    [bx - gd[0]*off, by - gd[1]*off, z])
-
-        l_rot, r_rot = self._wrist_quats()
-
-        L, R = offset_point(mx, my, above_z, app_off)
-        if not self._move(L, R, 1.5, "④ 위쪽 접근", l_rot, r_rot): return
-        time.sleep(0.2)
-        L, R = offset_point(mx, my, grab_z, app_off)
-        if not self._move(L, R, 1.0, "⑤ 측면 하강", l_rot, r_rot): return
-        time.sleep(0.2)
-        L, R = offset_point(grab_x_base, my, grab_z, grp_off)
-        if not self._move(L, R, 2.5, "⑥ 잡기", l_rot, r_rot): return
-        time.sleep(1.0)
-
-        self._finish_sequence(grab_x_base, grp_off, grp_off,
-                              grab_z, lift_z, l_rot, r_rot)
-
     # ---- box(cardboard) 잡기 ----
     def grab_box(self, L_cam, R_cam, box_h_m=None, top_center_cam=None, box_d_m=None):
         """박스: L/R(윗면 좌우 변 중심, 안쪽 2cm) 직접 사용.
 
         L_cam, R_cam: 카메라 좌표 grip 점
         box_h_m: 측정된 박스 높이 (잡는 높이 결정용)
-        top_center_cam: 윗면 중심 (waist yaw 정렬용)
+        top_center_cam: 윗면 중심
         box_d_m: 측정된 윗면 앞뒤 길이 = 윗면 좌/우 변 길이 (잡는 x 결정용, grab_inset)
         """
         print("[GRAB-BOX] 시작")
-        self._last_kind = "box"
-        self._stage("허리 정렬")
-        self._reset_waist()
 
         Lx, Ly, Lz = cam_to_ik(L_cam[0], L_cam[1], L_cam[2])
         Rx, Ry, Rz = cam_to_ik(R_cam[0], R_cam[1], R_cam[2])
 
-        # 중심 (waist 정렬 + grab_x_base)
+        # 중심 (grab_x_base)
         if top_center_cam is not None:
             cx, cy, cz = cam_to_ik(top_center_cam[0],
                                           top_center_cam[1],
                                           top_center_cam[2])
         else:
             cx, cy, cz = (Lx+Rx)/2, (Ly+Ry)/2, (Lz+Rz)/2
-        self._align_waist_yaw(cx, cy)
 
-        # 허리 돌린 후 재감지 (카메라 좌표계 보정)
+        # 재감지 — 0.6 s 뒤 detect_box /pose 를 한 번 더 읽어 최신 박스 위치로
         self._stage("재검출")
         if self.redetect is not None:
             time.sleep(0.6)
-            d = self.redetect("box")
+            d = self.redetect()
             if d and d.get("L") and d.get("R"):
                 L_cam, R_cam = d["L"], d["R"]
                 if d.get("box_h"): box_h_m = d["box_h"]
@@ -654,7 +476,7 @@ class GrabController:
 
         # 대칭 정렬용 파라미터: 잡은 뒤 양손을 평행/대칭으로 정리
         if ALIGN_TO_HANDS:
-            # 실제로 잡은 손 위치 기준 (H2) — 박스 중심 추정(cx, cy)과 L/R 점이 어긋나도 잡은 손이 튀지 않게.
+            # 실제로 잡은 손 위치 기준 — 박스 중심 추정(cx, cy)과 L/R 점이 어긋나도 잡은 손이 튀지 않게.
             #   x = 양손 x 평균 (+당긴 거리), y = 양손 중심 기준 대칭 (왼손 보정 제외하고 계산)
             grab_x_base = (gripL[0] + gripR[0]) / 2 + PULL_X
             yL = gripL[1] - LEFT_HAND_Y_OFFSET
@@ -689,7 +511,6 @@ except ImportError:
 # 전역 상태
 # ==========================================
 arm:  Optional[ArmHttpClient]        = None   # arm_server(50022) 클라이언트
-loco: Optional[LocoClientWrapper]    = None
 hand: Optional[object]               = None
 tts:  Optional[object]               = None
 grab: Optional[GrabController]       = None
@@ -698,216 +519,15 @@ is_running = False
 STOP_FLAG  = False
 
 # 잡기 모드 게이트
-ACTIVE_MODE = "none"          # "none" | "marker" | "box"
+ACTIVE_MODE = "none"          # "none" | "box"
 grab_busy   = False
 grab_lock   = threading.Lock()
 
 # arm_sdk 제어권 상태 (기동 시 motion_mode=True 로 weight=1 이므로 hold)
-#   hold    : arm_sdk 가 허리+팔 점유. 잡기/IK 가능. FSM 501 검증에 따라 이 상태로도 보행 가능(박스 운반).
-#   release : loco 가 허리+팔 회수. 팔 스윙 있는 정상 보행. 팔/허리 지령은 무효(weight=0).
+#   hold    : arm_sdk 가 팔 점유 (weight 1). 잡기/IK 가능.
+#   release : arm_sdk 반납 (weight 0) — 팔은 로봇 FSM(703) 이 잡음. 팔 지령 무효.
 ARM_MODE = "hold"             # "hold" | "release"
 _arm_switching = False
-
-# ---- 마커 추종 보행 (detect_marker 50011 /pose 폐루프) ----
-MARKER_POSE_URL = "http://localhost:50011/pose"
-
-FOLLOW_P = {
-    "vx_max": 0.25, "vx_min": 0.10,     # 전진 속도 (m/s)
-    "kp_yaw": 0.8, "vyaw_max": 0.4,     # 원거리 회전 조향
-    "kp_vy": 0.6, "vy_max": 0.10,       # 근거리 횡이동 조향
-    "yaw_sign": 1,                      # 조향 부호 (반대로 틀면 -1)
-    "stop_dist": 0.25,                  # 정지 거리 (m)
-    "slow_dist": 1.0,                   # 감속·횡이동 시작 거리 (m)
-    "y_tol": 0.04,                      # 정지 허용 좌우 오프셋 (m)
-    "ema_alpha": 0.35,                  # 측정 저역필터
-    "lost_stop": 1.5,                   # 마커 미검출 정지 (s)
-    "timeout": 60.0,
-    # 정면 접근: 마커 법선 위 경유점을 먼저 찍고 정면에서 진입
-    "pre_dist": 0.7,                    # 경유점 거리 (마커 정면, m)
-    "wp_reach": 0.2,                    # 경유점 도달 판정 (m)
-    # 접근축 = 마커 좌표계의 어느 축을 쓸 것인가
-    #   0 = X축(빨강) / 1 = Y축(초록) / 2 = Z축(파랑, 마커 법선)
-    #   · 바닥에 눕힌 마커      → 1 (면 안의 축이 접근 방향)
-    #   · 벽·박스 앞면 수직 마커 → 2 (법선이 곧 접근 방향)
-    #   · -1 = 자동 (마커→로봇 방향과 가장 잘 맞는 축. 로봇이 마커 정면
-    #     부근일 때만 신뢰 가능 — 배치가 정해졌으면 0/1/2 로 고정할 것)
-    "axis_col": 2,
-    "axis_min_h": 0.35,                 # 축의 수평 성분 최소치 — 미만이면 축 없음(직행 폴백)
-}
-FOLLOW_S = {"state": "idle", "phase": "-", "found": False,
-            "mx": 0.0, "my": 0.0, "vx": 0.0, "vyaw": 0.0, "t_run": 0.0}
-_follow_run = threading.Event()
-
-
-def _follow_get_pose():
-    """마커 위치+접근축. (found, mx, my, axis)
-
-    mx,my  : torso 기준 마커 위치 (m)
-    axis   : 마커 법선(접근축) 단위벡터 — 항상 로봇 쪽을 향하도록 부호 정리.
-             rvec 없거나 해석 실패 시 None (기존처럼 직행 접근).
-    """
-    import urllib.request as _u
-    try:
-        d = json.loads(_u.urlopen(MARKER_POSE_URL, timeout=0.3).read())
-        if not d.get("found"):
-            return False, 0.0, 0.0, None
-        cm = d["torso_cm"]
-        mx, my = cm[0] / 100.0, cm[1] / 100.0
-        axis = None
-        rvec = d.get("rvec")
-        if rvec:
-            try:
-                import cv2 as _cv2
-                rv = np.asarray(rvec, dtype=np.float64).reshape(3, 1)
-                R, _ = _cv2.Rodrigues(rv)
-                def _horiz(c):
-                    """마커 축 c 의 torso 수평 성분 (ax, ay, 수평크기)."""
-                    hx, hy, _h = camera_dir_to_torso(R[0, c], R[1, c], R[2, c])
-                    return hx, hy, (hx * hx + hy * hy) ** 0.5
-
-                col = FOLLOW_P["axis_col"]
-                if col < 0:
-                    # 자동: 마커→로봇 방향과 가장 잘 정렬되는 축.
-                    # (수평 성분 크기로 고르면 두 축이 동점이 되어 구분이 안 된다)
-                    _tl = (mx * mx + my * my) ** 0.5
-                    _rx, _ry = (-mx / _tl, -my / _tl) if _tl > 1e-6 else (-1.0, 0.0)
-                    _best, col = -2.0, 1
-                    for _c in (0, 1, 2):
-                        _cx, _cy, _ch = _horiz(_c)
-                        if _ch < FOLLOW_P["axis_min_h"]:
-                            continue
-                        _s = abs((_cx / _ch) * _rx + (_cy / _ch) * _ry)
-                        if _s > _best:
-                            _best, col = _s, _c
-
-                ax, ay, n = _horiz(col)
-                # 수평 성분이 너무 작은 축(거의 수직)은 정규화 시 노이즈가 증폭되어
-                # 엉뚱한 방향이 나온다 → 축 없음으로 처리(직행 폴백)
-                if n >= FOLLOW_P["axis_min_h"]:
-                    ax, ay = ax / n, ay / n
-                    if ax * (-mx) + ay * (-my) < 0:   # 로봇(원점) 쪽으로
-                        ax, ay = -ax, -ay
-                    axis = (ax, ay)
-            except Exception:
-                axis = None
-        return True, mx, my, axis
-    except Exception:
-        return False, 0.0, 0.0, None
-
-
-def _follow_loop():
-    import math as _m
-    P, S = FOLLOW_P, FOLLOW_S
-    dt = 0.1
-    t_start = time.time()
-    lost_since = None
-    arrive_cnt = 0
-    f_mx = f_my = None
-    f_ax = f_ay = None
-    phase = "waypoint"        # waypoint: 마커 정면 경유점으로 / final: 마커로 직행
-    S["state"] = "following"
-    try:
-        while _follow_run.is_set():
-            t0 = time.time()
-            S["t_run"] = round(t0 - t_start, 1)
-            if S["t_run"] > P["timeout"]:
-                S["state"] = "timeout"; break
-
-            found, mx, my, axis = _follow_get_pose()
-            if not found:
-                if lost_since is None:
-                    lost_since = t0
-                elif t0 - lost_since > P["lost_stop"]:
-                    S["state"] = "lost"; break
-                loco.move(0, 0, 0)
-                S["found"], S["vx"], S["vyaw"] = False, 0.0, 0.0
-                time.sleep(dt)
-                continue
-            lost_since = None
-
-            a = P["ema_alpha"]
-            if f_mx is None:
-                f_mx, f_my = mx, my
-            else:
-                f_mx += a * (mx - f_mx)
-                f_my += a * (my - f_my)
-            if axis is not None:
-                if f_ax is None:
-                    f_ax, f_ay = axis
-                else:
-                    f_ax += a * (axis[0] - f_ax)
-                    f_ay += a * (axis[1] - f_ay)
-                    n = (f_ax * f_ax + f_ay * f_ay) ** 0.5
-                    if n > 1e-6:
-                        f_ax, f_ay = f_ax / n, f_ay / n
-            S["found"], S["mx"], S["my"] = True, round(f_mx, 2), round(f_my, 2)
-
-            # 목표점: 경유점(마커 정면 pre_dist) → 도달하면 마커
-            if phase == "waypoint" and f_ax is not None:
-                tx = f_mx + f_ax * P["pre_dist"]
-                ty = f_my + f_ay * P["pre_dist"]
-                if _m.hypot(tx, ty) <= P["wp_reach"]:
-                    phase = "final"
-                    tx, ty = f_mx, f_my
-            else:
-                phase = "final"           # 접근축 없으면 기존 동작(직행)
-                tx, ty = f_mx, f_my
-            S["phase"] = phase
-
-            d_t = _m.hypot(tx, ty)
-            vy_center = max(-P["vy_max"], min(P["vy_max"],
-                            P["yaw_sign"] * P["kp_vy"] * ty))
-
-            # 도착 판정: final 단계에서만 (경유점 단계에선 절대 정지하지 않음)
-            if phase == "final" and d_t <= P["stop_dist"]:
-                if abs(ty) > P["y_tol"]:
-                    arrive_cnt = 0
-                    loco.move(0.0, vy_center, 0.0)
-                    S["vx"], S["vyaw"] = 0.0, round(vy_center, 2)
-                    time.sleep(dt)
-                    continue
-                arrive_cnt += 1
-                if arrive_cnt >= 3:
-                    S["state"] = "arrived"; break
-                loco.move(0, 0, 0)
-                time.sleep(dt)
-                continue
-            arrive_cnt = 0
-
-            bearing = _m.atan2(ty, tx)
-            vyaw = max(-P["vyaw_max"], min(P["vyaw_max"],
-                       P["yaw_sign"] * P["kp_yaw"] * bearing))
-            vy = 0.0
-            if d_t < P["slow_dist"]:
-                vyaw *= 0.5
-                vy = vy_center
-                span = max(0.01, P["slow_dist"] - P["stop_dist"])
-                vx = P["vx_min"] + (P["vx_max"] - P["vx_min"]) * \
-                     (d_t - P["stop_dist"]) / span
-            else:
-                vx = P["vx_max"]
-            vx = max(P["vx_min"], min(P["vx_max"], vx))
-
-            loco.move(vx, vy, vyaw)
-            S["vx"], S["vyaw"] = round(vx, 2), round(vyaw, 2)
-            time.sleep(max(0, dt - (time.time() - t0)))
-        else:
-            S["state"] = "stopped"
-    finally:
-        _follow_run.clear()
-        try:
-            loco.stop()
-        except Exception:
-            pass
-        S["vx"], S["vyaw"] = 0.0, 0.0
-
-
-def _follow_stop():
-    if _follow_run.is_set():
-        _follow_run.clear()
-        FOLLOW_S["state"] = "stopped"
-
-
 
 # ---- 기본 자세 (Home / Stop / Grab Mode OFF 공통) ----
 # 팔 각도는 아래 DEFAULT_ARM_DEG. 허리는 중립.
@@ -927,12 +547,8 @@ def _park_arm(duration=2.0):
     return True
 
 
-# 보행 전 허리 yaw 허용 오차. 핸드오버로 ±80도까지 돌아간 상태에서 걸으면
-# 상체가 비틀린 채 kp=150 으로 잠겨 균형이 무너진다.
-WALK_YAW_TOL_DEG = 3.0
-
 # ---- 기본 자세 팔 각도 (Home / Stop / Grab OFF 공통) ----
-# loco 기본 자세 실측값. dashboard 에서 읽은 각도를 그대로 박아둔다.
+# 실측 기본 자세 (robot.yaml default_arm_deg).
 # 순서: shoulder P/R/Y, elbow, wrist R/P/Y  → 좌 7 + 우 7
 DEFAULT_ARM_DEG = [float(v) for v in robot_env.CFG["default_arm_deg"]]   # robot.yaml default_arm_deg
 
@@ -941,41 +557,6 @@ DEFAULT_ARM_DEG = [float(v) for v in robot_env.CFG["default_arm_deg"]]   # robot
 USE_BOOT_CAPTURE = False
 
 BOOT_ARM_DEG = list(DEFAULT_ARM_DEG)
-
-# 웹에서 /loco/move 를 50ms 마다 쏘므로, 복귀가 중복 실행되지 않게 막는다.
-_waist_realigning = False
-
-
-def _waist_yaw_deg():
-    """현재 허리 yaw (deg). 조회 실패 시 0.0."""
-    if not arm or not getattr(arm, "arm_ctrl", None):
-        return 0.0
-    try:
-        return float(np.degrees(arm.arm_ctrl.get_waist_q()[0]))
-    except Exception:
-        return 0.0
-
-
-def _ensure_waist_neutral_for_walk():
-    """허리 yaw 가 중립에서 벗어나 있으면 0 으로 되돌린다.
-
-    이미 0 근처면 아무것도 하지 않으므로 방향키 연타에 지연이 붙지 않는다.
-    roll/pitch 는 건드리지 않는다 (WAIST_BASE_PITCH 유지).
-    """
-    global _waist_realigning
-    yaw_deg = _waist_yaw_deg()
-    print(f"[WALK] 허리 yaw {yaw_deg:.1f}도 → 0 복귀 후 보행")
-    try:
-        # 회전 각도가 클수록 느리게 (잡기 시퀀스와 동일 규칙)
-        arm.move_waist_smooth(yaw=0.0, roll=0.0, pitch=WAIST_BASE_PITCH,
-                              duration=1.5 + abs(yaw_deg) / 30.0)
-        time.sleep(0.3)
-    except Exception as e:
-        print(f"[WALK] 허리 복귀 실패: {e}")
-    finally:
-        _waist_realigning = False
-    return True
-
 
 def _freeze_arm():
     """팔·허리를 현재 실측 자세로 고정한다. (arm_server /freeze)"""
@@ -997,9 +578,6 @@ class MotorTarget(BaseModel):
 class PoseData(BaseModel):
     targets: List[MotorTarget]
 
-class LocomotionData(BaseModel):
-    direction: str
-
 class HandMotionData(BaseModel):
     hand: str
     motion: str
@@ -1007,7 +585,6 @@ class HandMotionData(BaseModel):
 class MotionFrame(BaseModel):
     duration: float
     pose: Optional[PoseData] = None
-    locomotion: Optional[LocomotionData] = None
     hand_motion: Optional[HandMotionData] = None
 
 class IKMotionFrame(BaseModel):
@@ -1016,19 +593,11 @@ class IKMotionFrame(BaseModel):
     right_xyz: Optional[List[float]] = None
     left_rpy: Optional[List[float]] = None
     right_rpy: Optional[List[float]] = None
-    locomotion: Optional[LocomotionData] = None
     hand_motion: Optional[HandMotionData] = None
-
-class LocoMoveRequest(BaseModel):
-    vx: float = 0.0
-    vy: float = 0.0
-    vyaw: float = 0.0
 
 # 잡기 요청 (인식 파일 → robot_server)
 class GrabRequest(BaseModel):
-    type: str                              # "marker" | "cardboard"
-    tvec: Optional[List[float]] = None     # 카메라 좌표 (marker: 윗면중심)
-    rvec: Optional[List[float]] = None     # marker 자세
+    type: str = "cardboard"                # 박스만 ("cardboard")
     L:    Optional[List[float]] = None     # box 왼쪽 grip (카메라)
     R:    Optional[List[float]] = None     # box 오른쪽 grip
     top_center: Optional[List[float]] = None
@@ -1081,17 +650,11 @@ def _stop_and_park(duration=1.5):
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global arm, loco, hand, tts, grab, ACTIVE_MODE, BOOT_ARM_DEG
+    global arm, hand, tts, grab, ACTIVE_MODE, BOOT_ARM_DEG
 
     print("[robot_server] 시작")
     HW.start()                     # CPU·GPU·NPU 사용률 (제어 화면 위 칩, GET /hw)
     robot_env.dds_init()
-
-    try:
-        loco = LocoClientWrapper()
-        print("✅ Loco 초기화")
-    except Exception as e:
-        print(f"⚠️ Loco 실패: {e}")
 
     try:
         arm = ArmHttpClient()   # arm_server(50022) 가 먼저 떠 있어야 함
@@ -1140,12 +703,11 @@ async def lifespan(app: FastAPI):
     grab = GrabController(arm=arm, speak=_speak,
                           robot_available=(arm is not None))
 
-    # 허리 정렬 후 재감지: 현재 모드의 detect 서버 /pose를 다시 읽음
-    def _redetect(kind):
+    # 재감지: detect_box /pose 를 다시 읽음
+    def _redetect():
         import urllib.request as _u
-        port = 50011 if kind == "marker" else 50010
         try:
-            raw = _u.urlopen(f"http://localhost:{port}/pose", timeout=1.0).read()
+            raw = _u.urlopen("http://localhost:50010/pose", timeout=1.0).read()
             d = json.loads(raw)
             return d if d.get("found") else None
         except Exception as e:
@@ -1182,7 +744,7 @@ async def lifespan(app: FastAPI):
 
 HW = HwUsage(period=1.0)          # 이 PC 의 CPU / GPU / NPU 사용률 (ctrl/hw_usage.py)
 
-app = FastAPI(title="G1 Robot Server", lifespan=lifespan)
+app = FastAPI(title="H2 Robot Server", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -1190,22 +752,6 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 # ==========================================
 # 모션 실행 (run_motion 동일)
 # ==========================================
-async def _run_loco(direction: str, duration: float):
-    if not LOCOMOTION:
-        print(f"[LOCO] 보행 비활성(robot.yaml features.locomotion) — '{direction}' 프레임 건너뜀")
-        return
-    dmap = {"forward":loco.forward,"backward":loco.backward,"left":loco.left,
-            "right":loco.right,"turn_left":loco.turn_left,"turn_right":loco.turn_right}
-    method = dmap.get(direction)
-    if method and loco:
-        start = time.time()
-        while time.time() - start < duration:
-            if STOP_FLAG: break
-            method()
-            await asyncio.sleep(0.02)
-        if not STOP_FLAG and loco:
-            loco.stop()
-
 async def _execute_frames(frames: List[MotionFrame]):
     global is_running, STOP_FLAG
     is_running = True; STOP_FLAG = False
@@ -1238,14 +784,11 @@ async def _execute_frames(frames: List[MotionFrame]):
                     tasks.append(loop.run_in_executor(None, arm.move_waist_smooth,
                         float(waist_targets[0]),float(waist_targets[1]),float(waist_targets[2]),frame.duration))
                 await asyncio.gather(*tasks)
-            elif frame.locomotion and loco:
-                await _run_loco(frame.locomotion.direction, frame.duration)
             else:
-                await asyncio.sleep(frame.duration)
+                await asyncio.sleep(frame.duration)   # 손만 / 대기 (보행 프레임은 H2 에서 무시)
             if hand_future: await hand_future
     finally:
         is_running = False
-        if loco: loco.stop()
 
 async def _execute_ik_frames(frames: List[IKMotionFrame]):
     global is_running, STOP_FLAG
@@ -1264,14 +807,11 @@ async def _execute_ik_frames(frames: List[IKMotionFrame]):
                 rr = frame.right_rpy or [0.0,0.0,0.0]
                 await loop.run_in_executor(None, move_hands_with_rotation,
                     frame.left_xyz, frame.right_xyz, lr, rr, frame.duration, 100)
-            elif frame.locomotion and loco:
-                await _run_loco(frame.locomotion.direction, frame.duration)
             else:
-                await asyncio.sleep(frame.duration)
+                await asyncio.sleep(frame.duration)   # 손만 / 대기 (보행 프레임은 H2 에서 무시)
             if hand_future: await hand_future
     finally:
         is_running = False
-        if loco: loco.stop()
 
 # ==========================================
 # 잡기 — 모드 게이트 + grab_at
@@ -1289,9 +829,7 @@ def _run_grab(req: GrabRequest):
         t.join(timeout=8.0)
     grab.begin_log()
     try:
-        if req.type == "marker":
-            grab.grab_marker(req.tvec, req.rvec)
-        elif req.type == "cardboard":
+        if req.type == "cardboard":
             grab.grab_box(req.L, req.R, box_h_m=req.box_h,
                           top_center_cam=req.top_center, box_d_m=req.box_d)
         else:
@@ -1312,17 +850,14 @@ def _run_grab(req: GrabRequest):
 async def grab_at(req: GrabRequest):
     global grab_busy
     # 모드 게이트
-    if ACTIVE_MODE == "none":
-        return JSONResponse({"ok": False, "reason": "mode is none"})
-    if req.type == "marker":
-        return JSONResponse({"ok": False, "reason": "marker 잡기는 제거됨 (마커는 추종 전용)"})
-    if req.type == "cardboard" and ACTIVE_MODE != "box":
+    if ACTIVE_MODE != "box":
         return JSONResponse({"ok": False, "reason": f"mode={ACTIVE_MODE}"})
+    if req.type != "cardboard":
+        return JSONResponse({"ok": False, "reason": f"type={req.type} (박스만)"})
     # 중복 방지
     with grab_lock:
         if grab_busy or is_running:
             return JSONResponse({"ok": False, "reason": "busy"})
-        _follow_stop()               # 잡기 시작 전 추종 중단
         grab_busy = True
     threading.Thread(target=_run_grab, args=(req,), daemon=True).start()
     return JSONResponse({"ok": True, "type": req.type})
@@ -1333,11 +868,11 @@ async def get_active_mode():
     return {"mode": ACTIVE_MODE, "busy": grab_busy, "is_running": is_running}
 
 
-@app.post("/set_mode", summary="잡기 모드 전환 (none/box) - marker 잡기는 제거됨(추종 전용)")
+@app.post("/set_mode", summary="잡기 모드 전환 (none/box)")
 async def set_mode(mode: str):
     global ACTIVE_MODE
     if mode not in ("none", "box"):
-        return JSONResponse({"ok": False, "error": f"invalid: {mode} (marker 잡기는 제거됨)"})
+        return JSONResponse({"ok": False, "error": f"invalid: {mode} (none / box)"})
     prev = ACTIVE_MODE
     ACTIVE_MODE = mode
     print(f"[MODE] {prev} → {mode}")
@@ -1411,16 +946,12 @@ async def set_wrist(l_roll: float=0, l_pitch: float=0, l_yaw: float=0,
 
 
 @app.get("/set_handover_direction")
-async def set_handover_direction(direction: str="center", yaw_deg: float=None):
+async def set_handover_direction(direction: str = "center"):
     if direction not in HANDOVER_MODES:
-        return JSONResponse({"success": False, "error": f"invalid: {direction}"})
-    if WAIST_LOCKED and direction in ("left", "right"):
-        return JSONResponse({"success": False, "error": "허리 고정 로봇(robot.yaml grab.waist_locked) — center / place 만 가능"})
+        return JSONResponse({"success": False, "error": f"invalid: {direction} (center / place)"})
     grab.handover_direction = direction
-    if yaw_deg is not None:
-        grab.handover_yaw_deg = float(yaw_deg)
-    print(f"[HANDOVER] {direction}, yaw={grab.handover_yaw_deg}")
-    return {"success": True, "direction": direction, "yaw_deg": grab.handover_yaw_deg}
+    print(f"[HANDOVER] {direction}")
+    return {"success": True, "direction": direction}
 
 
 @app.get("/grab_manual")
@@ -1429,7 +960,7 @@ async def grab_manual():
     import urllib.request
     if ACTIVE_MODE == "none":
         return JSONResponse({"ok": False, "reason": "mode is none"})
-    url = "http://localhost:50010/pose"   # box 전용 (marker 잡기 제거)
+    url = "http://localhost:50010/pose"
     try:
         raw = urllib.request.urlopen(url, timeout=1.0).read()
         d = json.loads(raw)
@@ -1438,7 +969,7 @@ async def grab_manual():
     if not d.get("found"):
         return JSONResponse({"ok": False, "reason": "검출 없음"})
     req = GrabRequest(**{k: d.get(k) for k in
-                         ("type","tvec","rvec","L","R","top_center","box_h","box_d")
+                         ("type","L","R","top_center","box_h","box_d")
                          if k in d})
     return await grab_at(req)
 
@@ -1449,7 +980,7 @@ async def grab_manual():
 @app.get("/status")
 async def status():
     return {"is_running": is_running, "arm_ready": arm is not None,
-            "loco_ready": loco is not None, "hand_ready": hand is not None,
+            "hand_ready": hand is not None,
             "tts_ready": tts is not None, "active_mode": ACTIVE_MODE,
             "grab_busy": grab_busy, **_stage_info()}
 
@@ -1524,17 +1055,11 @@ async def run_ik_motion_file(file: UploadFile = File(...)):
     asyncio.create_task(_execute_ik_frames(frames))
     return {"status": "started", "frames": len(frames), "filename": file.filename}
 
-@app.post("/stop", summary="정지 — 다리 정지 + 모션 중단 + 팔 현재 자세 동결")
+@app.post("/stop", summary="정지 — 모션 중단 + 기본 자세 복귀")
 async def stop_motion():
-    """다리 정지 + 모션 중단 + 기본 자세 복귀 (허리 중립 + 팔 BOOT_ARM_DEG).
-
-    다리를 먼저 세운 뒤 팔을 움직인다. 순서를 바꾸면 보행 중 상체가 흔들린다.
-    """
+    """모션·잡기 보간 중단 + 기본 자세 복귀 (팔 BOOT_ARM_DEG)."""
     global STOP_FLAG
     STOP_FLAG = True
-    _follow_stop()
-    if loco:
-        loco.stop()
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _stop_and_park)
     return {"status": "stopped", "arm": "home"}
@@ -1584,7 +1109,7 @@ def _do_arm_release():
     try:
         arm.release(2.0, BOOT_ARM_DEG)
         ARM_MODE = "release"
-        print("[ARM] release 완료 - loco 가 팔/허리 회수")
+        print("[ARM] release 완료 — arm_sdk weight 0")
     except Exception as e:
         print(f"[ARM] release 실패: {e}")
         _sync_arm_mode()
@@ -1597,7 +1122,7 @@ def _do_arm_hold():
     try:
         arm.hold(2.0)
         ARM_MODE = "hold"
-        print("[ARM] hold 완료 - arm_sdk 가 팔/허리 점유")
+        print("[ARM] hold 완료 — arm_sdk 가 팔 점유")
     except Exception as e:
         print(f"[ARM] hold 실패: {e}")
         _sync_arm_mode()
@@ -1621,7 +1146,7 @@ async def arm_mode():
     return {"mode": ARM_MODE, "weight": st.get("weight"),
             "switching": _arm_switching or st.get("switching", False)}
 
-@app.post("/arm_release", summary="제어권 반납 - 팔 스윙 있는 정상 보행 모드")
+@app.post("/arm_release", summary="제어권 반납 — arm_sdk weight 0 (팔은 로봇 FSM 이 잡음)")
 async def arm_release():
     global _arm_switching
     if not arm or not arm.arm_ctrl:
@@ -1636,7 +1161,7 @@ async def arm_release():
     asyncio.get_running_loop().run_in_executor(None, _do_arm_release)
     return {"ok": True, "mode": "release", "switching": True}
 
-@app.post("/arm_hold", summary="제어권 점유 - 잡기/IK/박스 운반 모드")
+@app.post("/arm_hold", summary="제어권 점유 — 잡기/IK 모드")
 async def arm_hold():
     global _arm_switching
     if not arm or not arm.arm_ctrl:
@@ -1653,114 +1178,6 @@ async def arm_hold():
 
 
 # ==========================================
-# 마커 추종 보행
-# ==========================================
-@app.get("/follow/axis_debug")
-async def follow_axis_debug():
-    """현재 마커의 세 축을 torso 좌표로 보여준다 — 마커 배치 확인 / axis_col 결정용.
-    수평 성분 h 가 크고 마커→로봇 방향과 잘 맞는 축이 접근축이다."""
-    import urllib.request as _u
-    try:
-        d = json.loads(_u.urlopen(MARKER_POSE_URL, timeout=1.0).read())
-    except Exception as e:
-        return {"found": False, "error": str(e)}
-    if not d.get("found") or not d.get("rvec"):
-        return {"found": False}
-    import cv2 as _cv2
-    R, _ = _cv2.Rodrigues(np.asarray(d["rvec"], dtype=np.float64).reshape(3, 1))
-    cm = d["torso_cm"]
-    mx, my = cm[0] / 100.0, cm[1] / 100.0
-    out = {}
-    for c, nm in ((0, "X(red)"), (1, "Y(green)"), (2, "Z(blue)")):
-        ax, ay, az = camera_dir_to_torso(R[0, c], R[1, c], R[2, c])
-        h = (ax * ax + ay * ay) ** 0.5
-        item = {"dir": [round(ax, 3), round(ay, 3), round(az, 3)],
-                "h": round(h, 3), "usable": h >= FOLLOW_P["axis_min_h"]}
-        if h >= FOLLOW_P["axis_min_h"]:
-            nx, ny = ax / h, ay / h
-            if nx * (-mx) + ny * (-my) < 0:
-                nx, ny = -nx, -ny
-            item["waypoint"] = [round(mx + nx * FOLLOW_P["pre_dist"], 2),
-                                round(my + ny * FOLLOW_P["pre_dist"], 2)]
-        out[nm] = item
-    _f, _mx, _my, axis = _follow_get_pose()
-    return {"found": True, "marker_xy": [round(mx, 2), round(my, 2)],
-            "axis_col_setting": FOLLOW_P["axis_col"],
-            "selected_axis": [round(axis[0], 3), round(axis[1], 3)] if axis else None,
-            "axes": out}
-
-
-@app.get("/follow/status")
-async def follow_status():
-    return {**FOLLOW_S, "params": FOLLOW_P, "running": _follow_run.is_set()}
-
-@app.post("/follow/start")
-async def follow_start():
-    if not LOCOMOTION:
-        raise HTTPException(409, "보행 비활성 로봇 (robot.yaml features.locomotion)")
-    if not loco:
-        raise HTTPException(503, "Loco 미초기화")
-    if grab_busy or is_running:
-        raise HTTPException(409, "잡기/모션 동작 중")
-    if _arm_switching:
-        raise HTTPException(409, "arm 전환 중")
-    if _follow_run.is_set():
-        return {"ok": False, "reason": "이미 추종 중"}
-    found, mx, my, _axis = _follow_get_pose()
-    if not found:
-        return {"ok": False, "reason": "마커 미검출 - 50011/마커 위치 확인"}
-    _follow_run.set()
-    threading.Thread(target=_follow_loop, daemon=True).start()
-    return {"ok": True, "mx": round(mx, 2), "my": round(my, 2)}
-
-@app.post("/follow/stop")
-async def follow_stop_ep():
-    _follow_stop()
-    if loco:
-        loco.stop()
-    return {"ok": True}
-
-@app.post("/follow/params")
-async def follow_params(body: dict):
-    for k, v in body.items():
-        if k in FOLLOW_P:
-            FOLLOW_P[k] = type(FOLLOW_P[k])(v)
-    return {"ok": True, "params": FOLLOW_P}
-
-
-@app.post("/loco/move")
-async def loco_move(req: LocoMoveRequest):
-    if not LOCOMOTION:
-        raise HTTPException(409, "보행 비활성 로봇 (robot.yaml features.locomotion)")
-    if not loco: raise HTTPException(503, "Loco 미초기화")
-
-    global _waist_realigning
-
-    moving = any(abs(v) > 1e-6 for v in (req.vx, req.vy, req.vyaw))
-    if moving and _follow_run.is_set():
-        _follow_stop()               # 수동 조작이 추종보다 우선
-    # release 상태면 허리는 loco 소유 - 정렬 가드 불필요(오히려 충돌)
-    if moving and ARM_MODE == "hold" and not grab_busy and not is_running:
-        # 복귀 중이면 걷지 않는다. 비틀린 채 걸으면 균형이 무너진다.
-        if _waist_realigning:
-            return {"ok": True, "waist_realigning": True}
-        if abs(_waist_yaw_deg()) > WALK_YAW_TOL_DEG:
-            _waist_realigning = True
-            asyncio.get_running_loop().run_in_executor(
-                None, _ensure_waist_neutral_for_walk)
-            return {"ok": True, "waist_realigning": True}
-
-    loco.move(req.vx, req.vy, req.vyaw)
-    return {"ok": True}
-
-@app.post("/loco/stop")
-async def loco_stop_endpoint():
-    _follow_stop()
-    if loco: loco.stop()
-    return {"ok": True}
-
-
-# ==========================================
 # 웹 UI — robot_web.html 읽어 viewer 코드 삽입
 # ==========================================
 WEB_HTML_PATH = os.path.join(current_dir, "robot_web.html")
@@ -1771,24 +1188,13 @@ async def i18n_js():
 
 
 def _ui_inject():
-    """robot.yaml 기능에 맞춰 안 되는 UI 를 숨긴다 (요소는 남겨 JS 는 그대로 동작).
-    G1(locomotion true, waist_locked false, 모션 있음)은 아무것도 숨기지 않는다."""
+    """페이지에 서버 상태 전달 (window.UI) + 모션 파일이 없으면 Motions 카드 숨김."""
     has_motions = any(MOTIONS_DIR.glob("*.json"))
-    hide = []
-    if not LOCOMOTION:
-        hide += ["#card-loco", "#sec-follow", "#link-marker-wrap"]
-    if WAIST_LOCKED:
-        hide += ["#ho-left", "#ho-right", "#ho-yaw-wrap"]
-    if not has_motions:
-        hide += ["#card-motions"]
-    ui = {"robot": robot_env.ROBOT, "locomotion": LOCOMOTION, "waist_locked": WAIST_LOCKED, "motions": has_motions,
+    ui = {"robot": robot_env.ROBOT, "motions": has_motions,
           "handover": grab.handover_direction if grab else DEFAULT_HANDOVER,
           "wrist": grab.wrist_params if grab else None}
-    css = (",".join(hide) + "{display:none!important}") if hide else ""
-    js = ("" if LOCOMOTION else
-          "document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('arm-release-sub');"
-          "if(e)e.textContent='제어권 반납';});")
-    return f"<script>window.UI={json.dumps(ui, ensure_ascii=False)};{js}</script><style>{css}</style>"
+    css = "" if has_motions else "#card-motions{display:none!important}"
+    return f"<script>window.UI={json.dumps(ui, ensure_ascii=False)};</script><style>{css}</style>"
 
 
 @app.get("/", include_in_schema=False)

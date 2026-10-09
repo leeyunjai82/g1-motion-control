@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Version: 2.9
+<!-- Version: 2.10
+  2.10 - H2 전용: 보행(Locomotion)·마커 추종·마커 모드·좌우 건네기 UI 삭제
   2.9 - Wrist RPY 기본 pitch 30 (robot.yaml grab.wrist_rpy_deg), 페이지를 열면 서버의 지금 손목 값으로 채움
   2.8 - 위 칩에 이 PC 의 CPU / GPU / NPU 사용률 (robot_server /hw, 1초). 카드 머리에 실제 실행 장치 배지
         (Camera View = detect_box, Head Vision = 왼눈 L / 오른눈 R — OpenVINO EXECUTION_DEVICES, AUTO 로 바뀐 것도 실제 장치로)
@@ -108,11 +109,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .state.busy{border-color:#6a4a1f}.state.busy::before{background:var(--amber);animation:blink 1s infinite}.state.busy .big{color:var(--amber)}
 .state.err{border-color:#5a2b2b}.state.err::before{background:var(--warn)}.state.err .big{color:var(--warn)}
 @keyframes blink{50%{opacity:.25}}
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
-.stat{background:#0c1117;border:1px solid var(--line);border-radius:7px;padding:6px 9px}
-.stat .k{font-size:10px;color:var(--dim)}
-.stat .v{font-size:15px;font-weight:700;color:var(--ink)}
-.stat .v small{font-size:10px;color:var(--dim);font-weight:400;margin-left:2px}
 
 /* wrist table */
 .wtab{display:grid;grid-template-columns:44px 1fr 1fr;gap:6px;align-items:center}
@@ -200,16 +196,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .play{background:var(--accent);color:#05221a;border:none;border-radius:5px;padding:5px 11px;
   font-weight:700;cursor:pointer;font-family:inherit}
 
-/* loco pad */
-.pad{display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(3,40px);gap:5px;margin:8px 0}
-.pad button{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
-  border-radius:7px;cursor:pointer;font-size:18px;font-family:inherit}
-.pad button.active{background:var(--accent);color:#05221a}
-#f{grid-area:1/3/2/4}#bk{grid-area:3/3/4/4}#l{grid-area:2/2/3/3}#r{grid-area:2/4/3/5}
-#st{grid-area:2/3/3/4;color:var(--warn)}#tl{grid-area:2/1/3/2}#tr{grid-area:2/5/3/6}
-.spd{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--dim)}
-.spd input{flex:1}
-
 /* 실행 장치 배지 (카드 머리) — CPU / GPU / NPU */
 .dev{display:inline-block;font-size:9px;font-weight:700;letter-spacing:1px;padding:1px 6px;border-radius:4px;
   border:1px solid currentColor;margin-left:5px;text-transform:none;vertical-align:middle}
@@ -245,8 +231,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   .wtab{gap:4px}
   .sec{margin:8px 0 5px}
   .state{padding:6px 10px;margin-top:6px}
-  .stats{margin-top:5px}
-  .stat{padding:3px 8px}.stat .v{font-size:13px}
   .hint{margin-top:5px}
   .sw{margin-top:7px}
   .topbar{padding:8px 16px}
@@ -258,16 +242,14 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   .in{padding:2px 6px}
   .card-h{padding:6px 12px}
   .card-b{padding:9px}
-  .ctl .row+.row,.ctl .state+.row,.ctl .stats+.row{margin-top:8px}
+  .ctl .row+.row,.ctl .state+.row{margin-top:8px}
   .ctl .row{margin-top:8px}.ctl .sec:first-child+.row{margin-top:0}
-  .stat .k{display:inline;margin-right:6px}.stat .v{display:inline}
-  .pad{grid-template-rows:repeat(3,34px)}
 }
 
 /* responsive
    ≥1101px & 높이 ≥700px : 3열, 화면 고정, 열 하단 정렬 (위 기본값)
    그 외                  : 페이지 스크롤, 미디어는 비율 고정 높이
-   ≤1100px               : 2열 (카메라·보행 상단 전폭)
+   ≤1100px               : 2열 (카메라 상단 전폭, 높이는 화면의 70 % 까지)
    ≤680px                : 1열 (카메라 → 제어 → 설정 → 로봇뷰) */
 @media(max-width:1100px),(max-height:699px){
   body{height:auto;min-height:100vh;overflow:auto}
@@ -280,10 +262,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 @media(max-width:1100px){
   .grid{grid-template-columns:1fr 1fr}
   .col-center{grid-column:1/-1;order:-1}
-  .col-center{display:grid;grid-template-columns:3fr 2fr;align-items:start}
-}
-@media(max-width:820px){
-  .col-center{display:flex;align-items:stretch}
+  .col-center .cam-wrap{max-height:70vh}   /* 전폭 4:3 이면 너무 높아짐 — 영상은 contain 이라 좌우 여백만 생김 */
 }
 @media(max-width:680px){
   .grid{grid-template-columns:1fr;gap:12px;padding:10px}
@@ -293,7 +272,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   .col-left>.card.stretch{order:-1}
   .topbar{flex-wrap:wrap;padding:10px 12px}
   .topbar .right{margin-left:0;width:100%;justify-content:space-between}
-  .pad{grid-template-rows:repeat(3,48px)}
   .btn{padding:11px 9px}
 }
 </style></head>
@@ -337,7 +315,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
             <span id="auto-lbl" style="color:var(--dim);white-space:nowrap">Auto Grab : OFF</span>
           </label>
           <span class="hint" style="white-space:nowrap">
-            <span id="link-marker-wrap"><a id="link-marker" href="#" target="_blank" style="color:var(--accent2)" title="Marker 인식">:50011</a> ·</span>
             <a id="link-box" href="#" target="_blank" style="color:var(--accent2)" title="Box 인식">:50010</a>
           </span>
         </div>
@@ -358,14 +335,10 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
     </div>
 
     <div class="card">
-      <div class="card-h">Handover
-        <span id="ho-yaw-wrap" style="display:flex;align-items:center;gap:5px;text-transform:none;letter-spacing:0">yaw
-          <input class="in" id="ho-yaw" type="number" value="30" step="5" style="width:56px;padding:2px 5px">°</span></div>
+      <div class="card-h">Handover</div>
       <div class="card-b">
         <div class="seg" id="ho-seg" style="display:flex">
-          <button class="btn" id="ho-left" style="flex:1" onclick="setHandover('left')">◀ Left</button>
           <button class="btn on" id="ho-center" style="flex:1" onclick="setHandover('center')">■ Center<span class="sub">건네기</span></button>
-          <button class="btn" id="ho-right" style="flex:1" onclick="setHandover('right')">Right ▶</button>
           <button class="btn" id="ho-place" style="flex:1" onclick="setHandover('place')">⤓ Place<span class="sub">내려놓기</span></button>
         </div>
       </div>
@@ -376,34 +349,21 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
       <div class="card-b ctl">
         <div class="sec">Motion</div>
         <div class="row">
-          <button class="btn warn" onclick="stopAll()">⏹ Stop<span class="sub">정지·기본자세</span></button>
+          <button class="btn warn" onclick="stopAll()" title="Esc">⏹ Stop<span class="sub">정지·기본자세</span></button>
           <button class="btn" onclick="goHome()">⌂ Home<span class="sub">기본자세</span></button>
         </div>
 
         <div class="sec">Arm 제어권</div>
         <div class="row">
           <button class="btn" id="arm-hold" onclick="armMode('hold')">✋ Hold<span class="sub">잡기/운반</span></button>
-          <button class="btn" id="arm-release" onclick="armMode('release')">🚶 Release<span class="sub" id="arm-release-sub">걷기</span></button>
+          <button class="btn" id="arm-release" onclick="armMode('release')">🔓 Release<span class="sub" id="arm-release-sub">제어권 반납</span></button>
         </div>
         <div class="state" id="arm-state"><span class="big" id="arm-mode-lbl">-</span><span class="desc" id="arm-desc">상태 확인 중</span></div>
-
-        <div id="sec-follow">
-        <div class="sec">마커 추종</div>
-        <div class="row">
-          <button class="btn" style="border-color:#2b6;color:#7fd" onclick="followStart()">🎯 추종 시작</button>
-          <button class="btn warn" onclick="followStop()">⏹ 추종 정지</button>
-        </div>
-        <div class="state" id="fw-box"><span class="big" id="fw-state">-</span><span class="desc" id="fw-desc">-</span></div>
-        <div class="stats">
-          <div class="stat"><div class="k">앞 거리 X</div><div class="v"><span id="fw-mx">-</span><small>m</small></div></div>
-          <div class="stat"><div class="k">좌우 Y</div><div class="v"><span id="fw-my">-</span><small>m</small></div></div>
-        </div>
-        </div>
       </div>
     </div>
   </div>
 
-  <!-- ===== CENTER: camera + locomotion ===== -->
+  <!-- ===== CENTER: camera ===== -->
   <div class="col col-center">
     <div class="card grow fill cam">
       <div class="card-h">Camera View <span class="hd-r"><span id="dev-cam"></span><span class="tag" id="feed-tag">OFF</span></span></div>
@@ -420,25 +380,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
         </div>
         <div class="stages" id="stages"></div>
         <div class="timing" id="timing"></div>
-      </div>
-    </div>
-
-    <div class="card" id="card-loco">
-      <div class="card-h">Locomotion</div>
-      <div class="card-b">
-        <div class="spd"><span>Speed</span>
-          <input type="range" id="speed" min="0.1" max="0.5" step="0.05" value="0.3">
-          <span id="spdv" style="color:var(--accent)">0.30</span></div>
-        <div class="pad">
-          <button id="f" data-cmd="forward">▲</button>
-          <button id="tl" data-cmd="turn_left">↺</button>
-          <button id="l" data-cmd="left">◀</button>
-          <button id="st" onclick="stopAll()">■</button>
-          <button id="r" data-cmd="right">▶</button>
-          <button id="tr" data-cmd="turn_right">↻</button>
-          <button id="bk" data-cmd="backward">▼</button>
-        </div>
-        <div class="hint">↑↓←→ move · Q,E turn · Esc stop</div>
       </div>
     </div>
   </div>
@@ -471,7 +412,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 const host=location.hostname;
 let curMode='none';
 document.getElementById('link-dash').href=`http://${host}:50003/dashboard`;
-document.getElementById('link-marker').href=`http://${host}:50011/`;
 document.getElementById('link-box').href=`http://${host}:50010/`;
 // robot-only 3D 뷰 (50003)
 // 언어는 포트가 달라 localStorage 공유가 안 되므로 ?lang= 로 넘기고, 전환 시엔 i18n.js 가 postMessage
@@ -540,8 +480,7 @@ function applyMode(m){
   // 모드 바뀌면 이전 자동 끄고 체크 초기화
   const chk=document.getElementById('auto-chk');
   if(curMode!==m && curMode!=='none' && chk.checked){
-    const pp=curMode==='marker'?50011:50010;
-    fetch(`http://${host}:${pp}/set_auto_mode?enabled=false`).catch(()=>{});
+    fetch(`http://${host}:50010/set_auto_mode?enabled=false`).catch(()=>{});
   }
   if(curMode!==m){chk.checked=false;
     document.getElementById('auto-lbl').textContent='Auto Grab : OFF';
@@ -555,7 +494,7 @@ function applyMode(m){
 function updateFeed(m){
   const img=document.getElementById('detect-feed'),none=document.getElementById('feed-none'),
     tag=document.getElementById('feed-tag'),badge=document.getElementById('cam-badge');
-  const url={marker:`http://${host}:50011/video_feed`,box:`http://${host}:50010/video_feed`}[m];
+  const url={box:`http://${host}:50010/video_feed`}[m];
   if(url){img.src=url+'?t='+Date.now();img.style.display='block';none.style.display='none';
     tag.textContent=m.toUpperCase();badge.style.display='';
     document.getElementById('grab-msg').textContent=m.toUpperCase()+' mode · detecting';}
@@ -571,12 +510,11 @@ function toggleAuto(){
   const lbl=document.getElementById('auto-lbl');
   if(curMode==='none'){
     document.getElementById('auto-chk').checked=false;
-    toast('Select Marker or Box first');
+    toast('Select Box first');
     lbl.textContent='Auto Grab : OFF';lbl.style.color='var(--dim)';
     return;
   }
-  const port=curMode==='marker'?50011:50010;
-  fetch(`http://${host}:${port}/set_auto_mode?enabled=${on}`).then(()=>{
+  fetch(`http://${host}:50010/set_auto_mode?enabled=${on}`).then(()=>{
     lbl.textContent='Auto Grab : '+(on?'ON':'OFF');
     lbl.style.color=on?'var(--accent)':'var(--dim)';
     toast('Auto '+(on?'ON':'OFF'));
@@ -587,10 +525,11 @@ function toggleAuto(){
 function applyWrist(){const g=id=>document.getElementById(id).value||0;
   const q=`l_roll=${g('l-roll')}&l_pitch=${g('l-pitch')}&l_yaw=${g('l-yaw')}&r_roll=${g('r-roll')}&r_pitch=${g('r-pitch')}&r_yaw=${g('r-yaw')}`;
   fetch('/set_wrist?'+q).then(()=>toast('Wrist applied'));}
-function setHandover(dir){const yaw=document.getElementById('ho-yaw').value||30;
-  fetch(`/set_handover_direction?direction=${dir}&yaw_deg=${yaw}`).then(r=>r.json()).then(d=>{
-    hoMark(d.direction);});}
-function hoMark(dir){['left','center','right','place'].forEach(k=>document.getElementById('ho-'+k).classList.toggle('on',k===dir));}
+// H2 는 허리 고정 — 건네기 방향은 center(앞으로 건네기) / place(내려놓기) 만
+function setHandover(dir){
+  fetch(`/set_handover_direction?direction=${dir}`).then(r=>r.json()).then(d=>{
+    if(d&&d.direction)hoMark(d.direction);else toast('Failed: '+((d&&d.error)||''));}).catch(e=>toast('Error: '+e.message));}
+function hoMark(dir){['center','place'].forEach(k=>document.getElementById('ho-'+k).classList.toggle('on',k===dir));}
 document.addEventListener('DOMContentLoaded',()=>{if(window.UI&&window.UI.handover)hoMark(window.UI.handover);});
 // 손목 입력칸 = 서버의 지금 값 (기본 robot.yaml grab.wrist_rpy_deg, Apply 하면 그 값)
 document.addEventListener('DOMContentLoaded',()=>{const w=window.UI&&window.UI.wrist;if(!w)return;
@@ -603,9 +542,8 @@ async function refreshMotions(){const el=document.getElementById('mlist');
     el.innerHTML=d.motions.map(m=>`<div class="mitem"><span class="nm">${m}</span><button class="play" onclick="runMotion('${m.replace(/'/g,"\\'")}')">▶</button></div>`).join('');
   }catch(e){el.innerHTML='<div class="hint" style="text-align:center;color:var(--warn)">Connection failed</div>';}}
 async function runMotion(n){try{const r=await fetch(`/motions/run/${encodeURIComponent(n)}`,{method:'POST'});const d=await r.json();if(!r.ok)throw new Error(d.detail);toast('▶ '+n);}catch(e){toast('Error: '+e.message);}}
-// 정지 일원화: 다리 정지 + 모션 중단 + 기본 자세 복귀 (Home 과 동일 자세)
+// 정지 일원화: 모션 중단 + 기본 자세 복귀 (Home 과 동일 자세)
 async function stopAll(){
-  stopLoco();
   try{await fetch('/stop',{method:'POST'});toast('⏹ Stopped — 기본 자세');}
   catch(e){toast('Error: '+e.message);}
 }
@@ -621,8 +559,8 @@ function setChip(id,label,val,cls){const el=document.getElementById(id);
 function setState(id,cls){document.getElementById(id).className='state'+(cls?' '+cls:'');}
 
 // ---- arm_sdk 제어권 (hold/release) ----
-const ARM_TXT={hold:['HOLD','팔·허리 점유 — 잡기/운반','ok'],
-               release:['RELEASE',(window.UI&&!window.UI.locomotion)?'로봇 제어기가 팔 사용 (제어권 반납)':'보행 제어기가 팔 사용 — 걷기','info']};
+const ARM_TXT={hold:['HOLD','팔 점유 — 잡기','ok'],
+               release:['RELEASE','로봇 제어기가 팔 사용 (제어권 반납)','info']};
 let armTarget=null, armReady=null;   // 전환 목표(서버는 완료 전까지 이전 모드를 답함) / arm_server 연결
 function updateArmMode(m,switching){
   if(switching&&armTarget)m=armTarget;
@@ -643,75 +581,24 @@ async function armMode(m){
     if(!r.ok)throw new Error(d.detail||'failed');
     // 전환 중엔 목표 모드를 표시 (arm_server 는 완료 전까지 이전 모드를 답함)
     armTarget=m;updateArmMode(m,true);
-    toast(m==='hold'?'✋ Hold — 팔/허리 점유 (전환 중...)':((window.UI&&!window.UI.locomotion)?'🚶 Release — 제어권 반납 (전환 중...)':'🚶 Release — 걷기 모드 (전환 중...)'));
+    toast(m==='hold'?'✋ Hold — 팔 점유 (전환 중...)':'🔓 Release — 제어권 반납 (전환 중...)');
     let n=0;
     const t=setInterval(async()=>{
       try{const s=await(await fetch('/arm_mode')).json();
         if(s.switching){updateArmMode(m,true);}
         else{updateArmMode(s.mode,false);clearInterval(t);
-          toast(s.mode==='hold'?'✋ Hold 완료':'🚶 Release 완료');}
+          toast(s.mode==='hold'?'✋ Hold 완료':'🔓 Release 완료');}
         if(++n>20)clearInterval(t);
       }catch(e){if(++n>20)clearInterval(t);}
     },1000);
   }catch(e){toast('Error: '+e.message);}}
 function pollArm(){fetch('/arm_mode').then(r=>r.json()).then(d=>updateArmMode(d.mode,d.switching)).catch(()=>updateArmMode(null));}
 pollArm();setInterval(pollArm,3000);
-// ---- 마커 추종 ----
-async function followStart(){
-  try{const r=await fetch('/follow/start',{method:'POST'});const d=await r.json();
-    if(!d.ok){toast('추종 불가: '+(d.reason||''));return;}
-    toast('🎯 마커 추종 시작');
-  }catch(e){toast('Error: '+e.message);}}
-async function followStop(){
-  try{await fetch('/follow/stop',{method:'POST'});toast('⏹ 추종 정지');}
-  catch(e){toast('Error: '+e.message);}}
-// state → [표시, 설명, 색]
-const FW_TXT={idle:['대기','추종 시작을 누르세요',''],
-  following:['추종 중','',"busy"],
-  arrived:['도착','마커 정면 도착 완료','ok'],
-  lost:['마커 놓침','1.5초 이상 미검출 — 정지','err'],
-  timeout:['시간 초과','60초 초과 — 정지','err'],
-  stopped:['정지됨','수동 정지','']};
-const FW_PHASE={waypoint:'정면 경유점으로 이동',final:'마커로 접근'};
-setInterval(async()=>{if(window.UI&&!window.UI.locomotion)return;try{const d=await(await fetch('/follow/status')).json();
-  const t=FW_TXT[d.state]||[d.state,'',''];
-  document.getElementById('fw-state').textContent=t[0];
-  document.getElementById('fw-desc').textContent=d.state==='following'
-    ?(FW_PHASE[d.phase]||'')+(d.found?'':' · 마커 안 보임'):t[1];
-  setState('fw-box',t[2]);
-  const f=v=>(+v).toFixed(2);
-  document.getElementById('fw-mx').textContent=d.found?f(d.mx):'-';
-  document.getElementById('fw-my').textContent=d.found?f(d.my):'-';
-}catch(e){}},500);
-// ---- loco ----
-const speed=document.getElementById('speed'),spdv=document.getElementById('spdv');
-speed.oninput=()=>spdv.textContent=(+speed.value).toFixed(2);
-const cmap={forward:()=>({vx:+speed.value,vy:0,vyaw:0}),backward:()=>({vx:-speed.value,vy:0,vyaw:0}),
-  left:()=>({vx:0,vy:+speed.value,vyaw:0}),right:()=>({vx:0,vy:-speed.value,vyaw:0}),
-  turn_left:()=>({vx:0,vy:0,vyaw:+speed.value}),turn_right:()=>({vx:0,vy:0,vyaw:-speed.value})};
-let lt=null,ab=null,realignToast=false;
-function startLoco(c,b){if(lt)return;ab=b;if(b)b.classList.add('active');
-  const s=()=>fetch('/loco/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cmap[c]())})
-    .then(r=>r.json()).then(d=>{
-      // 핸드오버로 허리가 돌아가 있으면 서버가 먼저 0으로 되돌린다. 그동안은 안 걷는다.
-      if(d&&d.waist_realigning&&!realignToast){realignToast=true;toast('허리 정렬 중 — 잠시 후 보행');}
-    }).catch(()=>{});
-  s();lt=setInterval(s,50);}
-function stopLoco(){realignToast=false;if(lt){clearInterval(lt);lt=null;}if(ab){ab.classList.remove('active');ab=null;}fetch('/loco/stop',{method:'POST'}).catch(()=>{});}
-document.querySelectorAll('.pad button[data-cmd]').forEach(b=>{const c=b.dataset.cmd;
-  b.addEventListener('mousedown',e=>{e.preventDefault();startLoco(c,b);});
-  b.addEventListener('mouseup',e=>{e.preventDefault();stopLoco();});
-  b.addEventListener('mouseleave',()=>stopLoco());
-  b.addEventListener('touchstart',e=>{e.preventDefault();startLoco(c,b);},{passive:false});
-  b.addEventListener('touchend',e=>{e.preventDefault();stopLoco();});});
-const km={'ArrowUp':'forward','ArrowDown':'backward','ArrowLeft':'left','ArrowRight':'right','q':'turn_left','e':'turn_right'};
-document.addEventListener('keydown',e=>{if(window.UI&&!window.UI.locomotion)return;if(e.repeat)return;if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;const c=km[e.key];if(c){e.preventDefault();startLoco(c,document.querySelector(`[data-cmd="${c}"]`));}});
-document.addEventListener('keyup',e=>{if(km[e.key]){e.preventDefault();stopLoco();}});
+// Esc = Stop (팔 정지·기본 자세)
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
   if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;
   e.preventDefault();stopAll();});
-window.addEventListener('beforeunload',stopLoco);
 
 // ---- status poll ----
 let pollFail=0;
@@ -744,12 +631,11 @@ function pollStatus(){
 setInterval(pollStatus, 500);
 pollStatus();
 
-// 현재 모드의 detect 서버에서 마커/박스 좌표(cm) 폴링
+// Box 모드일 때 detect_box(50010) 에서 박스 좌표(cm) 폴링
 function pollCoord(){
   const co=document.getElementById('coord');
   if(curMode==='none'){co.textContent='';devBadges('dev-cam',[]);return;}
-  const port=curMode==='marker'?50011:50010;
-  fetch(`http://${host}:${port}/status`).then(r=>r.json()).then(d=>{
+  fetch(`http://${host}:50010/status`).then(r=>r.json()).then(d=>{
     if(d.found&&d.torso){
       const x=(d.torso.x*100).toFixed(1),y=(d.torso.y*100).toFixed(1),z=(d.torso.z*100).toFixed(1);
       let s=`X ${x}  Y ${y}  Z ${z} cm`;

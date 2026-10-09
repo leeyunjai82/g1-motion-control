@@ -46,7 +46,7 @@ def build():
 def box_cam(rsv, x, y, top, W):
     """IK(pelvis) 기준 박스 → grab_box 입력(카메라 좌표 L, R, 윗면 중심). sim_server 와 같은 가정."""
     inset = 0.02
-    p2t = np.array(rsv.PELVIS_TO_TORSO) if rsv.EXACT_IK_FRAME else np.zeros(3)
+    p2t = np.array(rsv.PELVIS_TO_TORSO)
     cx_, cy_, cz_, cp = robot_env.CAMERA_X, robot_env.CAMERA_Y, robot_env.CAMERA_Z, robot_env.CAMERA_PITCH
     c, s = np.cos(cp), np.sin(cp)
 
