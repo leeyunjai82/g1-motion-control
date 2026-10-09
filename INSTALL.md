@@ -4,6 +4,7 @@
 
 - 사용법 : [`README.md`](./README.md)
 - H2 실측·근거 : [`robots/h2/FACTS.md`](./robots/h2/FACTS.md)
+- 가상환경(tv) 다시 만들기 / 스냅샷 : [`REBUILD_ENV.md`](./REBUILD_ENV.md)
 
 > "확인 필요" 표시는 이 문서 작성 시점에 실기/운영 PC 에서 검증하지 못한 항목입니다. 설치하면서 결과를 기록해 주세요.
 
@@ -37,6 +38,8 @@ sudo apt install -y wget curl
 - `curl` : `start_sim.sh` / `start_simulator.sh` 가 서버 응답 확인에 사용 (가상환경 활성화 전에 호출).
 - 빌드 도구(build-essential, libssl-dev, libsuitesparse-dev 등)는 **필요 없습니다** — cyclonedds 는 pip 바이너리 휠,
   scikit-sparse 는 conda-forge 패키지로 설치합니다.
+- 머리 카메라(`head_track`, `utils/check_head_cam.py`) RGB 디코딩 — 없으면 `start_robot.sh` 가 head_track 을 건너뜀:
+  `sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav`
 - OpenCV 가 `libGL.so.1` 을 찾지 못하면 (서버판 Ubuntu 등): `sudo apt install -y libgl1 libglib2.0-0`
 - 로그 타임스탬프(`awk strftime`) : 24.04 기본 `mawk 1.3.4 20240123` 에서 동작 확인.
   mawk 는 파이프 입력을 블록 단위로 모아 읽어 로그가 늦게 기록되므로 `robot_env.sh` 의 `stamp()` 가 `-W interactive` 로 줄 단위 처리.

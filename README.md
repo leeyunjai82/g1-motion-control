@@ -6,7 +6,7 @@
 
 - H2 전용입니다. 로봇 파일·설정은 `robots/h2/`, 공통 코드는 `common/`.
   `ROBOT` 환경변수는 안 줘도 됩니다 (기본 `h2`, 다른 값은 거부). G1 코드는 git 이력에 있습니다.
-- 설치 : [**INSTALL.md**](./INSTALL.md)
+- 설치 : [**INSTALL.md**](./INSTALL.md) · 가상환경 다시 만들기 : [**REBUILD_ENV.md**](./REBUILD_ENV.md) (스냅샷 `utils/env_snapshot.sh`)
 - H2 실측·근거·확인 필요 목록 : [**robots/h2/FACTS.md**](./robots/h2/FACTS.md)
 - 카메라 거치대·등판 손잡이 (3D 출력) : [`robots/h2/cad/`](./robots/h2/cad/) — `h2_print_all.step` 에 출력 부품 전부
 
@@ -108,6 +108,7 @@ Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위�
 - **D435i (가슴, 박스 인식)**: 등판 거치대 `robots/h2/cad/camera_bracket/` (v3: 숙임 60°). 장착값은 `robot.yaml camera`
   (x, y, z [m, torso_link 기준], pitch_deg). 숙임각 실측: `utils/check_rsimu.py --sec 5`, 위치 확인: `utils/cam_marker_check.py`.
 - **머리 쌍안 카메라**: `utils/check_head_cam.py` (수신 확인·깊이 클릭), 인식은 `common/head_track.py` (`robot.yaml head_track`).
+  로봇을 켤 때마다 앱에서 video_hub 끔 · Stereo patch PC1 켬 (재부팅하면 기본으로 돌아감). 서비스 목록·켜기/끄기: `utils/robot_services.py` (H2 응답 여부 확인 필요).
 
 ## 디렉터리
 
@@ -134,7 +135,7 @@ h2-motion-control/
 │   └── assets/vendor/      # three.min.js
 ├── robots/h2/              # URDF, meshes/, motions/, IK 모델 캐시, robot.yaml, FACTS.md, cad/
 ├── third_party/            # unitree_sdk2_python-814556d (activate_tv.sh 가 받음)
-└── utils/                  # init_fsm, 카메라 보정, IMU·식별 확인, grab_reach, arm_sdk_test 등
+└── utils/                  # init_fsm, 카메라 보정, IMU·식별 확인, grab_reach, arm_sdk_test, env_snapshot(가상환경 기록), robot_services 등
 ```
 
 ## 설정 — `robots/h2/robot.yaml`
