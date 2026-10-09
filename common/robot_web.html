@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Version: 2.18
+<!-- Version: 2.19
+  2.19 - SEG 끔 화면: 흰 번짐 뺌 (파지점 L/T/R + 프레임별 인식 위치 흰 점)
   2.18 - Camera View 머리에 SEG 버튼 (detect_box /set_overlay) — 끄면 파지점 L/R + 최근 2 초 인식 분포(흰 점)만, 기본 끔
   2.17 - Wrist RPY 기본 yaw 왼손 −10 · 오른손 +10 (robot.yaml grab.wrist_rpy_deg 손별)
   2.16 - 메인 색 #00b7eb (회사 메인 컬러 — ARC 로고, 사용자 2026-10-09). 메인 색을 더 씀:
@@ -645,7 +646,7 @@ let segOn=false;
 function setSeg(v){segOn=!!v;document.getElementById('seg-btn').classList.toggle('on',segOn);}
 function toggleSeg(){
   fetch(`http://${host}:50010/set_overlay?seg=${!segOn}`).then(r=>r.json())
-    .then(d=>{setSeg(d.show_seg);toast(d.show_seg?'SEG 표시 켬':'SEG 끔 — 파지점 + 인식 분포');})
+    .then(d=>{setSeg(d.show_seg);toast(d.show_seg?'SEG 표시 켬':'SEG 끔 — 파지점 L/T/R 만');})
     .catch(()=>toast('detect server not reachable'));}
 
 // ---- AI 인식 정보 오버레이 (detect_box /status 의 perf) ----

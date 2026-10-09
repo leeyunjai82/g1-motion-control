@@ -226,13 +226,6 @@ def render_frame():
         tc = project(v["cam"]["C"])
         marks = [(lab, (int(p[0]), int(p[1]))) for lab, p in (("L", v["uv_LR"][0]), ("T", tc), ("R", v["uv_LR"][1]))
                  if p is not None]
-        if not OVERLAY["seg"] and marks:   # detect_box 처럼 L–T–R 를 잇는 흰 번짐 띠 (시뮬은 흔들림 없음)
-            glow = np.zeros_like(img)
-            for i, (_, c) in enumerate(marks):
-                cv2.circle(glow, c, 22, (255, 255, 255), -1, cv2.LINE_AA)
-                if i + 1 < len(marks):
-                    cv2.line(glow, c, marks[i + 1][1], (255, 255, 255), 44, cv2.LINE_AA)
-            cv2.addWeighted(cv2.GaussianBlur(glow, (0, 0), 11), 0.55, img, 1.0, 0, img)
         col = (255, 0, 255) if not OVERLAY["seg"] else (0, 255, 255)
         for lab, c in marks:
             if lab == "T" and OVERLAY["seg"]:

@@ -224,7 +224,7 @@ fsm:                          # unitree_sdk2py h2_loco_client.py + h2-motion-con
 # 인식 장치 (사용자 2026-10-09: 박스 = GPU, 얼굴·사람 = NPU → head_track.device). 환경변수 YOLO_DEVICE 가 있으면 그것이 우선
 vision:
   box_device: intel:gpu       # detect_box OpenVINO (ultralytics: intel:cpu / intel:gpu / intel:npu). 없는 장치면 ultralytics 가 AUTO 로
-  show_seg: false             # 화면 seg 표시 (영역·윗면·꼭짓점). false = 파지점 L/R + 최근 2 초 인식 분포(흰 점)만 — 표시 전용.
+  show_seg: false             # 화면 seg 표시 (영역·윗면·꼭짓점). false = 파지점 L/T/R + 최근 2 초 프레임별 인식 위치(흰 점)만 — 표시 전용.
                               #   사용자 2026-10-09: seg 경계가 실제와 어긋나 보여 신뢰가 떨어짐. 제어 화면 Camera View 의 SEG 버튼으로 켜고 끔
 
 # 머리 카메라 인식 (common/head_track.py :50013, start_robot.sh 가 띄움, 보기 전용) — 왼눈 얼굴·사람, 오른눈 사물

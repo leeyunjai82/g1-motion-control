@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-# Version: 0.11
+# Version: 0.12
 # Changes:
+#   0.12 - 흰 번짐(띠) 뺌 (사용자 2026-10-09) — 파지점 L/T/R + 프레임별 인식 위치(흰 점)만
 #   0.11 - seg 끈 화면에 윗면 중심 T 추가, 흰 번짐을 L–T–R 이어지는 띠로 크게 (사용자 2026-10-09)
 #   0.10 - 화면 seg 표시 옵션 (robot.yaml vision.show_seg, 기본 끔 · GET /set_overlay?seg=). 끄면 파지점 L/R 과
 #          최근 2 초 프레임별 L/R 인식 위치(흰 점·번짐 = 분포)만 — seg 경계가 실제와 어긋나 보여 신뢰가 떨어짐 (사용자 2026-10-09)
@@ -175,32 +176,25 @@ smoother_lock = threading.Lock()
 
 
 def draw_grip_overlay(frame, K):
-    """파지점 L/R + 윗면 중심 T: 최근 SMOOTH_WINDOW_SEC 의 프레임별 인식 위치(흰 점) + 중앙값(잡기에 쓰는 점, 마젠타).
-    흰 번짐은 L–T–R 를 잇는 띠 (굵기 = 2 × 반경, 반경 = 2.5 × 화면상 흩어짐 RMS, 최소 22 px) — 인식이 흔들리면 넓게 퍼짐."""
+    """파지점 L/R + 윗면 중심 T: 최근 SMOOTH_WINDOW_SEC 의 프레임별 인식 위치(흰 점 — 흔들리면 넓게 흩어짐)
+    + 중앙값(잡기에 쓰는 점, 마젠타)."""
     group = alt_smoothers if BOX_METHOD == "plane" else smoothers
     with smoother_lock:
         samples = {k: [v for _, v in group[k].buf] for k in ("L", "top_center", "R")}
     fx, fy, cx, cy = float(K[0, 0]), float(K[1, 1]), float(K[0, 2]), float(K[1, 2])
-    glow, dots, marks = np.zeros_like(frame), np.zeros_like(frame), []
+    dots, marks = np.zeros_like(frame), []
     for k, lab in (("L", "L"), ("top_center", "T"), ("R", "R")):
         P = np.array([(fx * p[0] / p[2] + cx, fy * p[1] / p[2] + cy) for p in samples[k] if p[2] > 0.05])
         if not len(P):
             continue
         med = np.median(P, axis=0)
-        spread = float(np.sqrt(((P - med) ** 2).sum(1).mean())) if len(P) > 1 else 0.0
         for q in P:
             cv2.circle(dots, (int(q[0]), int(q[1])), 2, (255, 255, 255), -1, cv2.LINE_AA)
-        marks.append((lab, (int(med[0]), int(med[1])), int(max(22.0, 2.5 * spread))))
+        marks.append((lab, (int(med[0]), int(med[1]))))
     if not marks:
         return
-    for i, (_, c, r) in enumerate(marks):                       # 흰 번짐: 점마다 원 + 이웃 점까지 띠 (L–T–R 연결)
-        cv2.circle(glow, c, r, (255, 255, 255), -1, cv2.LINE_AA)
-        if i + 1 < len(marks):
-            c2, r2 = marks[i + 1][1], marks[i + 1][2]
-            cv2.line(glow, c, c2, (255, 255, 255), 2 * min(r, r2), cv2.LINE_AA)
-    cv2.addWeighted(cv2.GaussianBlur(glow, (0, 0), 11), 0.55, frame, 1.0, 0, frame)   # 흰 번짐 (더하기)
     cv2.addWeighted(dots, 0.9, frame, 1.0, 0, frame)                                   # 프레임별 위치 (흰 점)
-    for lab, c, _ in marks:
+    for lab, c in marks:
         cv2.circle(frame, c, 5, (255, 0, 255), -1, cv2.LINE_AA)
         cv2.circle(frame, c, 6, (255, 255, 255), 1, cv2.LINE_AA)
         off = (-16, 4) if lab == "L" else (9, 4) if lab == "R" else (-4, -12)
