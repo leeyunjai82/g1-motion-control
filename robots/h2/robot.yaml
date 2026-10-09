@@ -162,7 +162,9 @@ camera:
   # 이전 가슴 거치대 보정값 (되돌릴 때): x 0.075, y 0.0, z 0.377, pitch_deg 35.2
 
 grab:
-  z_offset: -0.064            # 실기 2026-10-07: 0.036 → −0.014 (5 cm 높음) → −0.044 (3 cm 더) → −0.064 (2 cm 더). grab_z = 윗면 − H/2 + z_offset
+  z_offset: -0.014            # 실기 2026-10-09: −0.064 → −0.014 (사용자: 잡을 때 손이 너무 내려감). grab_z = 윗면 − H/2 + z_offset
+                              #   −0.064 는 10-07 예전 가슴 거치대 카메라(x 0.075, z 0.377, 35.2°) 로 맞춘 값 — 등판 거치대(실측 47.4°) 로 바꾼 뒤
+                              #   과보정 (H 18 cm 박스면 손 목표가 테이블 위 2.6 cm). 이전 이력: 0.036 → −0.014 → −0.044 → −0.064
                               #   grab_reach (윗면 pelvis+0.25): 목표 2 cm 내려도 실제 손은 x 0.35–0.55 에서 1.0–1.3 cm 만 내려감 (팔 도달 한계)
   waist_base_pitch_deg: 0.0   # 허리 pitch/roll 0 — 앞으로 숙이지 않음 (넘어짐 방지)
   waist_locked: true          # 실기 2026-10-07: FSM 4 + EnableArmSDK 에서 rt/arm_sdk 로 허리 3축 모두 안 움직임
@@ -187,6 +189,8 @@ grab:
   default_handover: place     # 기본 = 들었던 자리에 내려놓기 (사람 없이 반복 시연). 사람이 앞에 있을 때 페이지에서 Center(건네기)
   handover_x: 0.45            # 건네기 때 손 x (IK 좌표). 들기 높이 pelvis+0.35 에서 x 0.50 까지 IK 가능 (오프라인 계산)
                               # → 잡는 위치(박스 x 0.45 − 0.15 = 0.30)보다 15 cm 앞으로 내민다. G1 값 0.30 이면 앞으로 안 나감
+  ready_xyz: [0.10, 0.25, 0.30]  # Box 버튼(대기 자세)·잡기 끝 복귀 왼손 [x, y, z] IK(pelvis) [m], 오른손 y 반대.
+                              # 사용자 2026-10-09: 시연 때 손이 앞으로 나와 테이블을 침 → x 0.15 → 0.10, z 0.20 → 0.30 (G1 기본 0.15, 0.25, 0.20)
 
 fsm:                          # unitree_sdk2py h2_loco_client.py + h2-motion-control.red init_fsm.py (실기)
   # 실기 GetAvailableFsmIds(7008) 이름: 4 FixStand, 601 HybridWalk, 703 PhaseWalk (2026-10-07)

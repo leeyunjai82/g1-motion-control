@@ -160,6 +160,8 @@ ALIGN_TO_HANDS = bool(robot_env.CFG["grab"].get("align_to_hands", False))
 # ↑ 잡은 뒤 '대칭 정렬'·들기·놓기 기준을 실제 잡은 손 위치로 (H2 true). false = 박스 중심 추정값 기준 + y 0 대칭 (G1 기존)
 # ↑ 좁혀 잡은 '뒤' 그 높이 그대로 x 로 끌어당김 [m] (− = 몸쪽). robot.yaml grab.pull_x. G1 0 (기존 동작 그대로)
 HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
+READY_XYZ      = [float(v) for v in robot_env.CFG["grab"].get("ready_xyz", [0.15, 0.25, 0.20])]
+# ↑ Box 버튼(대기 자세)·잡기 끝 복귀(⑪ Home) 왼손 [x, y, z] (IK 좌표, 오른손은 y 반대) — robot.yaml grab.ready_xyz (G1 기본 0.15, 0.25, 0.20)
 LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽, G1 0.0)
 WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # 기본 상체 각도 (0=중립, G1 -3.0)
 # 허리 고정 (robot.yaml grab.waist_locked) — true 면 잡기/건네기 중 허리 yaw 를 쓰지 않는다
@@ -247,8 +249,8 @@ class GrabController:
         self.MSG_HOME      = "Bring me another box."
         self.MSG_PLACED    = "I put it back."
 
-        self.HOME_LEFT  = [0.15,  0.25, 0.20]
-        self.HOME_RIGHT = [0.15, -0.25, 0.20]
+        self.HOME_LEFT  = [READY_XYZ[0],  READY_XYZ[1], READY_XYZ[2]]
+        self.HOME_RIGHT = [READY_XYZ[0], -READY_XYZ[1], READY_XYZ[2]]
 
         # 허리 정렬 후 재감지 콜백 (robot_server가 주입) — None이면 재감지 안 함
         self.redetect = None
