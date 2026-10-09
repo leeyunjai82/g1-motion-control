@@ -76,7 +76,7 @@ Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위�
 | `z_offset` | −0.014 | 잡는 높이 = 박스 윗면 − H/2 + z_offset |
 | `lift_above` | 0.10 | 들기 높이 = 박스 윗면 + 이 값 (0.15 면 어깨가 거치대 요크에 닿음) |
 | `pull_x` | −0.15 | 잡은 뒤 몸쪽으로 당김 |
-| `wrist_rpy_deg` | [0, 30, 0] | 손목 기본 자세 (웹 Wrist RPY 기본값) |
+| `wrist_rpy_deg` | [0, 0, 0] | 손목 기본 자세 (웹 Wrist RPY 기본값) |
 | `auto_zone` | x 0.35–0.45 | 자동 잡기 영역 (박스 중심, torso 기준) |
 | `default_handover` | place | 기본 = 제자리 내려놓기 |
 

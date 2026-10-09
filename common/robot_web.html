@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Version: 2.13
+<!-- Version: 2.14
+  2.14 - Wrist RPY 기본 전부 0 (robot.yaml grab.wrist_rpy_deg)
   2.13 - 이름 pitron (제목 'pitron manipulation', 로고 pitron·manipulation)
   2.12 - Control 카드 = Stop 만 (Home 은 Stop 과 같은 동작, Hold/Release 는 arm_server 가 기동 때 hold · 종료 때 반납,
          상태 줄은 위 Arm 칩과 같음). 좌측 아래 System 카드: 로봇 FSM · 서버 상태 (/system 2초),
@@ -324,7 +325,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
         <div class="wtab">
           <span></span><span class="h" style="color:var(--accent)">LEFT</span><span class="h" style="color:var(--amber)">RIGHT</span>
           <span class="k">roll</span><input class="in" id="l-roll" type="number" value="0" step="5"><input class="in" id="r-roll" type="number" value="0" step="5">
-          <span class="k">pitch</span><input class="in" id="l-pitch" type="number" value="30" step="5"><input class="in" id="r-pitch" type="number" value="30" step="5">
+          <span class="k">pitch</span><input class="in" id="l-pitch" type="number" value="0" step="5"><input class="in" id="r-pitch" type="number" value="0" step="5">
           <span class="k">yaw</span><input class="in" id="l-yaw" type="number" value="0" step="5"><input class="in" id="r-yaw" type="number" value="0" step="5">
         </div>
         <button class="btn full" style="margin-top:9px" onclick="applyWrist()">Apply</button>
