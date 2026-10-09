@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<!-- Version: 2.7
+<!-- Version: 2.8
+  2.8 - 위 칩에 이 PC 의 CPU / GPU / NPU 사용률 (robot_server /hw, 1초). 카드 머리에 실제 실행 장치 배지
+        (Camera View = detect_box, Head Vision = 왼눈 L / 오른눈 R — OpenVINO EXECUTION_DEVICES, AUTO 로 바뀐 것도 실제 장치로)
   2.7 - 우측 위 Head Vision 카드: 머리 카메라(head_track :50013)가 인식한 것만 잘라 한 줄 (왼눈 얼굴·사람, 오른눈 사물).
         head_track 이 없으면(G1 등) 카드 숨김. Robot View 는 남는 높이로 줄어듦
   2.6 - AI 오버레이에 박스 추정 방식 비교(기울기, L/R·중심 차이, 높이)
@@ -207,6 +209,12 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .spd{display:flex;align-items:center;gap:9px;font-size:11px;color:var(--dim)}
 .spd input{flex:1}
 
+/* 실행 장치 배지 (카드 머리) — CPU / GPU / NPU */
+.dev{display:inline-block;font-size:9px;font-weight:700;letter-spacing:1px;padding:1px 6px;border-radius:4px;
+  border:1px solid currentColor;margin-left:5px;text-transform:none;vertical-align:middle}
+.dev.cpu{color:#8fb3d9}.dev.gpu{color:#c49bff}.dev.npu{color:#3ddc97}.dev.unk{color:var(--dim)}
+.hd-r{display:flex;align-items:center;gap:6px}
+
 /* head vision strip (head_track :50013) — 인식된 것만 한 줄 */
 .vision-b{padding:6px 8px;overflow-x:auto;overflow-y:hidden}
 .vision-strip{height:90px;width:auto;max-width:none;display:block;border-radius:6px}
@@ -301,6 +309,9 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
       <span class="chip" id="chip-mode">Mode <b>OFF</b></span>
       <span class="chip" id="chip-arm">Arm <b>-</b></span>
       <span class="chip" id="chip-task">작업 <b>-</b></span>
+      <span class="chip" id="chip-cpu">CPU <b>-</b></span>
+      <span class="chip" id="chip-gpu">GPU <b>-</b></span>
+      <span class="chip" id="chip-npu">NPU <b>-</b></span>
     </div>
     <span id="lang-slot"></span>
     <a id="link-dash" href="#">dashboard ↗</a>
@@ -394,7 +405,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   <!-- ===== CENTER: camera + locomotion ===== -->
   <div class="col col-center">
     <div class="card grow fill cam">
-      <div class="card-h">Camera View <span class="tag" id="feed-tag">OFF</span></div>
+      <div class="card-h">Camera View <span class="hd-r"><span id="dev-cam"></span><span class="tag" id="feed-tag">OFF</span></span></div>
       <div class="card-b">
         <div class="cam-wrap">
           <span class="cam-badge" id="cam-badge" style="display:none">●REC</span>
@@ -434,7 +445,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   <!-- ===== RIGHT: robot 3D + control ===== -->
   <div class="col">
     <div class="card" id="card-vision" style="display:none">
-      <div class="card-h">Head Vision <a id="link-vision" href="#" target="_blank" style="color:var(--accent2)">↗</a></div>
+      <div class="card-h">Head Vision <span class="hd-r"><span id="dev-vision"></span><a id="link-vision" href="#" target="_blank" style="color:var(--accent2)">↗</a></span></div>
       <div class="card-b vision-b"><img id="vision-strip" class="vision-strip" alt=""></div>
     </div>
     <div class="card grow fill robot">
@@ -478,12 +489,45 @@ document.getElementById('link-robotonly').href=`http://${host}:50003/robot-only`
   let live=false;
   function check(){
     const probe=new Image();
-    probe.onload=()=>{ if(!live){live=true;card.style.display='';img.src=`${base}/strip?t=${Date.now()}`;} };
+    probe.onload=()=>{ if(!live){live=true;card.style.display='';img.src=`${base}/strip?t=${Date.now()}`;devs();} };
     probe.onerror=()=>{ if(live){live=false;img.removeAttribute('src');} card.style.display='none'; };
     probe.src=`${base}/strip.jpg?t=${Date.now()}`;
   }
-  check(); setInterval(check,10000);
+  // 왼눈(L)·오른눈(R) 실제 실행 장치 — AUTO 는 처음 몇 초 CPU 였다가 바뀔 수 있어 3초마다
+  function devs(){
+    if(!live)return;
+    fetch(`${base}/status`).then(r=>r.json()).then(s=>{
+      const it=[['L',devName(s.left&&s.left.exec,s.left&&s.left.device)]];
+      if(s.right)it.push(['R',devName(s.right.exec,s.right.device)]);
+      devBadges('dev-vision',it);
+    }).catch(()=>devBadges('dev-vision',[]));
+  }
+  check(); setInterval(check,10000); setInterval(devs,3000);
 })();
+
+// ---- 이 PC 의 CPU / GPU / NPU 사용률 (robot_server /hw, 1초) — 60 % 이상 주황, 85 % 이상 빨강. 마우스 올리면 읽는 곳 ----
+function pollHw(){
+  fetch('/hw').then(r=>r.json()).then(d=>{
+    for(const k of ['cpu','gpu','npu']){
+      const v=d[k]||{}, p=v.pct;
+      setChip('chip-'+k,k.toUpperCase(),p==null?'-':Math.round(p)+'%',p==null?'':p>=85?'err':p>=60?'busy':'ok');
+      document.getElementById('chip-'+k).title=p==null?(v.why||'-'):(v.src||'')+(v.note?'\n'+v.note:'');
+    }
+  }).catch(()=>{for(const k of ['cpu','gpu','npu'])setChip('chip-'+k,k.toUpperCase(),'-','');});
+}
+setInterval(pollHw,1000); pollHw();
+
+// 실행 장치 이름: OpenVINO 실제 장치(exec) 우선, 없으면 설정값 (intel:gpu → GPU)
+function devName(exec,cfg){
+  if(exec&&exec.length)return exec.join('+');
+  const c=String(cfg||'').replace(/^intel:/i,'').replace(/^HETERO:/i,'').toUpperCase();
+  return c||'?';
+}
+function devBadges(id,items){
+  document.getElementById(id).innerHTML=items.map(([p,n])=>{
+    const c=/NPU/.test(n)?'npu':/GPU/.test(n)?'gpu':/CPU/.test(n)?'cpu':'unk';
+    return `<span class="dev ${c}" title="${p?p+' eye: ':''}${n}">${p?p+' ':''}${n}</span>`;}).join('');
+}
 
 let toastTimer;
 function toast(m){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');
@@ -699,7 +743,7 @@ pollStatus();
 // 현재 모드의 detect 서버에서 마커/박스 좌표(cm) 폴링
 function pollCoord(){
   const co=document.getElementById('coord');
-  if(curMode==='none'){co.textContent='';return;}
+  if(curMode==='none'){co.textContent='';devBadges('dev-cam',[]);return;}
   const port=curMode==='marker'?50011:50010;
   fetch(`http://${host}:${port}/status`).then(r=>r.json()).then(d=>{
     if(d.found&&d.torso){
@@ -710,7 +754,8 @@ function pollCoord(){
       co.textContent=s;
     }else{co.textContent='no target';}
     renderAI(d);
-  }).catch(()=>{co.textContent='';renderAI(null);});
+    devBadges('dev-cam',d.perf?[['',devName(d.perf.exec,d.perf.device)]]:[]);
+  }).catch(()=>{co.textContent='';renderAI(null);devBadges('dev-cam',[]);});
 }
 setInterval(pollCoord, 400);
 
@@ -722,7 +767,7 @@ function renderAI(d){
   const f=(v,u,k=1)=>v==null?'-':(+v).toFixed(k)+u;
   const dist=d.found&&d.torso?Math.hypot(d.torso.x,d.torso.y)*100:null;
   const conf=p.conf==null?null:Math.round(p.conf*100);
-  el.innerHTML=`<div class="t">AI 인식 · ${(p.device||'').replace('intel:','OpenVINO ').toUpperCase()}</div>`+
+  el.innerHTML=`<div class="t">AI 인식 · ${devName(p.exec,p.device)}</div>`+
     `<div class="r"><span>추론</span><span>${f(p.infer_ms,' ms')}</span></div>`+
     `<div class="r"><span>처리 속도</span><span>${f(p.fps,' fps')}</span></div>`+
     `<div class="r"><span>신뢰도</span><span>${conf==null?'-':conf+'%'}</span></div>`+

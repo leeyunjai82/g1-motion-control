@@ -59,6 +59,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from box_estimator import BoxEstimator, draw_box_overlay
+from hw_usage import yolo_devices
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))   # common/ctrl
 _HIGH_DIR = os.path.dirname(_THIS_DIR)                     # common
@@ -562,7 +563,8 @@ async def status():
            "auto_dwell": auto_mode["dwell_sec"],
            "cmp": compare_methods(),
            "perf": {**perf, "active": (time.time() - perf["t"]) < 1.5,
-                    "model": os.path.basename(YOLO_MODEL.rstrip("/")), "device": YOLO_DEVICE}}
+                    "model": os.path.basename(YOLO_MODEL.rstrip("/")), "device": YOLO_DEVICE,
+                    "exec": yolo_devices(estimator.model) if estimator else []}}   # OpenVINO 실제 실행 장치 (AUTO 로 바뀐 경우 포함)
     if found:
         mx,my,mz = camera_to_torso(*sm['top_center'])
         out["torso"] = {"x":round(mx,3),"y":round(my,3),"z":round(mz,3)}

@@ -74,6 +74,7 @@ VENDOR_DIR  = robot_env.VENDOR_DIR
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 from ctrl.arm_controller_wrapper import LocoClientWrapper, GLOBAL_TO_INTERNAL
 from ctrl.arm_http import ArmHttpClient
+from ctrl.hw_usage import HwUsage
 
 
 
@@ -1076,6 +1077,7 @@ async def lifespan(app: FastAPI):
     global arm, loco, hand, tts, grab, ACTIVE_MODE, BOOT_ARM_DEG
 
     print("[robot_server] 시작")
+    HW.start()                     # CPU·GPU·NPU 사용률 (제어 화면 위 칩, GET /hw)
     robot_env.dds_init()
 
     try:
@@ -1170,6 +1172,8 @@ async def lifespan(app: FastAPI):
     print(f"[robot_server] 종료 (총 {time.time()-t_shutdown:.2f}초)")
     os._exit(0)
 
+
+HW = HwUsage(period=1.0)          # 이 PC 의 CPU / GPU / NPU 사용률 (ctrl/hw_usage.py)
 
 app = FastAPI(title="G1 Robot Server", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
@@ -1441,6 +1445,10 @@ async def status():
             "loco_ready": loco is not None, "hand_ready": hand is not None,
             "tts_ready": tts is not None, "active_mode": ACTIVE_MODE,
             "grab_busy": grab_busy, **_stage_info()}
+
+@app.get("/hw", summary="이 PC 의 CPU / GPU / NPU 사용률 [%] (1초마다 갱신, 못 읽으면 pct null + why)")
+async def hw_usage():
+    return HW.latest()
 
 @app.get("/motions")
 async def list_motions():
