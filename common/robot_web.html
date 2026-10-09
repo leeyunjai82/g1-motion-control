@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Version: 2.10
+<!-- Version: 2.11
+  2.11 - 이름 Pion → H2 (제목 'H2 Grab', 로고 H2·grab)
   2.10 - H2 전용: 보행(Locomotion)·마커 추종·마커 모드·좌우 건네기 UI 삭제
   2.9 - Wrist RPY 기본 pitch 30 (robot.yaml grab.wrist_rpy_deg), 페이지를 열면 서버의 지금 손목 값으로 채움
   2.8 - 위 칩에 이 PC 의 CPU / GPU / NPU 사용률 (robot_server /hw, 1초). 카드 머리에 실제 실행 장치 배지
@@ -38,7 +39,7 @@
   0.1 - 컨트롤 전용 UI (viewer 분리) -->
 <html lang="ko"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pion Control</title>
+<title>H2 Grab</title>
 <style>
 :root{
   --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a3340;
@@ -280,7 +281,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 
 <div class="topbar">
   <span class="dot live" id="livedot"></span>
-  <span class="logo">Pion<b>·grab</b></span>
+  <span class="logo">H2<b>·grab</b></span>
   <span style="color:var(--dim);font-size:11px">control · 50000</span>
   <div class="right">
     <div class="chips">
