@@ -426,7 +426,7 @@ async def lifespan(app: FastAPI):
         _stop_robot()
 
 
-app = FastAPI(title=f"{robot_env.ROBOT.upper()} Launcher", lifespan=lifespan)
+app = FastAPI(title="pitron launcher", lifespan=lifespan)
 
 
 @app.post("/fsm/{target}")
@@ -540,7 +540,7 @@ pre{margin:0;flex:1;min-height:120px;overflow:auto;background:#0a0d12;border:1px
 .mbox .run{background:#5a1f1f;border-color:var(--warn);color:#fff}
 </style></head><body>
 <script src="/i18n.js"></script>
-<div class="top"><b>@@TITLE@@</b><span class="r">:80 · 웹 버튼은 비상정지가 아닙니다 — E-STOP/리모컨을 손에 두세요</span><span id="lang-slot" style="margin-left:12px"></span></div>
+<div class="top"><b>pitron<span style="color:var(--ink)">·launcher</span></b><span class="r">:80 · 웹 버튼은 비상정지가 아닙니다 — E-STOP/리모컨을 손에 두세요</span><span id="lang-slot" style="margin-left:12px"></span></div>
 <div class="wrap">
   <div class="card">
     <div class="h"><span>자세 (FSM)</span><span></span></div>
@@ -683,7 +683,7 @@ def _render_html(h):
           "next": {str(FSM_DAMP): FSM_LOCK, str(FSM_LOCK): FSM_RUN},
           "names": {str(k): v for k, v in sorted(FSM_NAME.items())}}
     reps = [
-        ("@@TITLE@@", f"{robot_env.ROBOT.upper()} Launcher", 2),
+        ("@@TITLE@@", "pitron launcher", 1),
         ("@@STAND_SEQ@@", f"{FSM_DAMP} → {FSM_LOCK} → {FSM_RUN}", 1),
         ("@@FSM_BUTTONS@@", rows, 1),
         ("@@RUN@@", str(FSM_RUN), 1),

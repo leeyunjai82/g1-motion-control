@@ -1,5 +1,5 @@
 """
-simulator.py — H2 Motion Editor 통합본 (관절 + IK)
+simulator.py — pitron motion editor (H2, 관절 + IK)
 Version: 7.2
 
 simulator.py(관절 편집기 v5.3) + simulator_ik.py(IK 편집기 v6.3) 통합.
@@ -199,7 +199,7 @@ def _move_ik(left_xyz, right_xyz, left_rpy, right_rpy, duration):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global hand_controller, arm
-    print(f"--- {robot_env.ROBOT.upper()} Motion Editor 통합본 (v7.2) ---")
+    print("--- pitron motion editor (v7.3) ---")
     print("  팔/허리: arm_server(50022) 경유 · 보행 없음 · 손: 단일 동글")
 
     robot_env.dds_init()   # /check (joint_check) 의 rt/lowstate 구독용
@@ -224,7 +224,7 @@ async def lifespan(app: FastAPI):
     print("--- 서버 종료 (자세 유지 — arm_server 관리) ---")
 
 
-app = FastAPI(title="H2 Motion Editor (통합)", version="7.2", lifespan=lifespan)
+app = FastAPI(title="pitron motion editor", version="7.3", lifespan=lifespan)
 
 # 모터 번호 확인 화면 (/check) — 가상/실기 모두
 from joint_check import router as joint_check_router
