@@ -161,6 +161,8 @@ ALIGN_TO_HANDS = bool(robot_env.CFG["grab"].get("align_to_hands", False))
 # ↑ 좁혀 잡은 '뒤' 그 높이 그대로 x 로 끌어당김 [m] (− = 몸쪽). robot.yaml grab.pull_x. G1 0 (기존 동작 그대로)
 HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
 READY_XYZ      = [float(v) for v in robot_env.CFG["grab"].get("ready_xyz", [0.15, 0.25, 0.20])]
+LIFT_ABOVE     = float(robot_env.CFG["grab"].get("lift_above", 0.15))
+# ↑ 들기 높이 = 박스 윗면 + lift_above [m] (robot.yaml grab.lift_above, 기본 0.15). H2 0.10 — 몸쪽으로 당겨 높이 들면 어깨가 거치대 요크에 닿음
 # ↑ Box 버튼(대기 자세)·잡기 끝 복귀(⑪ Home) 왼손 [x, y, z] (IK 좌표, 오른손은 y 반대) — robot.yaml grab.ready_xyz (G1 기본 0.15, 0.25, 0.20)
 LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽, G1 0.0)
 WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # 기본 상체 각도 (0=중립, G1 -3.0)
@@ -523,7 +525,7 @@ class GrabController:
         grab_x_base = mx + GRAB_X_OFFSET
         grab_z  = mz - height_b / 2 + GRAB_Z_OFFSET
         above_z = mz + 0.10
-        lift_z  = mz + 0.15
+        lift_z  = mz + LIFT_ABOVE
         app_off = half_w + GRIP_EXTRA + APPROACH_EXTRA
         grp_off = half_w + GRIP_EXTRA
 
@@ -605,7 +607,7 @@ class GrabController:
         top_z = (Lz + Rz) / 2
         grab_z  = top_z - h / 2 + GRAB_Z_OFFSET
         above_z = top_z + 0.10
-        lift_z  = top_z + 0.15
+        lift_z  = top_z + LIFT_ABOVE
 
         l_rot, r_rot = self._wrist_quats()
 

@@ -192,6 +192,8 @@ grab:
                               # → 잡는 위치(박스 x 0.45 − 0.15 = 0.30)보다 15 cm 앞으로 내민다. G1 값 0.30 이면 앞으로 안 나감
   ready_xyz: [0.10, 0.25, 0.30]  # Box 버튼(대기 자세)·잡기 끝 복귀 왼손 [x, y, z] IK(pelvis) [m], 오른손 y 반대.
                               # 사용자 2026-10-09: 시연 때 손이 앞으로 나와 테이블을 침 → x 0.15 → 0.10, z 0.20 → 0.30 (G1 기본 0.15, 0.25, 0.20)
+  lift_above: 0.10            # 들기 높이 = 박스 윗면 + 0.10 m (기본 0.15). 오프라인 2026-10-09: 당김 −0.15 로 몸쪽에서 +0.15 까지 들면
+                              #   오른 어깨 roll·yaw 링크 ↔ 거치대 요크 0.1 mm (IK 가 직전 자세에 따라 팔꿈치를 뒤로 뺌) → +0.10 이면 7.7 mm
 
 fsm:                          # unitree_sdk2py h2_loco_client.py + h2-motion-control.red init_fsm.py (실기)
   # 실기 GetAvailableFsmIds(7008) 이름: 4 FixStand, 601 HybridWalk, 703 PhaseWalk (2026-10-07)
