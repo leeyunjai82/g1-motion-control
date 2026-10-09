@@ -2,7 +2,7 @@
 """
 cam_marker_check.py — ArUco 마커로 카메라 장착값(robot.yaml camera) 확인 (카메라만 사용, 로봇 명령 없음)
 
-  마커: DICT_4X4_50, 한 변 45 mm (detect_marker.py 와 같음, --size 로 변경)
+  마커: DICT_4X4_50, 한 변 45 mm (--size 로 변경)
   rs_stream.py 등 카메라를 쓰는 프로그램은 먼저 끌 것.  IMU 까지 쓰려면 sudo (또는 RealSense udev 규칙).
 
   ROBOT_CHECK=1 ROBOT=h2 python utils/cam_marker_check.py --id 0 --watch           # 계속 출력

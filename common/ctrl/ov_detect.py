@@ -8,7 +8,7 @@ ov_detect.py — OpenVINO Open Model Zoo SSD 검출기 (얼굴 / 사람)
 
   det = OvSSD("face", device="NPU", conf=0.6)   # 안 되면 HETERO:NPU,CPU → CPU 로 자동 (det.device = 실제 장치)
   boxes = det(bgr)        # [(x0, y0, x1, y1, conf), ...] 원본 픽셀, conf 내림차순
-  컴파일 결과는 ~/.cache/g1-motion-control/openvino 에 캐시 (NPU 첫 컴파일이 느려서)
+  컴파일 결과는 ~/.cache/h2-motion-control/openvino 에 캐시 (NPU 첫 컴파일이 느려서)
 """
 import os
 
@@ -23,7 +23,7 @@ except (ImportError, AttributeError):
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "omz")
 MODELS = {"face": "face-detection-retail-0004", "person": "person-detection-0201"}
-CACHE_DIR = os.path.expanduser("~/.cache/g1-motion-control/openvino")
+CACHE_DIR = os.path.expanduser("~/.cache/h2-motion-control/openvino")
 
 
 def compile_with_fallback(core, model, device):

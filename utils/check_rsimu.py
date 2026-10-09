@@ -9,11 +9,11 @@ check_rsimu.py — D435i IMU + 로봇 LowState IMU 를 같이 읽어 '몸통(tor
   ROBOT=h2 python utils/check_rsimu.py --sec 5      # 5 초 평균 + 권장 pitch_deg 출력
   ROBOT=h2 python utils/check_rsimu.py --sec 5 eno1 # DDS 네트워크 인터페이스 지정
 
-계산 (G1 원본 식 그대로)
+계산
   cam_abs      = D435i 가속도로 구한 광학축 숙임 (중력 기준)        = atan2(−a_z, √(a_x² + a_y²))
   torso_abs    = 로봇 IMU pitch (LowState imu_state.rpy[1]) + 허리 pitch 관절각 (robot.yaml joints.map waist_pitch_joint)
   cam_to_torso = cam_abs − torso_abs   ← robot.yaml camera.pitch_deg 와 비교할 값
-  비교 대상: robot.yaml camera.pitch_deg (G1 47.6 = URDF d435_joint, H2 = 실장착 보정값)
+  비교 대상: robot.yaml camera.pitch_deg (실장착 보정값)
 
 부호 확인 (H2 는 미확인): 거치대에서 로봇 몸통을 손으로 살짝 앞뒤로 흔들 때
   cam_abs · torso_abs 는 같이 변하고 cam_to_torso 는 거의 그대로면 부호가 맞음.
@@ -35,7 +35,7 @@ from unitree_sdk2py.core.channel import ChannelSubscriber   # noqa: E402
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as hg_LowState   # noqa: E402
 
 CAMERA_PITCH_CFG = robot_env.CAMERA_PITCH                                   # robot.yaml camera.pitch_deg [rad]
-WAIST_PITCH_SLOT = int(robot_env.JOINTS["map"]["waist_pitch_joint"])        # G1 14, H2 13 (xr_teleoperate 817fb00)
+WAIST_PITCH_SLOT = int(robot_env.JOINTS["map"]["waist_pitch_joint"])        # H2 13 (xr_teleoperate 817fb00)
 
 pelvis_pitch = None
 pelvis_roll = 0.0

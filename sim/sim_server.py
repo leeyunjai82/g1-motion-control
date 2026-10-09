@@ -11,7 +11,7 @@ sim_server.py — 시뮬레이터: 가상 박스 + 가짜 detect_box (포트 500
     robot.yaml camera 장착값으로 박스를 D435i 카메라 좌표로 바꾼다
     (robot_server.camera_to_torso 의 역변환 — 허리 yaw 를 돌리면 카메라 좌표도 같이 바뀐다).
   · detect_box 와 같은 /pose, /status, /video_feed 를 제공 → robot_server 의 잡기 시퀀스
-    (허리 yaw 정렬 → 재검출 → 접근 → 잡기 → 들기 → 건네기) 를 코드 수정 없이 그대로 돌린다.
+    (재검출 → 접근 → 잡기 → 들기 → 놓기/건네기) 를 코드 수정 없이 그대로 돌린다.
   · 카메라 화면 시야(640×480, detect_box 의 K) 밖이면 found=False — 장착 위치 검토용.
   · 손 위치 오차: robot_server 의 IK 목표 vs 현재 팔 관절로 계산한 손끝(L_ee/R_ee) — IK 도달 여부 확인용.
 

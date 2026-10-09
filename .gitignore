@@ -31,8 +31,7 @@ htmlcov/
 logs/
 *.log
 
-# IK 모델 캐시 (URDF 파싱 결과. 환경마다 다시 생성됨)
-high/ctrl/g1_29_model_cache.pkl
+# IK 모델 캐시 (URDF 파싱 결과. 환경마다 다시 생성됨 — robots/h2/<robot.yaml ik_cache>)
 *.pkl
 
 # 시뮬레이터/에디터가 내보낸 임시 모션
@@ -99,7 +98,7 @@ robots/*/joint_check_*_sim.json
 # 로봇별 unitree_sdk2py (robot.yaml sdk.commit — activate_tv.sh 가 자동으로 받음)
 third_party/
 
-# 박스 인식 모델 — g1-motion-control.red 에서도 커밋 대상 (high/models). 위의 *.pt / *.bin 예외
+# 박스 인식 모델 — 커밋 대상. 위의 *.pt / *.bin 예외 (yolo11s · OMZ 모델은 git add -f 로 추가됨)
 !common/models/*.pt
 !common/models/box_openvino_model/
 !common/models/box_openvino_model/*.bin

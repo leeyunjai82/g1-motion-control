@@ -123,7 +123,7 @@ class ArmIK:
             self.var_q,
             self.reduced_robot.model.upperPositionLimit)
         )
-        # 비용 가중치 — robot.yaml ik.cost (G1 기본 50 / 1.0 / 0.02 / 0.1, H2 공식 50 / 0.8 / 0.01 / 0.1)
+        # 비용 가중치 — robot.yaml ik.cost (H2 공식 50 / 0.8 / 0.01 / 0.1)
         _c = robot_env.CFG["ik"].get("cost") or {}
         _w_t = float(_c.get("translation", 50)); _w_r = float(_c.get("rotation", 1.0))
         _w_g = float(_c.get("regularization", 0.02)); _w_s = float(_c.get("smooth", 0.1))
@@ -285,7 +285,7 @@ class ArmIK:
             return current_lr_arm_motor_q, np.zeros(self.reduced_robot.model.nv)
         
 
-# 예전 이름 (호환용) — 내용은 위 ArmIK (ROBOT 에 따라 G1/H2)
+# 예전 이름 (호환용) — 내용은 위 ArmIK
 G1_29_ArmIK = ArmIK
 
 if __name__ == "__main__":

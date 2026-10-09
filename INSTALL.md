@@ -1,9 +1,9 @@
-# 설치 가이드 — Ubuntu 24.04 LTS
+# 설치 가이드 — H2 Motion Control · Ubuntu 24.04 LTS
 
 외장 Intel mini PC(x86_64)에 **Ubuntu 24.04 LTS** 를 기준으로 설치하는 절차입니다. 순서대로 진행하세요.
 
 - 사용법 : [`README.md`](./README.md)
-- 내부 구조 : [`TECH.md`](./TECH.md)
+- H2 실측·근거 : [`robots/h2/FACTS.md`](./robots/h2/FACTS.md)
 
 > "확인 필요" 표시는 이 문서 작성 시점에 실기/운영 PC 에서 검증하지 못한 항목입니다. 설치하면서 결과를 기록해 주세요.
 
@@ -20,7 +20,7 @@
 | 카메라 | Intel RealSense D435i (USB 3.0 포트) |
 | 권한 | sudo 가능한 계정 |
 
-설치 경로 예: `$HOME/project/g1-motion-control/`.
+설치 경로 예: `$HOME/project/h2-motion-control/`.
 스크립트는 계정명을 하드코딩하지 않습니다 (`$HOME`, 스크립트 위치 기준).
 
 ---
@@ -109,8 +109,9 @@ conda activate tv
 
 ```bash
 mkdir -p $HOME/project && cd $HOME/project
-git clone https://github.com/leeyunjai82/g1-motion-control.git      # tv 활성화 상태 → 가상환경의 git
-cd g1-motion-control
+git clone https://github.com/leeyunjai82/h2-motion-control.git      # tv 활성화 상태 → 가상환경의 git
+cd h2-motion-control
+source activate_tv.sh          # 처음 한 번: H2 용 unitree_sdk2py(robot.yaml sdk.commit 814556d)를 third_party/ 에 받음
 ```
 
 ---
@@ -137,10 +138,12 @@ python -c "import numpy, torch, cv2, pinocchio, sksparse, unitree_sdk2py, openvi
 # numpy 1.24.4 | torch 2.4.1+cpu 가 나와야 정상
 ```
 
-- 검증 (2026-10, Ubuntu 24.04): 위 순서로 설치 후 `ROBOT=h2 ./start_sim.sh` 잡기 시퀀스 10단계 완료.
+- 검증 (2026-10, Ubuntu 24.04): 위 순서로 설치 후 `./start_sim.sh` 잡기 시퀀스 완료.
   운영 mini PC 실설치에서 `numpy 1.24.4 | torch 2.4.1+cpu` 확인 (CPU 판 torch 정상).
-- `openvino`, `logging-mp` 는 버전을 고정하지 않았습니다 — 기존 G1 운영 PC 의 `pip freeze` 값과 맞추는 것을 권장 (확인 필요).
-- `unitree_sdk2py` 는 requirements 의 고정 커밋 `f559291` (G1). 이 커밋에는 `unitree_sdk2py.h2` 가 없습니다 — H2 실기 FSM 은 SDK 업그레이드 후.
+- `openvino`, `logging-mp` 는 버전을 고정하지 않았습니다 — 운영 mini PC 의 `pip freeze` 값과 맞추는 것을 권장 (확인 필요).
+- `unitree_sdk2py`: requirements 의 고정 커밋 `f559291` 은 tv 환경 기본값이고 `unitree_sdk2py.h2` 가 없습니다.
+  H2 는 `robots/h2/robot.yaml sdk.commit` (814556d) 을 `third_party/` 에 받아 `common/robot_env.py` 가 그쪽을 먼저 씁니다
+  (`activate_tv.sh` / `start_*.sh` 가 처음 한 번 자동으로 받음).
 
 ### 평소 사용 (conda 는 필요할 때만)
 
@@ -159,7 +162,7 @@ python -c "import numpy, torch, cv2, pinocchio, sksparse, unitree_sdk2py, openvi
 `start_fsm.sh` 는 tv 환경 python 을 `sudo` 로 실행합니다. 비밀번호 없이 쓰려면 NOPASSWD 규칙을 추가합니다.
 
 ```bash
-sudo visudo -f /etc/sudoers.d/g1-motion
+sudo visudo -f /etc/sudoers.d/h2-motion
 ```
 ```
 <사용자> ALL=(root) NOPASSWD: /home/<사용자>/miniconda3/envs/tv/bin/python
@@ -170,14 +173,14 @@ sudo visudo -f /etc/sudoers.d/g1-motion
   source robot_env.sh && echo "$TV_PY"
   sudo -n "$TV_PY" -c "print('ok')"     # 비밀번호를 묻지 않아야 정상
   ```
-- `ROBOT` 은 sudo 뒤에서 **명령 인자**로 넘기므로(`init_fsm.py <mode> <robot>`, `run_launcher.py <robot>`) sudoers 에 `SETENV` 를 줄 필요가 없습니다.
+- 로봇 이름(h2)은 sudo 뒤에서 **명령 인자**로 넘기므로(`init_fsm.py <mode> h2`, `run_launcher.py h2`) sudoers 에 `SETENV` 를 줄 필요가 없습니다.
 - `launcher.sh` 는 시작 시 `sudo -v` 로 비밀번호를 한 번 묻습니다 (NOPASSWD 불필요).
 
 ---
 
 ## 9. 네트워크
 
-G1 기본 IP `192.168.123.161`. PC 유선 LAN 을 같은 대역으로 설정합니다 (G1/H2 공통).
+로봇 대역 `192.168.123.0/24` (H2 PC1 `192.168.123.161`). PC 유선 LAN 을 같은 대역으로 설정합니다.
 
 ```bash
 nmcli connection show                     # 유선 연결 이름 확인
@@ -191,7 +194,7 @@ ping 192.168.123.161
 
 ---
 
-## 10. 손 컨트롤러 시리얼 (`/dev/ttyACM0`)
+## 10. 손 컨트롤러 시리얼 (`/dev/ttyACM0`, 손을 달았을 때만)
 
 ```bash
 sudo usermod -aG dialout $USER     # 다시 로그인 후 적용
@@ -224,7 +227,7 @@ conda deactivate && conda activate tv && echo $OMP_NUM_THREADS   # 1
 ## 12. 실행 권한
 
 ```bash
-chmod +x robot_env.sh activate_tv.sh start_fsm.sh start_robot.sh start_simulator.sh start_mission.sh start_sim.sh launcher.sh
+chmod +x robot_env.sh activate_tv.sh start_fsm.sh start_robot.sh start_simulator.sh start_sim.sh launcher.sh
 ```
 
 ---
@@ -234,11 +237,11 @@ chmod +x robot_env.sh activate_tv.sh start_fsm.sh start_robot.sh start_simulator
 ```bash
 source activate_tv.sh
 
-# (1) ROBOT 미지정 → 거부되어야 정상
-python -c "import sys; sys.path.insert(0,'common'); import robot_env"     # ❌ 메시지 + 종료코드 2
+# (1) 설정 읽기 (ROBOT 은 안 줘도 h2)
+python -c "import sys; sys.path.insert(0,'common'); import robot_env as r; print(r.ROBOT, r.URDF_PATH, r.SDK_DIR)"
 
-# (2) ROBOT=g1 경로 확인
-ROBOT=g1 python -c "import sys; sys.path.insert(0,'common'); import robot_env as r; print(r.URDF_PATH, r.MOTIONS_DIR)"
+# (2) 다른 ROBOT → 거부되어야 정상
+ROBOT=g1 python -c "import sys; sys.path.insert(0,'common'); import robot_env"     # ❌ H2 전용 메시지 + 종료코드 2
 
 # (3) 핵심 패키지
 python -c "import numpy, cv2, torch, pyrealsense2, pinocchio, casadi, unitree_sdk2py; print('OK')"
@@ -253,10 +256,11 @@ print('imencode', cv2.imencode('.jpg', np.zeros((480,640,3), np.uint8))[0])"
 python -c "import pyrealsense2 as rs; print(rs.context().devices[0].get_info(rs.camera_info.name))"
 
 # (6) (선택) IK 벤치마크 — 스레드 고정 시 수 ms
-cd common && ROBOT=g1 python -c "
+cd common && python -c "
 import time, numpy as np, pinocchio as pin
-from ctrl.robot_arm_ik import G1_29_ArmIK
-ik = G1_29_ArmIK(); q=np.zeros(14); dq=np.zeros(14)
+import robot_env
+from ctrl.robot_arm_ik import ArmIK
+ik = ArmIK(); q=np.zeros(14); dq=np.zeros(14)
 L=pin.SE3(pin.Quaternion(1,0,0,0),np.array([0.3, 0.2,0.1])).homogeneous
 R=pin.SE3(pin.Quaternion(1,0,0,0),np.array([0.3,-0.2,0.1])).homogeneous
 ik.solve_ik(L,R,q,dq); t=time.time()
@@ -273,7 +277,7 @@ python utils/check_robot_id.py
 
 | 증상 | 원인 / 해결 |
 | --- | --- |
-| `ROBOT 이 지정되지 않았습니다 — 실행 거부` | `export ROBOT=g1` 또는 `ROBOT=g1 ./start_robot.sh` |
+| `ROBOT='…' — 이 저장소는 H2 전용` | `unset ROBOT` (안 주면 h2) |
 | `conda 를 찾지 못했습니다` | `export CONDA_BASE=<conda 설치 경로>` |
 | sudo 가 계속 비밀번호 요구 (FSM) | sudoers 경로 ≠ `$TV_PY`. 8단계 확인 |
 | `CondaToSNonInteractiveError` | 기본 채널을 쓴 경우 — 5단계처럼 `--override-channels -c conda-forge` 로 다시 생성 |
@@ -284,5 +288,5 @@ python utils/check_robot_id.py
 | RealSense 인식 안 됨 / 권한 오류 | USB 3.0 포트, 3단계 udev 규칙 파일 설치 후 재연결 |
 | RealSense 가 `2.1` (USB2) 로 잡힘 | **케이블 교체** (USB2 전용 케이블이면 2.1 — 운영 PC 에서 케이블 교체로 3.2 확인), 카메라 C 커넥터 끝까지, 허브 없이 파란(SS) 포트 |
 | 손 `/dev/ttyACM0` 열기 실패 | `dialout` 그룹, ModemManager (10단계) |
-| `pickle.load` 시 `class version ...` | 다른 pinocchio 버전의 캐시 → `robots/g1/g1_29_model_cache.pkl` 삭제 후 재생성 |
-| 서버가 남아 있음 | `ROBOT=g1 ./start_robot.sh` 가 시작 시 TERM → 대기 → KILL 로 정리. 수동: `pgrep -af "python.*(rs_stream|arm_server|robot_server)"` 확인 후 `kill` |
+| `pickle.load` 시 `class version ...` | 다른 pinocchio 버전의 캐시 → `robots/h2/` 의 `robot.yaml ik_cache` 파일 삭제 후 재생성 |
+| 서버가 남아 있음 | `./start_robot.sh` 가 시작 시 TERM → 대기 → KILL 로 정리. 수동: `pgrep -af "python.*(rs_stream|arm_server|robot_server)"` 확인 후 `kill` |

@@ -27,18 +27,15 @@ box_estimator.py(YOLO seg + depth)로 박스 윗면/L/R/크기 측정.
 
 동작:
   · SMOOTH_WINDOW_SEC(2초) 슬라이딩 윈도우 median 안정화
-  · 자동 모드: 영역 안 dwell 만족 → robot_server(50003) POST /grab_at
+  · 자동 모드: 영역 안 dwell 만족 → robot_server(50000) POST /grab_at
   · GET  /pose         : 현재 박스 좌표 (수동 잡기용)
-  · POST /reset_window : 안정화 버퍼 비우기 (걷다 멈추는 펄스 소비자용)
+  · POST /reset_window : 안정화 버퍼 비우기
   · 작은 웹 UI
 
 robot_server active_mode == "box"일 때만 POST (그쪽 게이트).
 
-펄스 이동 소비자(mission_server)를 위한 주의:
-  이 서버가 내보내는 값은 최근 2초 윈도우의 median 이다. 걷다 멈춘 직후
-  그냥 읽으면 "걷는 동안의 좌표"가 섞여 실제보다 뒤처진 값이 나온다.
-  정지 직후 POST /reset_window 로 버퍼를 비우고, /pose 의 n 이 충분해질
-  때까지 기다렸다 읽을 것.
+주의: 이 서버가 내보내는 값은 최근 2초 윈도우의 median 이다. 박스를 옮긴 직후 값이 필요하면
+  POST /reset_window 로 버퍼를 비우고, /pose 의 n 이 충분해질 때까지 기다렸다 읽을 것.
 """
 import os
 import sys
@@ -73,12 +70,12 @@ COLOR_URL     = os.environ.get("RS_COLOR_URL", "http://localhost:50001/video_fee
 DEPTH_URL     = os.environ.get("RS_DEPTH_URL", "http://localhost:50001/depth_raw")
 ROBOT_SERVER  = os.environ.get("ROBOT_SERVER", "http://localhost:50000")
 
-# 카메라 K (ik_box 검증값 — detect_marker와 동일하게 통일)
+# 카메라 K (robot.yaml camera.intrinsics)
 CAM_FX, CAM_FY, CAM_PPX, CAM_PPY = robot_env.CAMERA_K   # robot.yaml camera.intrinsics (카메라마다 다름)
 camera_K = np.array([[CAM_FX,0,CAM_PPX],[0,CAM_FY,CAM_PPY],[0,0,1]], dtype=np.float32)
 
-# 카메라 tilt 고정 (G1, 47.6도)
-CAM_TILT_DEG = robot_env.CAMERA_PITCH_DEG   # robot.yaml camera.pitch_deg (G1 47.6)
+# 카메라 숙임 (중력 방향 — 박스 윗면 기울기 보정)
+CAM_TILT_DEG = robot_env.CAMERA_PITCH_DEG   # robot.yaml camera.pitch_deg
 _t = np.radians(CAM_TILT_DEG)
 GRAVITY_CAM = np.array([0.0, np.cos(_t), np.sin(_t)], dtype=np.float64)
 
@@ -124,7 +121,7 @@ stream_started = False
 
 estimator = None
 
-# 자동 잡기 영역 기본값 (torso_link 기준 박스 윗면 중심) — robot.yaml grab.auto_zone (G1 x 0.30–0.45)
+# 자동 잡기 영역 기본값 (torso_link 기준 박스 윗면 중심) — robot.yaml grab.auto_zone
 _Z = robot_env.CFG["grab"].get("auto_zone") or {}
 auto_mode = {"enabled": False,
              "x_min": float(_Z.get("x", [0.30, 0.45])[0]), "x_max": float(_Z.get("x", [0.30, 0.45])[1]),

@@ -1,25 +1,24 @@
-# Unitree Motion Control (G1 / H2)
+# H2 Motion Control
 
-**Ubuntu 24.04 + external Intel mini PC + Intel RealSense D435i** 환경에서 Unitree 휴머노이드를 제어하는 통합 패키지입니다.
-마커 기반 접근, 박스 파지, 들고 걷기, 웹 모션 에디터를 기능별 작은 HTTP 서버로 나눠 구성합니다.
+**Unitree H2** 휴머노이드로 박스를 잡아 내려놓거나 건네는 시연 패키지입니다.
+외장 Intel mini PC(Ubuntu 24.04) + 가슴의 Intel RealSense D435i(박스 인식) + H2 머리 쌍안 카메라(얼굴·사람·사물 보기)로 구성하고,
+기능별 작은 HTTP 서버로 나눠 돌립니다.
 
-- 공통 코드는 `common/`, 로봇마다 다른 파일은 `robots/<ROBOT>/` 에 둡니다.
-- 실행할 때 **`ROBOT=g1`** 처럼 로봇을 지정합니다. **지정하지 않으면 실행을 거부합니다** (기본값 없음).
-- 현재 지원: **`g1`** (G1 29 DOF). H2 는 실기 확인 전까지 명령 경로를 열지 않습니다.
-- 기준 소스: `leeyunjai82/g1-motion-control.red` main `731075b` (RedHat 판) — Ubuntu 용으로 경로/설치만 정리, 제어 값은 동일.
-
+- H2 전용입니다. 로봇 파일·설정은 `robots/h2/`, 공통 코드는 `common/`.
+  `ROBOT` 환경변수는 안 줘도 됩니다 (기본 `h2`, 다른 값은 거부). G1 코드는 git 이력에 있습니다.
 - 설치 : [**INSTALL.md**](./INSTALL.md)
-- 내부 구조 (관절 맵, 모션 JSON, IK, DDS, FSM) : [**TECH.md**](./TECH.md)
+- H2 실측·근거·확인 필요 목록 : [**robots/h2/FACTS.md**](./robots/h2/FACTS.md)
+- 카메라 거치대·등판 손잡이 (3D 출력) : [`robots/h2/cad/`](./robots/h2/cad/) — `h2_print_all.step` 에 출력 부품 전부
 
 ---
 
 ## ⚠️ 안전 수칙 (먼저 읽기)
 
-1. **스탠드 고정** — 지지 스탠드를 로봇 어깨에 단단히 묶어 흔들리지 않게 합니다.
-2. **`ROBOT=g1 ./start_fsm.sh stand`** 는 즉시 모터에 힘이 들어갑니다. **사람이 로봇을 붙잡고** 실행하세요.
-3. **`ROBOT=g1 ./start_fsm.sh sit`** 는 천천히 주저앉습니다. 팔을 먼저 몸 옆으로 내리고 **내려가는 동안 계속 지지**하세요.
+1. **거치대 고정** — 로봇을 거치대(스탠드)에 걸고 시작합니다.
+2. **`./start_fsm.sh stand`** 는 즉시 모터에 힘이 들어갑니다 (1 Damp → 5초 → 4 FixStand → 10초 → 703 PhaseWalk). **사람이 로봇을 붙잡고** 실행하세요.
+3. 끝낼 때는 **`./start_fsm.sh damp`** (거치대에 건 채로 — sit 은 쓰지 않음).
 4. 작업 공간에 사람·장애물이 없게 하고, **비상정지(E-STOP)** 위치를 미리 확인하세요.
-5. **연결된 로봇과 `ROBOT` 값이 같은지** 실행 전에 확인하세요. 로봇은 한 번에 한 대만 연결합니다.
+5. 연결된 로봇이 H2 인지 서버가 기동 시 확인합니다 (`robot.yaml identity.mode_machine`, 다르면 팔·FSM 명령 거부).
 
 ---
 
@@ -28,155 +27,129 @@
 자원(하드웨어)마다 소유 프로세스는 하나. 나머지는 HTTP 로 통신합니다.
 
 ```
-rs_stream      :50001   RealSense 카메라 (단독 점유) → MJPEG / depth API
-detect_marker  :50011   ArUco 마커 자세 (rs_stream 사용)
-detect_box     :50010   박스 인식, 파지점 (rs_stream 사용)
-arm_server     :50022   rt/arm_sdk 단독 점유 — 팔/허리/머리(H2), IK, hold/release
-head_track     :50013   (H2) 머리 카메라 인식 — 왼눈 얼굴·사람, 오른눈 사물 (보기 전용)
-robot_server   :50000   오케스트레이터 — 잡기 시퀀스, 마커 추종, 웹 UI
+rs_stream      :50001   RealSense D435i (단독 점유) → MJPEG / depth API
+detect_box     :50010   박스 인식(YOLO seg, OpenVINO GPU), 파지점 (rs_stream 사용)
+arm_server     :50022   rt/arm_sdk 단독 점유 — 팔, IK, hold/release
+head_track     :50013   머리 카메라 인식 — 왼눈 얼굴·사람(NPU), 오른눈 사물(NPU), 보기 전용
+robot_server   :50000   잡기 시퀀스 + 제어 웹 UI (CPU·GPU·NPU 사용률 표시)
 dashboard      :50003   3D URDF 뷰어 / 관절 상태 (rt/lowstate 읽기 전용)
 simulator      :8000    모션 에디터 (Joint + IK), arm_server 경유
 launcher       :80      FSM 버튼 + start_robot.sh 실행 웹
 ```
 
-규칙:
-- **팔/허리/머리**: 모든 프로세스는 `arm_server` 를 거칩니다 (`rt/arm_sdk` 는 publisher 하나만 허용).
-- **H2 머리 카메라 인식** (`common/head_track.py`, 보기 전용): 왼눈 → OpenVINO 얼굴(`face-detection-retail-0004`) / 사람(`person-detection-0201`), 오른눈 → COCO 사물(YOLO11s). 인식된 것만 잘라 제어 화면 Head Vision 카드에 한 줄로.
-  머리 추종은 뺌 (703 에서 arm_sdk 로 머리가 안 움직임 — `robots/h2/FACTS.md`). 설정은 `robots/h2/robot.yaml head_track`.
-  `ROBOT=h2 python common/head_track.py` → `http://<pc-ip>:50013/`
-- **보행**: `LocoClient` 는 다중 클라이언트 RPC — 직접 써도 되지만 이동 명령은 한 곳에서만 보냅니다.
+- **팔**: 모든 프로세스는 `arm_server` 를 거칩니다 (`rt/arm_sdk` 는 publisher 하나만 허용).
+- **허리·머리**: 703 에서 `rt/arm_sdk` 로 안 움직입니다 (FACTS.md). 그래서 허리 yaw 정렬·좌우 건네기·머리 추종은 없습니다.
+- **보행**: 없음 (이 패키지는 서서 팔만 씁니다).
 
 ## 빠른 시작
 
 ```bash
-export ROBOT=g1             # 모든 스크립트가 이 값을 요구합니다
+cd ~/project/h2-motion-control
 
 # 1. 자세 (로봇을 붙잡고!)
-./start_fsm.sh stand        # 또는: sit / bal / no-bal / damp
+./start_fsm.sh stand        # 끝낼 때: ./start_fsm.sh damp
 
-# 2. 전체 스택 (서버 6개, 의존 순서대로)
+# 2. 전체 스택
 ./start_robot.sh
-#   → 제어 UI : http://<pc-ip>:50000/
+#   → 제어 UI : http://<pc-ip>:50000/     (Grab Mode → Box, Handover → Place / Center, Grab Now)
 #   → 3D 뷰어 : http://<pc-ip>:50003/dashboard
+#   → 박스 인식 : http://<pc-ip>:50010/   (자동 잡기 ON)
+#   → 머리 카메라 : http://<pc-ip>:50013/ (앱에서 video_hub 끔 · Stereo patch PC1 켬)
 
 # 3. 모션 에디터 — 모드 지정 필수 (virtual | real)
-./start_simulator.sh real          # 실기 (start_robot.sh 와 함께 써도 됨 — arm_server 재사용)
-#   → 에디터  : http://<pc-ip>:8000/        모터 번호 확인 : http://<pc-ip>:8000/check
+./start_simulator.sh real   # 실기 (start_robot.sh 와 함께 써도 됨 — arm_server 재사용)
 
 # (선택) 웹 런처 — FSM 버튼 + start_robot.sh 실행 (포트 80, sudo)
 ./launcher.sh
 ```
 
-## Motion Editor 모드 (`start_simulator.sh`)
+## 잡기 시퀀스 (robot_server)
 
-| 명령 | 모드 | 띄우는 것 |
+Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위쪽 접근 → 측면 하강 → 잡기 → 몸쪽으로 당기기 → 들기 →
+**Place**: 원래 자리에 내려놓기 / **Center**: 정면으로 건네기(2초 뒤 놓기) → 대기 자세 복귀.
+
+값은 전부 `robots/h2/robot.yaml grab` 에 있습니다.
+
+| 키 | 지금 값 | 뜻 |
 | --- | --- | --- |
-| `ROBOT=h2 ./start_simulator.sh virtual` | **가상** — URDF/메시 3D + fake_robot, 로봇 없이 (DDS 도메인 1) | fake_robot, arm_server, dashboard, simulator |
-| `ROBOT=g1 ./start_simulator.sh real` | **실기** — 실제 로봇이 움직임 | arm_server·dashboard(떠 있으면 재사용), simulator |
-| `ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real` | **실기 · 모터 번호 확인 전용** — `enabled: false` 로봇 | 위와 같음. 잡기·보행 서버는 실행 거부, 시작 시 `yes` 확인 |
+| `ready_xyz` | [0.10, 0.25, 0.30] | 대기·복귀 왼손 위치 (IK pelvis 기준 m, 오른손 y 반대) |
+| `z_offset` | −0.014 | 잡는 높이 = 박스 윗면 − H/2 + z_offset |
+| `lift_above` | 0.10 | 들기 높이 = 박스 윗면 + 이 값 (0.15 면 어깨가 거치대 요크에 닿음) |
+| `pull_x` | −0.15 | 잡은 뒤 몸쪽으로 당김 |
+| `wrist_rpy_deg` | [0, 30, 0] | 손목 기본 자세 (웹 Wrist RPY 기본값) |
+| `auto_zone` | x 0.35–0.45 | 자동 잡기 영역 (박스 중심, torso 기준) |
+| `default_handover` | place | 기본 = 제자리 내려놓기 |
 
-### 모터 번호 확인 (`http://<pc-ip>:8000/check`)
-
-1. 로봇을 거치대에 걸고 주변을 비운다. E-STOP 을 손에 둔다.
-   - H2: `ROBOT_CHECK=1 ROBOT=h2 ./start_fsm.sh stand` (1 → 5초 → 4 → 10초 → 601, h2-motion-control.red 와 같은 순서, `yes` 확인).
-     H2 용 SDK(robot.yaml `sdk.commit` 65691c8)는 처음 실행 때 `third_party/` 에 자동으로 받는다 (tv 환경 SDK 는 그대로).
-     로봇 상태(rt/lowstate)가 안 들어오면 FSM 명령을 보내지 않는다.
-2. `ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real` (H2) — 상단에 `mode_machine` 이 표시된다 (robot.yaml `identity` 기준값).
-3. **팔·허리** (명령 이동): [기준 잡기] → 슬롯의 [+]/[−] (한 번 5°, 기준 대비 최대 ±15°, 서버에서 제한).
-   실제 로봇에서 움직인 관절과 오른쪽 3D(robot.yaml 이름으로 그림)에서 움직인 관절이 같으면 ✓, 다르면 ✗ + 실제 관절을 메모.
-4. **다리·헤드** (읽기 전용): [제어권 반납] (또는 FSM Damp) → [기준 잡기] → 관절을 손으로 움직이면 변한 슬롯이 노랗게 표시.
-5. **IK** (모터 번호 확인 다음): [제어권 잡기] → [IK 기준 잡기] → 위/아래·앞/뒤·좌/우·벌림/좁힘 (3 cm 씩, 기준 대비 최대 10 cm, 손목 자세 유지).
-   실물에서 양손이 누른 방향으로 곧게 가고 손목이 비틀리지 않으면 정상. 화면의 오차(목표 vs 실제 관절각 FK)·손 자세 변화도 기록.
-   (FK 는 같은 관절 맵으로 계산하므로 맵 오류는 눈으로 판단)
-6. [결과 저장] → `robots/<robot>/joint_check_<날짜시각>.json` → 이 결과로 robot.yaml 관절 맵을 최종 조정.
-7. [제어권 반납] → simulator Ctrl+C → H2 는 거치대에 건 채로 `ROBOT_CHECK=1 ROBOT=h2 ./start_fsm.sh damp` (sit 안 씀).
-
-가상 모드에서 같은 화면으로 절차를 미리 연습할 수 있다 (가상은 robot.yaml 대로 움직이므로 항상 ✓).
+오프라인 확인 도구: `python utils/grab_reach.py` (박스 위치별로 서버와 같은 IK 로 손이 끝까지 가는지).
 
 ## 시뮬레이터 (로봇 없이 시험)
 
 ```bash
-ROBOT=h2 ./start_sim.sh            # 가상 카메라 + 가상 박스  → http://<pc-ip>:50010/
-ROBOT=h2 ./start_sim.sh real-cam   # 실물 D435i + 실제 박스 인식(YOLO), 로봇만 가상 → http://<pc-ip>:50012/
+./start_sim.sh            # 가상 카메라 + 가상 박스  → http://<pc-ip>:50010/
+./start_sim.sh real-cam   # 실물 D435i + 실제 박스 인식, 로봇만 가상 → http://<pc-ip>:50012/
 ```
 
-- `real-cam`: rs_stream + detect_box 를 실물로 띄우고, 인식 결과로 가상 로봇이 잡기 시퀀스를 돈다.
-  인식 좌표 → 로봇 좌표 변환은 robot.yaml `camera` 장착값을 쓰므로, 카메라를 그 높이·각도로 들고(고정해) 시험해야 거리가 맞는다.
+- `sim/fake_robot.py` 가 로봇 역할 (`rt/arm_sdk` 를 받아 관절을 움직이고 `rt/lowstate` 를 냄, 기구학만).
+- `sim/sim_server.py` 가 detect_box(50010) 자리를 대신 → **robot_server / arm_server 는 실기와 같은 코드** 로 잡기 시퀀스를 돕니다.
+- **안전**: `ROBOT_SIM=1` → DDS 도메인 1. 실기(도메인 0)와 섞이지 않고, 실기 스택이 떠 있으면(포트 사용 중) 시작을 거부합니다.
 
-- `sim/fake_robot.py` 가 로봇 역할: `rt/arm_sdk` 를 받아 관절을 움직이고 `rt/lowstate` 를 낸다 (기구학만, 물리·균형 없음).
-- `sim/sim_server.py` 가 detect_box(50010) 자리를 대신: 가상 박스를 robot.yaml `camera` 장착값으로 카메라 좌표로 바꿔
-  `/pose` 로 준다 → **robot_server / arm_server 는 실기와 같은 코드 그대로** 잡기 시퀀스를 돈다 (허리 yaw 정렬·재검출 포함).
-- 화면에 표시: 잡기 단계, 손 목표 오차(IK 도달), 손 높이 − 박스 옆면/윗면, 허리 각, 카메라 시야 안/밖.
-- **안전**: `ROBOT_SIM=1` → DDS 도메인 1. 실기(도메인 0)와 섞이지 않고, fake_robot/sim_server 는 시뮬 모드가 아니면 실행을 거부.
-  실기 스택이 떠 있으면(포트 사용 중) 아무것도 죽이지 않고 시작을 거부한다.
-- `enabled: false` 로봇(H2)도 시뮬에서는 실행된다. 실기 스크립트(`start_robot.sh` 등)는 계속 거부.
+## Motion Editor 모드 (`start_simulator.sh`)
 
-로그는 `logs/<name>_<date>.log` 에 타임스탬프와 함께 기록됩니다. 종료는 `Ctrl+C`.
+| 명령 | 모드 | 띄우는 것 |
+| --- | --- | --- |
+| `./start_simulator.sh virtual` | **가상** — URDF/메시 3D + fake_robot (DDS 도메인 1) | fake_robot, arm_server, dashboard, simulator |
+| `./start_simulator.sh real` | **실기** — 실제 로봇이 움직임 | arm_server·dashboard(떠 있으면 재사용), simulator |
+| `ROBOT_CHECK=1 ./start_simulator.sh real` | **실기 · 모터 번호 확인 전용** | 위와 같음. 잡기 서버는 실행 거부, 시작 시 `yes` 확인 |
 
-## 일반 시나리오
+모터 번호 확인 화면: `http://<pc-ip>:8000/check` — 절차는 `robots/h2/FACTS.md` 와 `common/joint_check.py` 머리말.
 
-1. (외부 SLAM, 선택) 테이블 근처까지 이동 후 **이동 명령을 멈추고** 넘겨받습니다.
-2. `robot_server` 가 바닥 ArUco 마커를 추종 — 마커 법선 위 경유점을 거쳐 항상 **마커 정면**으로 도착 (0.25 m 정지, 좌우 4 cm 이내).
-3. 박스 잡기 (Box 모드), **hold** (weight = 1, 허리 pitch −3° 보정), 들고 걷기.
-4. **release** 하면 팔/허리를 보행 제어기로 돌려 자연스러운 팔 흔들기 보행.
+## 카메라
+
+- **D435i (가슴, 박스 인식)**: 등판 거치대 `robots/h2/cad/camera_bracket/` (v3: 숙임 60°). 장착값은 `robot.yaml camera`
+  (x, y, z [m, torso_link 기준], pitch_deg). 숙임각 실측: `utils/check_rsimu.py --sec 5`, 위치 확인: `utils/cam_marker_check.py`.
+- **머리 쌍안 카메라**: `utils/check_head_cam.py` (수신 확인·깊이 클릭), 인식은 `common/head_track.py` (`robot.yaml head_track`).
 
 ## 디렉터리
 
 ```
-g1-motion-control/
-├── robot_env.sh            # ROBOT 검사 + conda/tv python 경로 (스크립트 공용)
-├── activate_tv.sh          # tv conda 환경 활성화 (계정명 하드코딩 없음)
-├── start_fsm.sh            # 자세 전환 (stand / sit / bal / no-bal / damp)
-├── start_robot.sh          # 전체 스택 (camera, detect, arm, robot, dashboard)
-├── start_simulator.sh      # 모션 에디터 (+ arm_server 없으면 같이 기동)
-├── start_mission.sh        # 미션 스택 (marker_nav → mission_server). robot_server 와 동시 사용 금지
+h2-motion-control/
+├── robot_env.sh            # ROBOT(h2) 확인 + conda/tv python 경로 (스크립트 공용)
+├── activate_tv.sh          # tv conda 환경 활성화 + H2 SDK(third_party/) 준비
+├── start_fsm.sh            # 자세 전환 (stand / damp / ...)
+├── start_robot.sh          # 전체 스택 (rs_stream, arm, robot, dashboard, detect_box, head_track)
+├── start_simulator.sh      # 모션 에디터
 ├── start_sim.sh            # 시뮬레이터 (fake_robot + 서버 + 가상 박스, DDS 도메인 1)
-├── sim/                    # fake_robot.py (가짜 로봇), sim_server.py (가짜 detect_box + 시뮬 화면)
 ├── launcher.sh / run_launcher.py   # 웹 런처 (:80)
-├── common/                 # 로봇 공통 코드
-│   ├── robot_env.py        # ROBOT 선택, robots/<ROBOT>/ 경로
-│   ├── robot_server.py     # 오케스트레이터 + 웹 UI (robot_web.html)
-│   ├── arm_server.py       # 팔/허리 HTTP 서버 (arm_sdk 소유)
-│   ├── simulator.py        # 모션 에디터 백엔드 (simulator.html)
+├── sim/                    # fake_robot.py, sim_server.py
+├── common/
+│   ├── robot_env.py        # robots/h2/robot.yaml 읽기, SDK 경로
+│   ├── robot_server.py     # 잡기 시퀀스 + 웹 UI (robot_web.html)
+│   ├── arm_server.py       # 팔 HTTP 서버 (arm_sdk 소유)
+│   ├── head_track.py       # 머리 카메라 인식
+│   ├── simulator.py        # 모션 에디터 (simulator.html, joint_check.py)
 │   ├── dashboard.py        # 3D URDF 뷰어
-│   ├── rs_stream.py        # 카메라 서버
-│   ├── ctrl/               # 래퍼, IK, detect_marker/box, 손, TTS
-│   ├── models/             # 박스 인식 모델 (OpenVINO / PyTorch)
+│   ├── rs_stream.py        # D435i 서버
+│   ├── ctrl/               # 팔 래퍼, IK, detect_box, 머리 카메라 수신, OpenVINO 검출, 사용률(hw_usage), 손, TTS
+│   ├── models/             # 박스 seg 모델, yolo11s, OMZ 얼굴·사람
 │   └── assets/vendor/      # three.min.js
-├── robots/
-│   └── g1/                 # G1 전용: URDF, meshes/, motions/, IK 모델 캐시
-├── utils/                  # init_fsm, IMU/식별 확인 도구
-└── low/                    # G1 저수준 테스트 (rt/lowcmd 송신 — 일반 운용에서 사용 금지)
+├── robots/h2/              # URDF, meshes/, motions/, IK 모델 캐시, robot.yaml, FACTS.md, cad/
+├── third_party/            # unitree_sdk2_python-814556d (activate_tv.sh 가 받음)
+└── utils/                  # init_fsm, 카메라 보정, IMU·식별 확인, grab_reach, arm_sdk_test 등
 ```
 
-## 로봇별 설정 — `robots/<ROBOT>/robot.yaml`
-
-로봇마다 다른 값은 모두 여기서 읽습니다 (`common/robot_env.py` → `CFG`).
+## 설정 — `robots/h2/robot.yaml`
 
 | 항목 | 키 |
 | --- | --- |
-| 관절 맵(URDF 이름→슬롯), 팔/허리/헤드 슬롯, weight 슬롯, 이득 | `joints`, `gains` |
+| 관절 맵(URDF 이름→슬롯), 팔/허리/머리 슬롯, weight 슬롯, 이득 | `joints`, `gains` |
 | FSM ID / 전이 규칙 / launcher 문구 | `fsm` |
-| IK 잠금 관절, 손끝(L_ee/R_ee) | `ik` |
+| SDK (H2 전용 unitree_sdk2py 커밋) | `sdk` |
+| IK 잠금 관절, 손끝(L_ee/R_ee), 모델 캐시 | `ik`, `ik_cache` |
 | 기본 팔 자세 | `default_arm_deg` |
-| pelvis→torso, 잡기 z 오프셋 | `frames`, `grab` |
-| **D435i 장착 위치** | `camera` (x, y, z [m, torso_link 기준], pitch_deg [아래로 숙인 각]) |
+| pelvis→torso, 잡기 값 | `frames`, `grab` |
+| D435i 장착 위치 | `camera` |
+| 인식 장치 (박스 = GPU) | `vision` |
+| 머리 카메라 인식 | `head_track` |
 | 연결 로봇 확인 | `identity.mode_machine` (`utils/check_robot_id.py` 로 측정) |
-| 실행 허용 | `enabled` (false 면 모든 스크립트/서버가 거부 — 시뮬 제외) |
-| 카메라→IK 좌표 변환 | `frames.exact_ik_frame` (G1 false: 기존대로 / H2 true: pelvis 기준 정확 변환) |
-| 허리 사용 / 보행 | `grab.waist_base_pitch_deg`, `grab.waist_locked`, `features.locomotion` |
 
-- **G1**: `.red` 731075b 상수 그대로 — `python utils/check_g1_equiv.py <red> .` 로 원본과 동일함을 확인 (상수, LowCmd 35 슬롯, launcher HTML, FSM 규칙).
-- **H2**: `enabled: false`. 근거·확인 필요 항목은 [`robots/h2/FACTS.md`](./robots/h2/FACTS.md).
-
-### D435i 를 실제로 장착한 뒤
-
-`robots/<ROBOT>/robot.yaml` 의 `camera:` **4개 값만** 실측값으로 고칩니다. 코드 수정 없음.
-
-```yaml
-camera:
-  x: 0.10          # torso_link 원점 → 카메라 (앞 +) [m]
-  y: 0.0           # (왼쪽 +) [m]
-  z: 0.35          # (위 +) [m]
-  pitch_deg: 50.0  # 아래로 숙인 각 [deg] — 박스 윗면 기울기 보정(중력 방향)에도 같이 쓰임
-```
+로그는 `logs/<name>_<date>.log` 에 타임스탬프와 함께 기록됩니다. 종료는 `Ctrl+C`.
