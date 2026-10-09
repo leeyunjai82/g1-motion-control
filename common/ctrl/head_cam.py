@@ -28,6 +28,23 @@ HDR = struct.Struct("<IQQIIII")          # 36 B, packed
 MAGIC_BYTES = struct.pack("<I", MAGIC)
 
 
+def all_ips():
+    """이 PC 의 IPv4 주소 전부 (127.x 제외) — 웹 보기 주소 안내용 (로봇 대역 말고 사무실 망으로도 열 수 있게)."""
+    try:
+        out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=2).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        out = []
+    return [ip for ip in out if ip.count(".") == 3 and not ip.startswith("127.")]
+
+
+def web_urls(port, peer):
+    """웹 보기 주소 안내 문자열 (모든 IP + SSH 터널)."""
+    ips = all_ips() or [my_ip(peer)]
+    lines = [f"http://{ip}:{port}/" for ip in ips]
+    lines.append(f"(SSH 로만 들어올 수 있으면: 내 PC 에서 ssh -L {port}:localhost:{port} <계정>@<이 PC 주소> → http://localhost:{port}/)")
+    return "\n    ".join(lines)
+
+
 def my_ip(peer):
     """peer 로 나가는 이 PC 의 IP (패킷은 보내지 않음)."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

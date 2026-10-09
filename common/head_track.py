@@ -40,7 +40,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import robot_env   # noqa: E402  ROBOT 필수
-from ctrl.head_cam import PC1, RGB_PORTS, RgbRx, my_ip   # noqa: E402
+from ctrl.head_cam import PC1, RGB_PORTS, RgbRx, my_ip, web_urls   # noqa: E402
 from ctrl.ov_detect import OvSSD   # noqa: E402
 
 import uvicorn   # noqa: E402
@@ -334,7 +334,7 @@ def main():
         hs, err = arm_head()
         print(f"[head_track] arm_server 머리: {hs if hs else err}")
     print(f"[head_track] 모델 {[m.name + '@' + m.device for m in (tr.face, tr.person) if m]}, "
-          f"{'머리 명령' if a.drive else '보기만'} → http://{my_ip(PC1)}:{a.port}/")
+          f"{'머리 명령' if a.drive else '보기만'} →\n    {web_urls(a.port, PC1)}")
     tr.start()
     uvicorn.run(make_app(tr), host="0.0.0.0", port=a.port, log_level="warning")
 
