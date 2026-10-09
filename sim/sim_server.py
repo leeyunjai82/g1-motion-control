@@ -86,8 +86,8 @@ for jid in range(1, RED.njoints):
 
 # ---- 상태 ----
 state = {"q": np.zeros(N), "t": 0.0}
-# 기본 = 시연 조건: 테이블 100 cm · 박스 15 cm (윗면 pelvis + 0.14), 거치대 v3 실측 64.9° 에서 윗면 전체가 보이는 x (26–41 cm)
-box = {"present": True, "x": 0.36, "y": 0.0, "top": 0.14, "W": 0.28, "D": 0.20, "H": 0.15}
+# 기본 = 테이블 110 cm · 박스 15 cm (윗면 pelvis + 0.24), 카메라 46.0° 에서 윗면 전체가 보이는 x (38–61 cm) · auto_zone 안
+box = {"present": True, "x": 0.40, "y": 0.0, "top": 0.24, "W": 0.28, "D": 0.20, "H": 0.15}
 OVERLAY = {"seg": bool((robot_env.CFG.get("vision") or {}).get("show_seg", False))}   # detect_box 와 같은 화면 옵션
 lock = threading.Lock()
 
@@ -223,17 +223,22 @@ def render_frame():
         cv2.fillPoly(img, [pts], (60, 120, 170) if v["visible"] else (60, 60, 140))   # 가상 박스 (실물 화면에 해당)
         if OVERLAY["seg"]:
             cv2.polylines(img, [pts], True, (255, 255, 255), 2)
-        for p, lab in zip(v["uv_LR"], "LR"):
-            if p is None:
+        tc = project(v["cam"]["C"])
+        marks = [(lab, (int(p[0]), int(p[1]))) for lab, p in (("L", v["uv_LR"][0]), ("T", tc), ("R", v["uv_LR"][1]))
+                 if p is not None]
+        if not OVERLAY["seg"] and marks:   # detect_box 처럼 L–T–R 를 잇는 흰 번짐 띠 (시뮬은 흔들림 없음)
+            glow = np.zeros_like(img)
+            for i, (_, c) in enumerate(marks):
+                cv2.circle(glow, c, 22, (255, 255, 255), -1, cv2.LINE_AA)
+                if i + 1 < len(marks):
+                    cv2.line(glow, c, marks[i + 1][1], (255, 255, 255), 44, cv2.LINE_AA)
+            cv2.addWeighted(cv2.GaussianBlur(glow, (0, 0), 11), 0.55, img, 1.0, 0, img)
+        col = (255, 0, 255) if not OVERLAY["seg"] else (0, 255, 255)
+        for lab, c in marks:
+            if lab == "T" and OVERLAY["seg"]:
                 continue
-            c = (int(p[0]), int(p[1]))
-            if not OVERLAY["seg"]:     # detect_box 처럼 파지점 둘레 흰 번짐 (시뮬은 흔들림 없음)
-                glow = np.zeros_like(img)
-                cv2.circle(glow, c, 14, (255, 255, 255), -1, cv2.LINE_AA)
-                cv2.addWeighted(cv2.GaussianBlur(glow, (0, 0), 7), 0.5, img, 1.0, 0, img)
-            cv2.circle(img, c, 6, (255, 0, 255) if not OVERLAY["seg"] else (0, 255, 255), -1)
-            cv2.putText(img, lab, (c[0] + 8, c[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                        (255, 0, 255) if not OVERLAY["seg"] else (0, 255, 255), 2)
+            cv2.circle(img, c, 6, col, -1)
+            cv2.putText(img, lab, (c[0] + 8, c[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2)
     cv2.putText(img, "FOUND" if v["visible"] else "NOT VISIBLE", (10, IMG_H - 14),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 220, 80) if v["visible"] else (80, 80, 255), 2)
     return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()

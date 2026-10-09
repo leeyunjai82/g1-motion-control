@@ -77,7 +77,7 @@ Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위�
 | `lift_above` | 0.10 | 들기 높이 = 박스 윗면 + 이 값 (0.15 면 어깨가 거치대 요크에 닿음) |
 | `pull_x` | −0.15 | 잡은 뒤 몸쪽으로 당김 |
 | `wrist_rpy_deg` | 왼 [0, 0, −10] · 오른 [0, 0, 10] | 손목 기본 자세 [roll, pitch, yaw] (웹 Wrist RPY 기본값) |
-| `auto_zone` | x 0.35–0.45 | 자동 잡기 영역 (박스 중심, torso 기준) |
+| `auto_zone` | x 0.38–0.45 | 자동 잡기 영역 (박스 중심, torso 기준) — 테이블 110 cm · 카메라 46.0° 기준 |
 | `default_handover` | place | 기본 = 제자리 내려놓기 |
 
 오프라인 확인 도구: `python utils/grab_reach.py` (박스 위치별로 서버와 같은 IK 로 손이 끝까지 가는지).
@@ -105,7 +105,7 @@ Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위�
 
 ## 카메라
 
-- **D435i (가슴, 박스 인식)**: 등판 거치대 `robots/h2/cad/camera_bracket/` (v3: 숙임 설계 60° · 실측 64.9°). 장착값은 `robot.yaml camera`
+- **D435i (가슴, 박스 인식)**: 등판 거치대 `robots/h2/cad/camera_bracket/` (지금 v3 요크 + v1 가로대: 숙임 실측 46.0°, z 0.365). 장착값은 `robot.yaml camera`
   (x, y, z [m, torso_link 기준], pitch_deg). 숙임각 실측: `utils/check_rsimu.py --sec 5`, 위치 확인: `utils/cam_marker_check.py`.
 - **머리 쌍안 카메라**: `utils/check_head_cam.py` (수신 확인·깊이 클릭), 인식은 `common/head_track.py` (`robot.yaml head_track`).
   로봇을 다시 켜면 앱 설정이 기본(video_hub 켜짐 · Stereo patch 꺼짐)으로 돌아감 → `start_robot.sh` 가 `utils/head_cam_on.py` 로 매번 자동 준비
