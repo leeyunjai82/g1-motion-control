@@ -7,7 +7,7 @@ run_launcher.py — H2 자세(FSM) 제어 + start_robot.sh 실행 웹 (포트 80
   sudo <tv python> run_launcher.py [robot]   (robot 생략 시 h2 — 이 저장소는 H2 전용)
 
 자세 — FSM 단계별 버튼 (LocoClient.SetFsmId 직접 호출, 연속 시퀀스 없음)
-  FSM 번호·이름·버튼 라벨은 robots/h2/robot.yaml fsm (damp/lock/run/sit, names, labels) 에서 만든다.
+  FSM 번호·이름·버튼 라벨은 robots/h2/robot.yaml fsm (damp/lock/run, names, labels) 에서 만든다.
   사람이 로봇 상태를 보고 한 단계씩 누른다. init_fsm.py 의 stand = 1 → 4 → 703.
   버튼을 누르면 5초 카운트다운 후 전송 (취소 가능, 대기 중 Damp 는 눌러서 교체 가능).
   전송 직전에 허용 조건을 다시 검사한다.
@@ -15,8 +15,8 @@ run_launcher.py — H2 자세(FSM) 제어 + start_robot.sh 실행 웹 (포트 80
   · 1   Damp                 : 항상 (서 있으면 넘어짐 — 경고창)
   · 4   FixStand             : FSM 1 에서 / 703 에서(Robot 정지 상태만)
   · 703 PhaseWalk (balance)  : FSM 4 에서 — 제자리 밸런스 서기 (H2 는 보행 없음, arm_sdk 동작)
-  · 3   Sit                  : 서 있을 때(fsm.standing), Robot 정지 상태만 (경고창)
-  · FSM 조회 불가 시 순서 제한 없음 (Robot 실행 중 4/3 차단만 유지) — 순서는 사람이 지킨다
+  · Sit 버튼 없음 (H2 는 거치대에 건 채 운용 — 끝낼 때 Damp, 사용자 2026-10-09). 터미널 ./start_fsm.sh sit 은 그대로
+  · FSM 조회 불가 시 순서 제한 없음 (Robot 실행 중 4 차단만 유지) — 순서는 사람이 지킨다
   · Robot 시작은 FSM 703 에서만
 
   ./start_fsm.sh / utils/init_fsm.py 는 수정하지 않았다 — 터미널에서 따로 쓸 수 있다.
@@ -104,29 +104,29 @@ def _logfile(name):
 # ==========================================
 # FSM (자세) — LocoClient 직접 호출, 단계별
 # ==========================================
-# FSM ID — robots/h2/robot.yaml fsm (H2: 1 Damp / 4 FixStand / 703 PhaseWalk(제자리 밸런스) / 3 Sit)
+# FSM ID — robots/h2/robot.yaml fsm (H2: 1 Damp / 4 FixStand / 703 PhaseWalk(제자리 밸런스)). Sit 은 launcher 에 없음
 #   화면 버튼·안내 문구·JS 상수는 아래 값으로 만든다 (_render_html).
 _F = robot_env.FSM
 FSM_NAME = {int(k): str(v) for k, v in _F["names"].items()}
 FSM_BAL = {int(k): True for k in _F["balance"]}   # 밸런스 제어 여부 (나머지 없음)
 STANDING = {int(k) for k in _F["standing"]}
-FSM_DAMP, FSM_LOCK, FSM_RUN, FSM_SIT = int(_F["damp"]), int(_F["lock"]), int(_F["run"]), int(_F["sit"])
+FSM_DAMP, FSM_LOCK, FSM_RUN = int(_F["damp"]), int(_F["lock"]), int(_F["run"])
 _LBL = _F["labels"]
-STEPS = (FSM_DAMP, FSM_LOCK, FSM_RUN, FSM_SIT)
+STEPS = (FSM_DAMP, FSM_LOCK, FSM_RUN)
 
 
 def _check_fsm_cfg():
-    """robot.yaml fsm 이 launcher 단계(damp → lock → run, sit)와 맞는지 — 어긋나면 기동 거부."""
+    """robot.yaml fsm 이 launcher 단계(damp → lock → run)와 맞는지 — 어긋나면 기동 거부."""
     errs = []
-    for key, fid in (("damp", FSM_DAMP), ("lock", FSM_LOCK), ("run", FSM_RUN), ("sit", FSM_SIT)):
+    for key, fid in (("damp", FSM_DAMP), ("lock", FSM_LOCK), ("run", FSM_RUN)):
         if fid not in FSM_NAME:
             errs.append(f"fsm.{key}={fid} 가 fsm.names 에 없음")
     if len(set(STEPS)) != len(STEPS):
-        errs.append(f"damp/lock/run/sit 중복 {STEPS}")
+        errs.append(f"damp/lock/run 중복 {STEPS}")
     if FSM_LOCK not in STANDING or FSM_RUN not in STANDING:
         errs.append(f"lock({FSM_LOCK})·run({FSM_RUN}) 은 fsm.standing {sorted(STANDING)} 에 있어야 함")
-    if FSM_DAMP in STANDING or FSM_SIT in STANDING:
-        errs.append(f"damp({FSM_DAMP})·sit({FSM_SIT}) 는 fsm.standing 에 없어야 함")
+    if FSM_DAMP in STANDING:
+        errs.append(f"damp({FSM_DAMP}) 는 fsm.standing 에 없어야 함")
     if FSM_RUN not in FSM_BAL:
         errs.append(f"run({FSM_RUN}) 은 fsm.balance {sorted(FSM_BAL)} 에 있어야 함 (arm_sdk 밸런스 서기)")
     for key in ("lock_button", "run_button", "run_enter"):
@@ -149,7 +149,7 @@ def allowed(target, cur, robot_running):
         return True, ""
     if cur is None:
         # FSM 조회 불가(펌웨어/SDK 미지원) — 순서 제한 없이 허용, Robot 실행 중 차단만 유지
-        if robot_running and target in (FSM_SIT, FSM_LOCK):
+        if robot_running and target == FSM_LOCK:
             return False, ROBOT_BUSY
         return True, ""
     if target == FSM_LOCK:
@@ -160,10 +160,6 @@ def allowed(target, cur, robot_running):
         return False, f"{FSM_LOCK} 는 FSM {FSM_DAMP}({FSM_NAME[FSM_DAMP]}) 또는 {FSM_RUN} 에서만 (현재 {cur})"
     if target == FSM_RUN:
         return (True, "") if cur == FSM_LOCK else (False, f"{FSM_RUN} 은 FSM {FSM_LOCK}({_LBL['lock_button']}) 에서만 (현재 {cur})")
-    if target == FSM_SIT:
-        if robot_running:
-            return False, ROBOT_BUSY
-        return (True, "") if cur in STANDING else (False, f"Sit 은 서 있을 때만 (현재 {cur})")
     return False, "알 수 없는 단계"
 
 
@@ -595,15 +591,13 @@ document.getElementById('links').innerHTML=
   `<a href="http://${host}:50000/" target="_blank">Control :50000</a>`+
   `<a href="http://${host}:50003/dashboard" target="_blank">Dashboard :50003</a>`;
 let CUR=null;
-// Damp / Sit 만 경고 후 실행, lock / run 은 바로 실행
+// Damp 만 경고 후 실행, lock / run 은 바로 실행
 async function confirmFsm(t){
   const standing=FSM.standing.includes(CUR);
   if(t===FSM.damp)return warn(`${FSM.names[t]} (FSM ${t})`,
     standing?'지금 서 있습니다 — 힘이 빠져 넘어집니다!':
     CUR===null?'현재 상태 확인 불가 — 서 있다면 힘이 빠져 넘어집니다!':'모터 힘이 빠집니다',
     '· 로봇을 사람이 받치고 있거나 스탠드에 묶여 있습니까?\n· 주변에 사람/장애물이 없습니까?');
-  if(t===FSM.sit)return warn(`${FSM.names[t]} (FSM ${t})`,'로봇이 천천히 앉습니다 (밸런스 제어 없음)',
-    '· 팔을 몸 옆으로 내렸습니까?\n· 앉는 동안 로봇을 받치고 있습니까?\n· 엉덩이 아래 공간이 비어 있습니까?');
   return true;}
 async function post(u){const r=await fetch(u,{method:'POST'});const d=await r.json().catch(()=>({}));
   if(!r.ok)throw new Error(d.detail||r.status);return d;}
@@ -671,22 +665,20 @@ def _bal_txt(fid):
 
 
 def fsm_buttons():
-    """FSM 단계 버튼 [(id, class, 라벨, 설명)] — robot.yaml fsm (names / labels / damp·lock·run·sit)."""
+    """FSM 단계 버튼 [(id, class, 라벨, 설명)] — robot.yaml fsm (names / labels / damp·lock·run)."""
     return [
         (FSM_DAMP, "st", FSM_NAME[FSM_DAMP], "힘 빼기 · 항상 가능"),
         (FSM_LOCK, "go", _LBL["lock_button"], f"{_bal_txt(FSM_LOCK)} · {FSM_DAMP} / {FSM_RUN} 에서"),
         (FSM_RUN, "go", _LBL["run_button"],
          f"{_bal_txt(FSM_RUN)} · arm_sdk · {FSM_LOCK} 에서"),
-        (FSM_SIT, "ok", FSM_NAME[FSM_SIT], f"{_bal_txt(FSM_SIT)} · 서 있을 때"),
     ]
 
 
 def _render_html(h):
     """HTML 의 @@...@@ 자리에 robot.yaml fsm 값으로 만든 버튼·문구·JS 상수를 넣는다."""
     btn = {b[0]: _fsm_button(*b) for b in fsm_buttons()}
-    rows = (f'      <div class="row">\n        {btn[FSM_DAMP]}\n        {btn[FSM_LOCK]}\n        {btn[FSM_RUN]}\n      </div>\n'
-            f'      <div class="row">\n        {btn[FSM_SIT]}\n      </div>')
-    js = {"damp": FSM_DAMP, "lock": FSM_LOCK, "run": FSM_RUN, "sit": FSM_SIT,
+    rows = f'      <div class="row">\n        {btn[FSM_DAMP]}\n        {btn[FSM_LOCK]}\n        {btn[FSM_RUN]}\n      </div>'
+    js = {"damp": FSM_DAMP, "lock": FSM_LOCK, "run": FSM_RUN,
           "steps": list(STEPS), "standing": sorted(STANDING),
           "next": {str(FSM_DAMP): FSM_LOCK, str(FSM_LOCK): FSM_RUN},
           "names": {str(k): v for k, v in sorted(FSM_NAME.items())}}

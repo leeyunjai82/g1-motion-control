@@ -19,7 +19,7 @@
   --bg-primary:#0D1117; --bg-secondary:#161B22; --bg-tertiary:#21262D;
   --border-primary:#30363D; --text-primary:#C9D1D9; --text-secondary:#8B949E;
   --accent-primary:#58A6FF; --accent-danger:#F85149; --accent-hand:#F778BA;
-  --accent-waist:#F0A050; --accent-ik:#3FB950; --accent-rot:#D2A8FF;
+  --accent-ik:#3FB950; --accent-rot:#D2A8FF;
   --font-sans:'Noto Sans KR',sans-serif; --font-mono:'Roboto Mono',monospace;
 }
 *,*::before,*::after{box-sizing:border-box}
@@ -59,10 +59,7 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
 
 /* ---- Joint 모드 ---- */
 #arm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:.8rem 2rem}
-#waist-section{margin-top:1rem;padding-top:.8rem;border-top:1px solid var(--border-primary)}
-#WAIST_CONTROLS{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem}
 .joint-group-title{font-size:.95rem;font-weight:500;margin:0 0 .6rem;color:var(--accent-primary)}
-.joint-group-title.waist-title{color:var(--accent-waist)}
 .control-item{margin-bottom:.45rem}
 .label-wrapper{display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:.15rem}
 .label-name{color:var(--text-primary)}
@@ -71,7 +68,6 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
 .input-wrapper input[type=range]{flex:1;min-width:0;accent-color:var(--accent-primary)}
 .input-wrapper input[type=number]{width:4.2rem;background:var(--bg-primary);border:1px solid var(--border-primary);
   color:var(--text-primary);border-radius:.3rem;padding:.2rem .3rem;font-family:var(--font-mono);font-size:.75rem}
-#WAIST_CONTROLS .input-wrapper input[type=range]{accent-color:var(--accent-waist)}
 
 /* ---- IK 모드 ---- */
 #ik-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
@@ -153,10 +149,6 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
       <div id="arm-grid">
         <div><h4 class="joint-group-title">오른쪽 팔</h4><div id="R_ARM_CONTROLS"></div></div>
         <div><h4 class="joint-group-title">왼쪽 팔</h4><div id="L_ARM_CONTROLS"></div></div>
-      </div>
-      <div id="waist-section">
-        <h4 class="joint-group-title waist-title">허리 (Waist)</h4>
-        <div id="WAIST_CONTROLS"></div>
       </div>
     </div>
 
@@ -258,7 +250,7 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
 document.addEventListener('DOMContentLoaded', () => {
   const API_BASE = `http://${location.hostname}:8000`;
   const API = {
-    MOTOR: `${API_BASE}/set_motor`, WAIST: `${API_BASE}/set_waist`,
+    MOTOR: `${API_BASE}/set_motor`,
     IK: `${API_BASE}/set_ik`,
     MOTION: `${API_BASE}/set_motion`, STOP: `${API_BASE}/stop_motion`,
     HOME: `${API_BASE}/go_home`,
@@ -294,21 +286,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('joint-mode-panel').style.display = m === 'joint' ? '' : 'none';
     document.getElementById('ik-mode-panel').style.display = m === 'ik' ? '' : 'none';
     document.getElementById('save-pose-label').textContent =
-      m === 'joint' ? '포함 (팔 + 허리)' : '포함 (XYZ + Rotation)';
+      m === 'joint' ? '포함 (팔)' : '포함 (XYZ + Rotation)';
   }
   document.getElementById('mode-joint').addEventListener('click', () => setMode('joint'));
   document.getElementById('mode-ik').addEventListener('click', () => setMode('ik'));
 
   // ==================== Joint 모드 ====================
   const G1Joint = {
-    WaistYaw: 0, WaistRoll: 1, WaistPitch: 2,
     LeftShoulderPitch: 15, LeftShoulderRoll: 16, LeftShoulderYaw: 17, LeftElbow: 18,
     LeftWristRoll: 19, LeftWristPitch: 20, LeftWristYaw: 21,
     RightShoulderPitch: 22, RightShoulderRoll: 23, RightShoulderYaw: 24, RightElbow: 25,
     RightWristRoll: 26, RightWristPitch: 27, RightWristYaw: 28,
   };
   const JOINT_LIMITS = {
-    0:[-45,45], 1:[-20,20], 2:[-30,30],
     15:[-177,153], 16:[-91,129], 17:[-150,150], 18:[-60,120],
     19:[-113,113], 20:[-92.5,92.5], 21:[-92.5,92.5],
     22:[-177,153], 23:[-129,91], 24:[-150,150], 25:[-60,120],
@@ -318,10 +308,9 @@ document.addEventListener('DOMContentLoaded', () => {
     'R_ARM_CONTROLS': [['Shoulder Pitch',22],['Shoulder Roll',23],['Shoulder Yaw',24],['Elbow',25],
                        ['Wrist Roll',26],['Wrist Pitch',27],['Wrist Yaw',28]],
     'L_ARM_CONTROLS': [['Shoulder Pitch',15],['Shoulder Roll',16],['Shoulder Yaw',17],['Elbow',18],
-                       ['Wrist Roll',19],['Wrist Pitch',20],['Wrist Yaw',21]],
-    'WAIST_CONTROLS': [['Yaw (좌우)',0],['Roll (기울기)',1],['Pitch (숙임)',2]]
+                       ['Wrist Roll',19],['Wrist Pitch',20],['Wrist Yaw',21]]
   };
-  const WAIST_INDICES = new Set([0,1,2]);
+  const WAIST_INDICES = new Set([0,1,2]);   // 예전 모션 파일의 허리 값 표시용 (재생 때 무시)
   let originalLimits = JSON.parse(JSON.stringify(JOINT_LIMITS));
   let currentLimits = { ...JOINT_LIMITS };
 
@@ -516,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (t === 'joint') {
       const hasWaist = f.pose.targets.some(x => WAIST_INDICES.has(x.motor_index) && x.target_degree !== 0);
       const hasArm = f.pose.targets.some(x => x.motor_index >= 15);
-      parts.push([hasArm && '팔', hasWaist && '허리'].filter(Boolean).join('+') || '자세');
+      parts.push([hasArm && '팔', hasWaist && '허리(무시)'].filter(Boolean).join('+') || '자세');
     }
     if (f.locomotion) parts.push('⚠ 걷기 프레임 — 재생 시 건너뜀 (보행 없음)');
     if (f.hand_motion) parts.push(`${f.hand_motion.hand}:${f.hand_motion.motion}`);

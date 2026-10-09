@@ -19,7 +19,7 @@ UI:
 
 엔드포인트 = 두 편집기의 합집합:
   공통: /hand_motions /set_hand /set_motion /stop_motion /go_home
-  관절: /set_motor /set_waist /set_all_motors /joint_info
+  관절: /set_motor /set_all_motors /joint_info   (팔 15–28 만 — H2 허리는 703 에서 arm_sdk 로 안 움직여 편집 안 함)
   IK  : /set_ik /ik_position
   확인: /check (joint_check — 모터 번호 확인)
   /set_motion 은 프레임에 pose(관절)와 left_xyz/right_xyz(IK)가 섞여 있어도
@@ -81,12 +81,6 @@ class MotorCommand(BaseModel):
 
 class AllMotorsCommand(BaseModel):
     target_degrees: List[float]     # 14개 (팔만)
-    duration: float = 1.0
-
-class WaistCommand(BaseModel):
-    yaw: float = 0.0
-    roll: float = 0.0
-    pitch: float = 0.0
     duration: float = 1.0
 
 class HandCommand(BaseModel):
@@ -275,18 +269,13 @@ async def get_joint_info():
 
 @app.post("/set_motor")
 async def set_motor(command: MotorCommand):
-    """단일 모터 (허리 0~2 / 팔 15~28). 현재 타겟 기준 한 축만 변경."""
+    """단일 팔 모터 (15~28). 현재 타겟 기준 한 축만 변경. 허리(0~2)는 H2 에서 명령하지 않음."""
     if not arm:
         return {"status": "error", "message": "arm_server 미연결"}
     try:
         loop = asyncio.get_running_loop()
         idx, deg, dur = command.motor_index, command.target_degree, command.duration
-        if 0 <= idx <= 2:
-            waist = np.degrees(arm.arm_ctrl.waist_q_target).tolist()
-            waist[idx] = deg
-            await loop.run_in_executor(None, lambda: arm.move_waist_smooth(
-                yaw=waist[0], roll=waist[1], pitch=waist[2], duration=dur))
-        elif 15 <= idx <= 28:
+        if 15 <= idx <= 28:
             targets = np.degrees(arm.arm_ctrl.q_target).tolist()
             targets[GLOBAL_TO_INTERNAL[idx]] = deg
             await loop.run_in_executor(None, arm.move_joints_smooth, targets, dur)
@@ -295,20 +284,6 @@ async def set_motor(command: MotorCommand):
         return {"status": "success"}
     except Exception as e:
         print(f"[set_motor Error] {e}")
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/set_waist")
-async def set_waist(command: WaistCommand):
-    if not arm:
-        return {"status": "error", "message": "arm_server 미연결"}
-    try:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: arm.move_waist_smooth(
-            yaw=command.yaw, roll=command.roll,
-            pitch=command.pitch, duration=command.duration))
-        return {"status": "success"}
-    except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
@@ -424,25 +399,16 @@ async def set_motion(motion_sequence: List[MotionFrame]):
         # --- 관절 프레임 ---
         elif frame.pose and frame.pose.targets and arm:
             arm_targets = np.degrees(arm.arm_ctrl.q_target).tolist()
-            waist_targets = np.degrees(arm.arm_ctrl.waist_q_target).tolist()
-            has_waist = False
+            waist_vals = [t.target_degree for t in frame.pose.targets if 0 <= t.motor_index <= 2]
+            if any(abs(v) > 0.05 for v in waist_vals):
+                print(f"[모션] 프레임 {i+1}: 허리 값 {waist_vals} 무시 (H2 허리는 명령 안 함)")
             for t in frame.pose.targets:
-                if 0 <= t.motor_index <= 2:
-                    waist_targets[t.motor_index] = t.target_degree
-                    has_waist = True
-                elif 15 <= t.motor_index <= 28:
+                if 15 <= t.motor_index <= 28:
                     arm_targets[GLOBAL_TO_INTERNAL[t.motor_index]] = t.target_degree
                 elif 3 <= t.motor_index <= 16:
                     # 구버전 호환 (내부 인덱스로 저장된 모션 파일)
                     arm_targets[t.motor_index] = t.target_degree
-            tasks = [loop.run_in_executor(None, arm.move_joints_smooth,
-                                          arm_targets, frame.duration)]
-            if has_waist:
-                tasks.append(loop.run_in_executor(
-                    None, lambda: arm.move_waist_smooth(
-                        yaw=waist_targets[0], roll=waist_targets[1],
-                        pitch=waist_targets[2], duration=frame.duration)))
-            await asyncio.gather(*tasks)
+            await loop.run_in_executor(None, arm.move_joints_smooth, arm_targets, frame.duration)
             did_arm = True
 
         if not did_arm:
@@ -477,7 +443,7 @@ async def i18n_js():
 
 
 def _joint_limits_js():
-    """에디터 슬라이더 한계 = H2 URDF [deg] — 팔은 모터 슬롯 번호(15–28), 허리는 0 yaw / 1 roll / 2 pitch.
+    """에디터 슬라이더 한계 = H2 URDF [deg] — 팔 모터 슬롯 번호(15–28).
     simulator.html 의 JOINT_LIMITS(예전 G1 값)를 페이지를 내보낼 때 이것으로 바꾼다. 못 읽으면 None (html 값 그대로)."""
     try:
         import json
@@ -489,8 +455,7 @@ def _joint_limits_js():
         def lim(slot):
             q = m.joints[m.getJointId(name_of[int(slot)])].idx_q
             return [round(float(np.degrees(m.lowerPositionLimit[q])), 1), round(float(np.degrees(m.upperPositionLimit[q])), 1)]
-        out = {i: lim(slot) for i, slot in enumerate(robot_env.JOINTS["waist"])}        # 0 yaw, 1 roll, 2 pitch
-        out.update({int(slot): lim(slot) for slot in robot_env.JOINTS["arm"]})
+        out = {int(slot): lim(slot) for slot in robot_env.JOINTS["arm"]}
         return "const JOINT_LIMITS = " + json.dumps(out) + ";", _re
     except Exception as e:      # noqa: BLE001
         print(f"[simulator] ⚠️ URDF 관절 한계 못 읽음 — html 기본값 사용: {e}")

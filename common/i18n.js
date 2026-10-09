@@ -155,7 +155,7 @@
     '손 선택': 'Hand',
     '현재 자세 저장': 'Save current pose',
     '포함 (현재 모드 기준)': 'Include (current mode)',
-    '포함 (팔 + 허리)': 'Include (arm + waist)',
+    '포함 (팔)': 'Include (arm)',
     '포함 (XYZ + Rotation)': 'Include (XYZ + Rotation)',
     '안전 모드 (Joint)': 'Safe mode (Joint)',
     'x0.5 제한': 'x0.5 limit',
