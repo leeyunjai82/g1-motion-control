@@ -88,6 +88,7 @@ for jid in range(1, RED.njoints):
 state = {"q": np.zeros(N), "t": 0.0}
 # 기본 = 시연 조건: 테이블 100 cm · 박스 15 cm (윗면 pelvis + 0.14), 거치대 v3 실측 64.9° 에서 윗면 전체가 보이는 x (26–41 cm)
 box = {"present": True, "x": 0.36, "y": 0.0, "top": 0.14, "W": 0.28, "D": 0.20, "H": 0.15}
+OVERLAY = {"seg": bool((robot_env.CFG.get("vision") or {}).get("show_seg", False))}   # detect_box 와 같은 화면 옵션
 lock = threading.Lock()
 
 
@@ -188,7 +189,7 @@ def pose():
 def status():
     v = box_view()
     out = {"found": v["visible"], "frames": 10 if v["visible"] else 0, "n": 10 if v["visible"] else 0,
-           "auto_enabled": False, "auto_in_zone": False, "sim": True}
+           "auto_enabled": False, "auto_in_zone": False, "sim": True, "show_seg": OVERLAY["seg"]}
     if v["visible"]:
         tc = camera_to_torso(v["cam"]["C"])
         out["torso"] = {"x": round(float(tc[0]), 3), "y": round(float(tc[1]), 3), "z": round(float(tc[2]), 3)}
@@ -205,6 +206,12 @@ def reset_window():
     return {"ok": True}
 
 
+def set_overlay(seg: bool = None):
+    if seg is not None:
+        OVERLAY["seg"] = bool(seg)
+    return {"success": True, "show_seg": OVERLAY["seg"]}
+
+
 def render_frame():
     v = box_view()
     img = np.full((IMG_H, IMG_W, 3), 60, np.uint8)
@@ -213,12 +220,20 @@ def render_frame():
     uv = v["uv"]
     if v["box"]["present"] and all(p is not None for p in uv):
         pts = np.array([[int(p[0]), int(p[1])] for p in uv], np.int32)
-        cv2.fillPoly(img, [pts], (60, 120, 170) if v["visible"] else (60, 60, 140))
-        cv2.polylines(img, [pts], True, (255, 255, 255), 2)
+        cv2.fillPoly(img, [pts], (60, 120, 170) if v["visible"] else (60, 60, 140))   # 가상 박스 (실물 화면에 해당)
+        if OVERLAY["seg"]:
+            cv2.polylines(img, [pts], True, (255, 255, 255), 2)
         for p, lab in zip(v["uv_LR"], "LR"):
-            if p is not None:
-                cv2.circle(img, (int(p[0]), int(p[1])), 6, (0, 255, 255), -1)
-                cv2.putText(img, lab, (int(p[0]) + 8, int(p[1]) - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+            if p is None:
+                continue
+            c = (int(p[0]), int(p[1]))
+            if not OVERLAY["seg"]:     # detect_box 처럼 파지점 둘레 흰 번짐 (시뮬은 흔들림 없음)
+                glow = np.zeros_like(img)
+                cv2.circle(glow, c, 14, (255, 255, 255), -1, cv2.LINE_AA)
+                cv2.addWeighted(cv2.GaussianBlur(glow, (0, 0), 7), 0.5, img, 1.0, 0, img)
+            cv2.circle(img, c, 6, (255, 0, 255) if not OVERLAY["seg"] else (0, 255, 255), -1)
+            cv2.putText(img, lab, (c[0] + 8, c[1] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                        (255, 0, 255) if not OVERLAY["seg"] else (0, 255, 255), 2)
     cv2.putText(img, "FOUND" if v["visible"] else "NOT VISIBLE", (10, IMG_H - 14),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 220, 80) if v["visible"] else (80, 80, 255), 2)
     return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
@@ -237,6 +252,7 @@ if not REAL_CAM:   # 가짜 detect_box (가상 카메라)
     app.get("/status")(status)
     app.get("/set_auto_mode")(set_auto_mode)
     app.post("/reset_window")(reset_window)
+    app.get("/set_overlay")(set_overlay)
     app.get("/video_feed")(video_feed)
 
 

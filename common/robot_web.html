@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Version: 2.17
+<!-- Version: 2.18
+  2.18 - Camera View 머리에 SEG 버튼 (detect_box /set_overlay) — 끄면 파지점 L/R + 최근 2 초 인식 분포(흰 점)만, 기본 끔
   2.17 - Wrist RPY 기본 yaw 왼손 −10 · 오른손 +10 (robot.yaml grab.wrist_rpy_deg 손별)
   2.16 - 메인 색 #00b7eb (회사 메인 컬러 — ARC 로고, 사용자 2026-10-09). 메인 색을 더 씀:
          위 막대 아래 선, 카드 제목 왼쪽 막대, Mode 칩. 런처·대시보드도 같은 색
@@ -214,6 +215,8 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   border:1px solid currentColor;margin-left:5px;text-transform:none;vertical-align:middle}
 .dev.cpu{color:#8fb3d9}.dev.gpu{color:#c49bff}.dev.npu{color:#3ddc97}.dev.unk{color:var(--dim)}
 .hd-r{display:flex;align-items:center;gap:6px}
+.segbtn{font:inherit;font-size:9px;letter-spacing:1px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer}
+.segbtn.on{color:var(--accent);border-color:var(--accent)}
 
 /* head vision strip (head_track :50013) — 인식된 것만 한 줄 */
 .vision-b{padding:6px 8px;overflow-x:auto;overflow-y:hidden}
@@ -368,7 +371,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   <!-- ===== CENTER: camera ===== -->
   <div class="col col-center">
     <div class="card grow fill cam">
-      <div class="card-h">Camera View <span class="hd-r"><span id="dev-cam"></span><span class="tag" id="feed-tag">OFF</span></span></div>
+      <div class="card-h">Camera View <span class="hd-r"><span id="dev-cam"></span><button class="segbtn" id="seg-btn" onclick="toggleSeg()" title="seg 표시 (끄면 파지점 + 인식 분포)">SEG</button><span class="tag" id="feed-tag">OFF</span></span></div>
       <div class="card-b">
         <div class="cam-wrap">
           <span class="cam-badge" id="cam-badge" style="display:none">●REC</span>
@@ -633,9 +636,17 @@ function pollCoord(){
     }else{co.textContent='no target';}
     renderAI(d);
     devBadges('dev-cam',d.perf?[['',devName(d.perf.exec,d.perf.device)]]:[]);
+    if('show_seg' in d)setSeg(d.show_seg);
   }).catch(()=>{co.textContent='';renderAI(null);devBadges('dev-cam',[]);});
 }
 setInterval(pollCoord, 400);
+// ---- SEG 표시 (detect_box 화면: 켜면 seg 영역·윗면·꼭짓점, 끄면 파지점 + 최근 2 초 인식 분포) ----
+let segOn=false;
+function setSeg(v){segOn=!!v;document.getElementById('seg-btn').classList.toggle('on',segOn);}
+function toggleSeg(){
+  fetch(`http://${host}:50010/set_overlay?seg=${!segOn}`).then(r=>r.json())
+    .then(d=>{setSeg(d.show_seg);toast(d.show_seg?'SEG 표시 켬':'SEG 끔 — 파지점 + 인식 분포');})
+    .catch(()=>toast('detect server not reachable'));}
 
 // ---- AI 인식 정보 오버레이 (detect_box /status 의 perf) ----
 function renderAI(d){

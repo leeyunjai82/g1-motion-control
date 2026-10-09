@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Version: 0.9
+# Version: 0.10
 # Changes:
+#   0.10 - 화면 seg 표시 옵션 (robot.yaml vision.show_seg, 기본 끔 · GET /set_overlay?seg=). 끄면 파지점 L/R 과
+#          최근 2 초 프레임별 L/R 인식 위치(흰 점·번짐 = 분포)만 — seg 경계가 실제와 어긋나 보여 신뢰가 떨어짐 (사용자 2026-10-09)
 #   0.9 - 비교용 alt 추정(평면 피팅+3D 사각형, box_estimator 3.19) 별도 smoother 로 안정화.
 #         BOX_METHOD=legacy(기본)|plane 으로 /pose·자동잡기에 쓸 방식 선택.
 #         /pose·/status 에 cmp(두 방식 L/R/중심 차이 cm, 실측 기울기) 추가
@@ -99,6 +101,10 @@ SMOOTH_WINDOW_SEC = 2.0
 # 잡기에 쓸 추정 방식: legacy = 기존(고정 기울기 가정) / plane = 윗면 평면 피팅 + 3D 사각형
 #   plane 으로 바꾸면 L/R/높이가 달라지므로 robot_server 의 GRAB_*_OFFSET 재보정 필요
 BOX_METHOD = os.environ.get("BOX_METHOD", "legacy").strip().lower()
+
+# 화면 표시 — seg(인식 영역·윗면·꼭짓점) 를 그릴지. 끄면 파지점 L/R + 최근 SMOOTH_WINDOW_SEC 인식 분포(흰 점)만.
+#   표시 전용 (잡기 값과 무관). 런타임 변경: GET /set_overlay?seg=true|false (제어 화면 Camera View 의 SEG 버튼)
+OVERLAY = {"seg": bool((robot_env.CFG.get("vision") or {}).get("show_seg", False))}
 if BOX_METHOD not in ("legacy", "plane"):
     BOX_METHOD = "legacy"
 STREAM_FPS_MAX = 15
@@ -165,6 +171,36 @@ smoothers = {k: Smoother(SMOOTH_WINDOW_SEC)
 alt_smoothers = {k: Smoother(SMOOTH_WINDOW_SEC)            # 평면 피팅 방식
                  for k in ['top_center','L','R','box_H','tilt']}
 smoother_lock = threading.Lock()
+
+
+def draw_grip_overlay(frame, K):
+    """파지점만: 최근 SMOOTH_WINDOW_SEC 의 프레임별 L/R 인식 위치(흰 점 + 번짐 = 분포) + 중앙값(잡기에 쓰는 점, 마젠타).
+    번짐 반경 = 2.5 × 화면상 흩어짐(RMS, 최소 14 px) — 인식이 흔들리면 넓게 퍼짐."""
+    group = alt_smoothers if BOX_METHOD == "plane" else smoothers
+    with smoother_lock:
+        samples = {k: [v for _, v in group[k].buf] for k in ("L", "R")}
+    fx, fy, cx, cy = float(K[0, 0]), float(K[1, 1]), float(K[0, 2]), float(K[1, 2])
+    glow, dots, marks = np.zeros_like(frame), np.zeros_like(frame), []
+    for k in ("L", "R"):
+        P = np.array([(fx * p[0] / p[2] + cx, fy * p[1] / p[2] + cy) for p in samples[k] if p[2] > 0.05])
+        if not len(P):
+            continue
+        med = np.median(P, axis=0)
+        spread = float(np.sqrt(((P - med) ** 2).sum(1).mean())) if len(P) > 1 else 0.0
+        cv2.circle(glow, (int(med[0]), int(med[1])), int(max(14.0, 2.5 * spread)), (255, 255, 255), -1, cv2.LINE_AA)
+        for q in P:
+            cv2.circle(dots, (int(q[0]), int(q[1])), 2, (255, 255, 255), -1, cv2.LINE_AA)
+        marks.append((k, med))
+    if not marks:
+        return
+    cv2.addWeighted(cv2.GaussianBlur(glow, (0, 0), 7), 0.5, frame, 1.0, 0, frame)    # 흰 번짐 (더하기)
+    cv2.addWeighted(dots, 0.9, frame, 1.0, 0, frame)                                  # 프레임별 위치 (흰 점)
+    for k, med in marks:
+        c = (int(med[0]), int(med[1]))
+        cv2.circle(frame, c, 5, (255, 0, 255), -1, cv2.LINE_AA)
+        cv2.circle(frame, c, 6, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(frame, k, (c[0] + (-16 if k == "L" else 9), c[1] + 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1, cv2.LINE_AA)
 
 
 _miss_count = 0
@@ -376,14 +412,17 @@ def detect_loop():
         t_inf = time.perf_counter()
         result = estimator.detect(color, depth, gravity_cam=GRAVITY_CAM)
         _update_perf(result, (time.perf_counter() - t_inf) * 1000.0)
+        update_smoothers(result)                 # 먼저 — 파지점 분포 표시에 이번 프레임도 들어가게
         annotated = color.copy()
-        if result is not None:
-            draw_box_overlay(annotated, result, camera_K)
+        if OVERLAY["seg"]:
+            if result is not None:
+                draw_box_overlay(annotated, result, camera_K)
+        else:
+            draw_grip_overlay(annotated, camera_K)
         with annotated_lock:
             latest_annotated = annotated
         with result_lock:
             latest_result = result
-        update_smoothers(result)
         time.sleep(1.0/10.0)
 
 
@@ -558,6 +597,7 @@ async def status():
            "auto_in_zone": in_zone_since is not None,
            "auto_elapsed": round(elapsed,2),
            "auto_dwell": auto_mode["dwell_sec"],
+           "show_seg": OVERLAY["seg"],
            "cmp": compare_methods(),
            "perf": {**perf, "active": (time.time() - perf["t"]) < 1.5,
                     "model": os.path.basename(YOLO_MODEL.rstrip("/")), "device": YOLO_DEVICE,
@@ -584,6 +624,13 @@ async def set_auto_mode(enabled: bool=None,
         if v is not None: auto_mode[k]=v
     auto_state["in_zone_since"]=None
     return {"success": True, "config": auto_mode}
+
+
+@app.get("/set_overlay", summary="화면 표시: seg=true 면 seg 영역·윗면·꼭짓점, false 면 파지점 + 인식 분포만 (표시 전용)")
+async def set_overlay(seg: bool = None):
+    if seg is not None:
+        OVERLAY["seg"] = bool(seg)
+    return {"success": True, "show_seg": OVERLAY["seg"]}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -636,6 +683,7 @@ button{background:#FF9800;border:none;color:#000;padding:8px;border-radius:5px;c
       </div>
       <button onclick="applyZone()">영역 적용</button>
       <button onclick="fetch('/reset_window',{method:'POST'})" style="background:#666;color:#fff">버퍼 비우기</button>
+      <label style="display:block;margin-top:8px;font-size:12px"><input type="checkbox" id="seg" onchange="fetch('/set_overlay?seg='+this.checked)" style="width:auto"> seg 표시 (끄면 파지점 + 분포)</label>
       <div class="bar"><div class="bar-fill" id="bar"></div></div>
       <div id="amsg" style="font-size:11px;color:#666;margin-top:6px">대기</div>
     </div>
@@ -650,6 +698,7 @@ function poll(){fetch('/status').then(r=>r.json()).then(d=>{
     document.getElementById('tz').textContent=d.torso.z.toFixed(3);}
   document.getElementById('bh').textContent=d.box_h_cm?d.box_h_cm+' cm':'-';
   document.getElementById('auto').checked=d.auto_enabled;
+  document.getElementById('seg').checked=!!d.show_seg;
   const pct=d.auto_dwell>0?Math.min(100,d.auto_elapsed/d.auto_dwell*100):0;
   document.getElementById('bar').style.width=pct+'%';
   document.getElementById('amsg').textContent=
