@@ -235,7 +235,7 @@ head_track:
   person_after_s: 1.0
   # 로봇 쪽 준비 — start_robot.sh 가 utils/head_cam_on.py 로 매번 (로봇을 다시 켜면 앱 설정이 기본으로 돌아감, 실기 2026-10-09)
   #   stop 끄기 → start 켜기 → PC1 9080 열리면 RGB 수신 IP = 이 PC → start 재시작 (robot_state RPC, 앱의 서비스 on/off 와 같음)
-  #   서비스 이름은 utils/robot_services.py 실측 (2026-10-09, 27 개). 여기 적은 것 말고는 건드리지 않음.
+  #   서비스 이름은 utils/robot_services.py 실측 (2026-10-09, 27 개). 여기 적은 것 말고는 건드리지 않음. 실기 동작 ✓ (2026-10-09)
   #   앱에서 직접 하려면 enabled: false
   robot_setup: {enabled: true, stop: [video_hub], start: stereo_patch_pc1, set_ip: true}   # 키 on/off 는 YAML 에서 true/false 로 읽혀 안 씀
 
