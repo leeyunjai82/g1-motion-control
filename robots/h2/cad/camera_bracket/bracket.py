@@ -5,7 +5,7 @@ H2 D435i 카메라 거치대 (FDM PLA, 3부품) — 등판 M6 4개 → 어깨 �
       가로대는 v1 모양 그대로 각도만 (60° 면 뒤판 아래가 가로대 위로 떠서 뒤판 폭만 작은 받침). 요크 2개 + 가로대 다시 출력
 
   pip install cadquery          # 2.8 에서 확인
-  python bracket.py out         # out/ 에 부품별 STL·STEP (출력 방향 / 로봇 좌표) + 조립 STEP
+  python bracket.py out         # out/ 에 부품별 STL·STEP (출력 방향 / 로봇 좌표) + 조립 STEP + 출력 3부품 한 STEP
 
 좌표: torso_link [mm] (x 앞, y 왼쪽, z 위, 원점 = 허리 관절, 허리 0).
 로봇 쪽 값: Unitree H2 STEP 'H2_简化模型_260601' 을 URDF torso_link 메시에 정합 (중앙 오차 1.2 mm) + 등판 도면
@@ -257,6 +257,13 @@ if __name__ == "__main__":
         print(f"출력 {name:12s} {bb.xlen:5.0f} × {bb.ylen:5.0f} × 높이 {bb.zlen:4.0f} mm")
         cq.exporters.export(part, f"{OUT}/{name}_print.stl", tolerance=0.05, angularTolerance=0.1)
         cq.exporters.export(part, f"{OUT}/{name}_print.step")
+    # 출력 3부품을 한 STEP 으로 (출력 방향 그대로, x 로 10 mm 간격 나란히 — 슬라이서에서 배치만 다시)
+    lay, x = cq.Assembly(name="h2_cam_bracket_print"), 0.0
+    for name, part in prints.items():
+        bb = part.val().BoundingBox()
+        lay.add(part.translate((x - bb.xmin, 0, 0)), name=name)
+        x += bb.xlen + 10.0
+    lay.export(f"{OUT}/h2_cam_bracket_print_all.step")
     # 한 파일 통합: 부품 3 + 카메라 더미 + 볼트·너트·와셔 (torso_link 좌표, mm)
     asm = cq.Assembly(name="h2_cam_bracket")
     asm.add(YL, name="yoke_L", color=cq.Color(0.9, 0.35, 0.2)).add(YR, name="yoke_R", color=cq.Color(0.9, 0.35, 0.2))
