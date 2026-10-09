@@ -126,10 +126,10 @@ def click_depth(x, y, layout, rgb, dep, scale):
         if x0 <= x < x0 + pw:
             u, v = int((x - x0) * sx), int(y * sy)
             if dep is None or (name == "rgb" and rgb[0].shape[:2] != dep[0].shape):
-                return {"panel": name, "u": u, "v": v, "error": "RGB 와 깊이 크기가 달라 깊이 픽셀 대응 없음"}
+                return {"panel": name, "u": u, "v": v, "error": "RGB and depth sizes differ, no depth pixel mapping"}
             raw = depth_at(dep[0], u, v)
             return {"panel": name, "u": u, "v": v, "raw": raw, "m": round(raw * scale, 4) if raw else None}
-    return {"error": "영상 밖"}
+    return {"error": "outside image"}
 
 
 def save_pair(out, idx, rgb, dep, scale):
@@ -146,39 +146,39 @@ def save_pair(out, idx, rgb, dep, scale):
         meta["rgb_minus_depth_ms"] = round((rgb[1] - dep[3]) * 1000, 1)
     with open(f"{out}/meta.jsonl", "a") as f:
         f.write(json.dumps(meta) + "\n")
-    msg = f"[저장] {out} #{idx:04d}" + (f"  RGB−깊이 받은 시각 차 {meta['rgb_minus_depth_ms']} ms" if "rgb_minus_depth_ms" in meta else "")
+    msg = f"[save] {out} #{idx:04d}" + (f"  RGB−depth receive time diff {meta['rgb_minus_depth_ms']} ms" if "rgb_minus_depth_ms" in meta else "")
     print(msg)
     return msg
 
 
 def report(rgb_rx, dep_rx, sec, scale):
-    print(f"\n=== {sec:.0f} 초 결과 ===")
+    print(f"\n=== results after {sec:.0f} s ===")
     if rgb_rx is not None:
         if rgb_rx.count:
             w, h = rgb_rx.size
-            print(f"  RGB  (UDP {rgb_rx.port}) {w}×{h}, caps {rgb_rx.caps_fps} fps, 받은 {rgb_rx.count / sec:.1f} fps")
+            print(f"  RGB  (UDP {rgb_rx.port}) {w}×{h}, caps {rgb_rx.caps_fps} fps, received {rgb_rx.count / sec:.1f} fps")
         else:
-            print(f"  RGB  (UDP {rgb_rx.port}) ❌ 수신 없음 — {rgb_rx.err}")
+            print(f"  RGB  (UDP {rgb_rx.port}) ❌ nothing received — {rgb_rx.err}")
     if dep_rx is not None:
         f = dep_rx.latest()
         if f is not None:
             d, seq, ts, tr = f
             ok, c, lo, hi = depth_stats(d)
-            print(f"  깊이 (TCP {dep_rx.host}:{dep_rx.port}) {d.shape[1]}×{d.shape[0]}, 받은 {dep_rx.count / sec:.1f} fps, "
-                  f"seq 끊김 {dep_rx.seq_gaps}회, 마지막 seq {seq}")
-            print(f"        유효 {ok:.0f} %, 가운데 21×21 raw {c} = {c * scale:.3f} m, 유효 1–99 % raw {lo:.0f}–{hi:.0f} "
-                  f"= {lo * scale:.3f}–{hi * scale:.3f} m  (scale {scale} m/단위)")
-            print(f"        (참고) 받은 시각 − 보낸 시각 {(tr - ts / 1e6) * 1000:+.0f} ms — 로봇·PC 시계가 맞아야 의미 있음")
+            print(f"  depth (TCP {dep_rx.host}:{dep_rx.port}) {d.shape[1]}×{d.shape[0]}, received {dep_rx.count / sec:.1f} fps, "
+                  f"seq gaps {dep_rx.seq_gaps}, last seq {seq}")
+            print(f"        valid {ok:.0f} %, center 21×21 raw {c} = {c * scale:.3f} m, valid 1–99 % raw {lo:.0f}–{hi:.0f} "
+                  f"= {lo * scale:.3f}–{hi * scale:.3f} m  (scale {scale} m/unit)")
+            print(f"        (note) receive time − send time {(tr - ts / 1e6) * 1000:+.0f} ms — only meaningful if robot and PC clocks are synced")
         else:
-            print(f"  깊이 (TCP {dep_rx.host}:{dep_rx.port}) ❌ 수신 없음 — {dep_rx.err}")
+            print(f"  depth (TCP {dep_rx.host}:{dep_rx.port}) ❌ nothing received — {dep_rx.err}")
 
 
-PAGE = """<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>H2 머리 카메라</title><style>body{font-family:sans-serif;margin:10px;background:#111;color:#eee}
+PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>H2 head camera</title><style>body{font-family:sans-serif;margin:10px;background:#111;color:#eee}
 img{max-width:100%;cursor:crosshair;border:1px solid #444}button{font-size:15px;margin:4px;padding:5px 12px}
 pre{background:#222;padding:8px;white-space:pre-wrap;max-height:40vh;overflow:auto}</style></head><body>
-<h3>H2 머리 카메라 — RGB | 깊이 | 겹쳐 보기 (클릭 = 그 점 깊이)</h3>
-<img id="v" src="/video"><div><button onclick="sv()">저장</button> <span id="st"></span></div><pre id="log"></pre>
+<h3>H2 head camera — RGB | depth | overlay (click = depth at that point)</h3>
+<img id="v" src="/video"><div><button onclick="sv()">Save</button> <span id="st"></span></div><pre id="log"></pre>
 <script>
 const v=document.getElementById('v'),log=document.getElementById('log');
 function add(t){log.textContent=t+'\\n'+log.textContent}
@@ -243,7 +243,7 @@ def run_web(port, rgb_rx, dep_rx, a, scale, rng_m, t0):
                     layout, rgb, dep = st["layout"], st["rgb"], st["dep"]
                 r = click_depth(int(q.get("x", [0])[0]), int(q.get("y", [0])[0]), layout, rgb, dep, scale)
                 if "raw" in r:
-                    print(f"[클릭] {r['panel']} ({r['u']}, {r['v']}) raw {r['raw']} → {r['m']} m (scale {scale})")
+                    print(f"[click] {r['panel']} ({r['u']}, {r['v']}) raw {r['raw']} → {r['m']} m (scale {scale})")
                 self._json(r)
             elif u.path == "/save":
                 with lock:
@@ -256,7 +256,7 @@ def run_web(port, rgb_rx, dep_rx, a, scale, rng_m, t0):
                 if rgb_rx:
                     s.append(f"RGB {rgb_rx.count / (now - t0):.1f} fps" + (f" ({rgb_rx.err})" if rgb_rx.err else ""))
                 if dep_rx:
-                    s.append(f"깊이 {dep_rx.count / (now - t0):.1f} fps" + (f" ({dep_rx.err})" if dep_rx.err else ""))
+                    s.append(f"depth {dep_rx.count / (now - t0):.1f} fps" + (f" ({dep_rx.err})" if dep_rx.err else ""))
                 self._json({"text": " | ".join(s)})
             else:
                 self.send_error(404)
@@ -264,7 +264,7 @@ def run_web(port, rgb_rx, dep_rx, a, scale, rng_m, t0):
     threading.Thread(target=producer, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", port), H)
     srv.daemon_threads = True
-    print(f"[head_cam] 웹 보기 (Ctrl+C 종료):\n    {web_urls(port, a.host)}")
+    print(f"[head_cam] web view (Ctrl+C to quit):\n    {web_urls(port, a.host)}")
     srv.serve_forever()
 
 
@@ -286,7 +286,7 @@ def run_gui(rgb_rx, dep_rx, a, scale, rng_m, t0):
                 cv2.imshow(WIN, img)
             if "xy" in click:
                 r = click_depth(*click.pop("xy"), state["layout"], rgb, dep, scale)
-                print(f"[클릭] {r}" if "raw" not in r else f"[클릭] {r['panel']} ({r['u']}, {r['v']}) raw {r['raw']} → {r['m']} m")
+                print(f"[click] {r}" if "raw" not in r else f"[click] {r['panel']} ({r['u']}, {r['v']}) raw {r['raw']} → {r['m']} m")
             now = time.time()
             if a.save and a.save_every > 0 and now - t_save >= a.save_every and (rgb is not None or dep is not None):
                 save_pair(a.save, idx, rgb, dep, scale); idx += 1; t_save = now
@@ -295,7 +295,7 @@ def run_gui(rgb_rx, dep_rx, a, scale, rng_m, t0):
                 if rgb_rx:
                     s.append(f"RGB {rgb_rx.count / (now - t0):.1f} fps" + (f" ({rgb_rx.err})" if rgb_rx.err else ""))
                 if dep_rx:
-                    s.append(f"깊이 {dep_rx.count / (now - t0):.1f} fps" + (f" ({dep_rx.err})" if dep_rx.err else ""))
+                    s.append(f"depth {dep_rx.count / (now - t0):.1f} fps" + (f" ({dep_rx.err})" if dep_rx.err else ""))
                 print("[head_cam] " + " | ".join(s))
                 last_status = now
             k = cv2.waitKey(30) & 0xFF
@@ -308,25 +308,25 @@ def run_gui(rgb_rx, dep_rx, a, scale, rng_m, t0):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="H2 머리 쌍안 카메라 RGB + 깊이 수신 확인")
-    ap.add_argument("--host", default=PC1, help="PC1 IP (깊이 서버·수신 IP 설정 서버)")
+    ap = argparse.ArgumentParser(description="Check H2 head stereo camera RGB + depth reception")
+    ap.add_argument("--host", default=PC1, help="PC1 IP (depth server / receive-IP setting server)")
     ap.add_argument("--depth-port", type=int, default=5000)
     ap.add_argument("--rgb", choices=("left", "right", "raw", "none"), default="left")
-    ap.add_argument("--rgb-port", type=int, default=None, help="RTP 포트 직접 지정 (기본 left 5004 / right 5006 / raw 5002)")
+    ap.add_argument("--rgb-port", type=int, default=None, help="RTP port override (default left 5004 / right 5006 / raw 5002)")
     ap.add_argument("--no-depth", action="store_true")
-    ap.add_argument("--sec", type=float, default=0.0, help="이 시간 받은 뒤 통계만 출력 (0 = 창/웹 보기)")
-    ap.add_argument("--web", type=int, default=None, help="웹 보기 포트 (화면이 없으면 자동으로 50014)")
-    ap.add_argument("--save", default="", help="저장 폴더 (RGB png, 깊이 npy uint16 raw + png, meta.jsonl)")
-    ap.add_argument("--save-every", type=float, default=1.0, help="자동 저장 간격 [s] (0 = 저장 버튼/s 키로만)")
-    ap.add_argument("--depth-scale", type=float, default=0.001, help="깊이 1 단위 = 몇 m (문서: mm → 0.001, 확인 필요)")
-    ap.add_argument("--range", default="auto", help="깊이 색 범위 'lo,hi' [m] 또는 auto (유효 값 1–99 %%)")
-    ap.add_argument("--probe-sec", type=float, default=6.0, help="RGB 스트림 기다리는 시간 [s]")
-    ap.add_argument("--set-ip", action="store_true", help="RGB 수신 IP 를 이 PC 로 설정하고 끝 (그다음 앱에서 서비스 재시작)")
+    ap.add_argument("--sec", type=float, default=0.0, help="receive for this long, then print stats only (0 = window/web view)")
+    ap.add_argument("--web", type=int, default=None, help="web view port (50014 automatically if no display)")
+    ap.add_argument("--save", default="", help="save folder (RGB png, depth npy uint16 raw + png, meta.jsonl)")
+    ap.add_argument("--save-every", type=float, default=1.0, help="auto-save interval [s] (0 = only via Save button / s key)")
+    ap.add_argument("--depth-scale", type=float, default=0.001, help="meters per depth unit (docs: mm → 0.001, unverified)")
+    ap.add_argument("--range", default="auto", help="depth color range 'lo,hi' [m] or auto (valid values 1–99 %%)")
+    ap.add_argument("--probe-sec", type=float, default=6.0, help="time to wait for the RGB stream [s]")
+    ap.add_argument("--set-ip", action="store_true", help="set RGB receive IP to this PC and exit (then restart the service in the app)")
     a = ap.parse_args()
     scale = a.depth_scale
     rng_m = None if a.range == "auto" else tuple(float(v) for v in a.range.split(","))
     me = my_ip(a.host)
-    print(f"[head_cam] 이 PC IP {me} (PC1 {a.host} 방향) — RGB 는 로봇에 설정된 수신 IP 로만 옴 (기본 192.168.123.170)")
+    print(f"[head_cam] this PC IP {me} (route to PC1 {a.host}) — RGB is sent only to the receive IP set on the robot (default 192.168.123.170)")
 
     if a.set_ip:
         url = f"http://{a.host}:9080/set?ip={me}"
@@ -334,9 +334,9 @@ def main():
             with urllib.request.urlopen(url, timeout=5) as r:
                 body = r.read(300).decode(errors="replace")
             print(f"[head_cam] {url} → HTTP {r.status} {body.strip()[:200]}")
-            print("[head_cam] 앱에서 'Stereo patch PC1' 서비스를 껐다 켜야 적용됩니다 (공식 문서).")
+            print("[head_cam] Turn the 'Stereo patch PC1' service off and on in the app to apply (per official docs).")
         except OSError as e:
-            print(f"[head_cam] ❌ {url} 실패: {e} — 앱에서 서비스가 켜져 있는지 확인")
+            print(f"[head_cam] ❌ {url} failed: {e} — check that the service is on in the app")
         return
 
     # 화면 없는데 OpenCV(Qt) 창을 열면 프로세스가 강제 종료됨 → 미리 판단해서 웹으로
@@ -351,17 +351,17 @@ def main():
     rgb_rx = None
     if a.rgb != "none":
         if shutil.which("gst-launch-1.0") is None:
-            print("[head_cam] ❌ gst-launch-1.0 없음 → sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good "
-                  "gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav  (RGB 없이 깊이만 진행)")
+            print("[head_cam] ❌ gst-launch-1.0 not found → sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good "
+                  "gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav  (continuing with depth only, no RGB)")
         else:
             rgb_rx = RgbRx(a.rgb_port or RGB_PORTS[a.rgb])
-            print(f"[head_cam] RGB UDP {rgb_rx.port} 기다리는 중 ({a.probe_sec:.0f} 초)...")
+            print(f"[head_cam] waiting for RGB UDP {rgb_rx.port} ({a.probe_sec:.0f} s)...")
             if rgb_rx.probe(a.probe_sec):
                 print(f"[head_cam] RGB {rgb_rx.size[0]}×{rgb_rx.size[1]}, caps {rgb_rx.caps_fps} fps")
                 rgb_rx.start()
             else:
-                print(f"[head_cam] ❌ RGB UDP {rgb_rx.port} 수신 없음 — 확인: 앱 video_hub 끔 · Stereo patch PC1 켬 · "
-                      f"수신 IP = {me} (--set-ip 후 서비스 재시작) · ufw. 깊이만 진행")
+                print(f"[head_cam] ❌ RGB UDP {rgb_rx.port} nothing received — check: video_hub off in app · Stereo patch PC1 on · "
+                      f"receive IP = {me} (--set-ip, then restart the service) · ufw. Continuing with depth only")
                 rgb_rx = None
     if rgb_rx is None and dep_rx is None:
         return

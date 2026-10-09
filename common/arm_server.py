@@ -289,7 +289,7 @@ async def head_get():
 
 @app.post("/head")
 async def head(req: HeadReq):
-    """머리 목표 (deg). robot.yaml joints.head_range_deg 로 잘림, 블로킹 없음 — 머리 추종(head_track)이 10 Hz 로 보냄."""
+    """머리 목표 (deg). robot.yaml joints.head_range_deg 로 잘림, 블로킹 없음 (703 에서는 머리가 안 움직임 — FACTS.md)."""
     if not arm or not arm.arm_ctrl:
         raise HTTPException(503, "Arm 미초기화")
     q = arm.arm_ctrl.ctrl_head(np.radians([req.pitch, req.yaw]))

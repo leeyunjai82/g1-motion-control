@@ -32,7 +32,7 @@ rs_stream      :50001   RealSense 카메라 (단독 점유) → MJPEG / depth AP
 detect_marker  :50011   ArUco 마커 자세 (rs_stream 사용)
 detect_box     :50010   박스 인식, 파지점 (rs_stream 사용)
 arm_server     :50022   rt/arm_sdk 단독 점유 — 팔/허리/머리(H2), IK, hold/release
-head_track     :50013   (H2, 선택) 머리 카메라 얼굴·사람 추종 → arm_server /head
+head_track     :50013   (H2) 머리 카메라 인식 — 왼눈 얼굴·사람, 오른눈 사물 (보기 전용)
 robot_server   :50000   오케스트레이터 — 잡기 시퀀스, 마커 추종, 웹 UI
 dashboard      :50003   3D URDF 뷰어 / 관절 상태 (rt/lowstate 읽기 전용)
 simulator      :8000    모션 에디터 (Joint + IK), arm_server 경유
@@ -41,9 +41,9 @@ launcher       :80      FSM 버튼 + start_robot.sh 실행 웹
 
 규칙:
 - **팔/허리/머리**: 모든 프로세스는 `arm_server` 를 거칩니다 (`rt/arm_sdk` 는 publisher 하나만 허용).
-- **H2 머리 추종** (`common/head_track.py`): 머리 카메라 왼눈 영상 → OpenVINO 얼굴(`face-detection-retail-0004`) / 사람(`person-detection-0201`) →
-  가장 큰 얼굴을 화면 가운데로 (`arm_server` `POST /head`). 준비·설정은 파일 머리말과 `robots/h2/robot.yaml head_track`.
-  `ROBOT=h2 python common/head_track.py` (보기만) / `--drive` (머리 명령) → `http://<pc-ip>:50013/`
+- **H2 머리 카메라 인식** (`common/head_track.py`, 보기 전용): 왼눈 → OpenVINO 얼굴(`face-detection-retail-0004`) / 사람(`person-detection-0201`), 오른눈 → COCO 사물(YOLO11s). 인식된 것만 잘라 제어 화면 Head Vision 카드에 한 줄로.
+  머리 추종은 뺌 (703 에서 arm_sdk 로 머리가 안 움직임 — `robots/h2/FACTS.md`). 설정은 `robots/h2/robot.yaml head_track`.
+  `ROBOT=h2 python common/head_track.py` → `http://<pc-ip>:50013/`
 - **보행**: `LocoClient` 는 다중 클라이언트 RPC — 직접 써도 되지만 이동 명령은 한 곳에서만 보냅니다.
 
 ## 빠른 시작

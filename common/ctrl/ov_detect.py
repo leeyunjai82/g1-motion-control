@@ -37,7 +37,7 @@ def compile_with_fallback(core, model, device):
         except Exception as e:      # noqa: BLE001 — 장치 없음·지원 안 되는 층 등
             err = e
             why = " ".join(ln.strip() for ln in str(e).splitlines() if ln.strip() and ".cpp:" not in ln)[:200]
-            print(f"[ov_detect] {d} 컴파일 실패 → 다음 장치: {why}")
+            print(f"[ov_detect] {d} compile failed -> next device: {why}")
     raise err
 
 
@@ -45,7 +45,7 @@ class OvSSD:
     def __init__(self, name, device="CPU", conf=0.5):
         xml = name if name.endswith(".xml") else os.path.join(MODEL_DIR, MODELS.get(name, name) + ".xml")
         if not os.path.exists(xml):
-            raise FileNotFoundError(f"모델 없음: {xml}")
+            raise FileNotFoundError(f"model not found: {xml}")
         core = _Core()
         self.compiled, device = compile_with_fallback(core, core.read_model(xml), device)
         self.out = self.compiled.output(0)

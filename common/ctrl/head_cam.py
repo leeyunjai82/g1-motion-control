@@ -9,7 +9,7 @@ head_cam.py — H2 머리 쌍안 카메라 수신 (공식 'Bilateral Data Stream
          (공식 deb unitree-dep-img 1.0.0 의 dep_img_client.c 와 같은 형식)
   로봇: 앱에서 video_hub 끄고 'Stereo patch PC1' 서비스 켬 (기본 자동 시작 아님).
   이 PC: sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
-쓰는 곳: utils/check_head_cam.py (수신 확인), common/head_track.py (얼굴·사람 따라 머리 돌리기)
+쓰는 곳: utils/check_head_cam.py (수신 확인), common/head_track.py (얼굴·사람·사물 인식)
 """
 import re
 import shutil
@@ -64,7 +64,7 @@ def web_urls(port, peer):
     """웹 보기 주소 안내 문자열 (모든 IP + SSH 터널)."""
     ips = all_ips() or [my_ip(peer)]
     lines = [f"http://{ip}:{port}/" for ip in ips]
-    lines.append(f"(SSH 로만 들어올 수 있으면: 내 PC 에서 ssh -L {port}:localhost:{port} <계정>@<이 PC 주소> → http://localhost:{port}/)")
+    lines.append(f"(SSH only: on your PC run ssh -L {port}:localhost:{port} <user>@<this PC> -> http://localhost:{port}/)")
     return "\n    ".join(lines)
 
 
@@ -90,7 +90,7 @@ class DepthRx(threading.Thread):
         self.frame = None            # (uint16 h×w [mm], seq, 보낸 시각 us, 받은 시각 s)
         self.count = 0
         self.seq_gaps = 0
-        self.err = "아직 접속 안 됨"
+        self.err = "not connected yet"
         self.stop = False
 
     @staticmethod
@@ -99,7 +99,7 @@ class DepthRx(threading.Thread):
         while len(buf) < n:
             chunk = sock.recv(n - len(buf))
             if not chunk:
-                raise ConnectionError("서버가 연결을 끊음")
+                raise ConnectionError("server closed the connection")
             buf += chunk
         return bytes(buf)
 
@@ -119,7 +119,7 @@ class DepthRx(threading.Thread):
                             buf = buf[k:] if k >= 0 else buf[-3:]
                             continue
                         if not (0 < w <= 4096 and 0 < h <= 4096) or size != w * h * 2:
-                            raise ValueError(f"헤더 이상: {w}x{h}, data_size {size}")
+                            raise ValueError(f"bad header: {w}x{h}, data_size {size}")
                         data = self._read(sock, size)
                         buf = b""
                         d = np.frombuffer(data, dtype=np.uint16).reshape(h, w)
@@ -150,7 +150,7 @@ class RgbRx(threading.Thread):
         self.size = None             # (w, h)
         self.caps_fps = "?"
         self.count = 0
-        self.err = "아직 수신 없음"
+        self.err = "nothing received yet"
         self.stop = False
         self.proc = None
 
@@ -195,7 +195,7 @@ class RgbRx(threading.Thread):
                     while len(buf) < n:
                         chunk = self.proc.stdout.read(n - len(buf))
                         if not chunk:
-                            raise ConnectionError("gst-launch 종료")
+                            raise ConnectionError("gst-launch exited")
                         buf += chunk
                     img = np.frombuffer(bytes(buf), np.uint8).reshape(h, stride)[:, :w * 3].reshape(h, w, 3)
                     with self.lock:
