@@ -86,7 +86,8 @@ for jid in range(1, RED.njoints):
 
 # ---- 상태 ----
 state = {"q": np.zeros(N), "t": 0.0}
-box = {"present": True, "x": 0.45, "y": 0.0, "top": 0.20, "W": 0.28, "D": 0.20, "H": 0.12}
+# 기본 = 시연 조건: 테이블 100 cm · 박스 15 cm (윗면 pelvis + 0.14), 거치대 v3 실측 64.9° 에서 윗면 전체가 보이는 x (26–41 cm)
+box = {"present": True, "x": 0.36, "y": 0.0, "top": 0.14, "W": 0.28, "D": 0.20, "H": 0.15}
 lock = threading.Lock()
 
 

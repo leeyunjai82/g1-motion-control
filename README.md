@@ -105,7 +105,7 @@ Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위�
 
 ## 카메라
 
-- **D435i (가슴, 박스 인식)**: 등판 거치대 `robots/h2/cad/camera_bracket/` (v3: 숙임 60°). 장착값은 `robot.yaml camera`
+- **D435i (가슴, 박스 인식)**: 등판 거치대 `robots/h2/cad/camera_bracket/` (v3: 숙임 설계 60° · 실측 64.9°). 장착값은 `robot.yaml camera`
   (x, y, z [m, torso_link 기준], pitch_deg). 숙임각 실측: `utils/check_rsimu.py --sec 5`, 위치 확인: `utils/cam_marker_check.py`.
 - **머리 쌍안 카메라**: `utils/check_head_cam.py` (수신 확인·깊이 클릭), 인식은 `common/head_track.py` (`robot.yaml head_track`).
   로봇을 다시 켜면 앱 설정이 기본(video_hub 켜짐 · Stereo patch 꺼짐)으로 돌아감 → `start_robot.sh` 가 `utils/head_cam_on.py` 로 매번 자동 준비
