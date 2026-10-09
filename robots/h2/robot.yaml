@@ -207,6 +207,7 @@ fsm:                          # unitree_sdk2py h2_loco_client.py + h2-motion-con
 vision:
   box_device: intel:gpu       # detect_box OpenVINO (ultralytics: intel:cpu / intel:gpu / intel:npu). 없는 장치면 ultralytics 가 AUTO 로
 
+# ⚠️ 실기 2026-10-09: 703 에서 rt/arm_sdk 로 머리 29/30 이 안 움직임 (토크 0, FACTS.md) → --drive 해도 머리 안 돎, 보기(얼굴 박스)만 동작
 # 머리 추종 (common/head_track.py :50013) — 머리 카메라 왼눈 영상에서 가장 큰 얼굴(없으면 사람)을 화면 가운데로
 head_track:
   port: 50013

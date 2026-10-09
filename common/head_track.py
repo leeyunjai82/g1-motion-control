@@ -6,6 +6,8 @@ head_track.py — H2 머리 추종 서버 (포트 50013): 머리 카메라 왼�
   ROBOT=h2 python common/head_track.py --drive    # 머리 명령 준비 — 웹 '추종 켜기' 를 눌러야 움직임 (arm_server :50022 필요)
   ROBOT=h2 python common/head_track.py --drive --track-on   # 시작하자마자 추종
 
+  ⚠️ 실기 2026-10-09: H2 703 에서 rt/arm_sdk 머리 29/30 명령이 반영 안 됨 (토크 0, robots/h2/FACTS.md) — 펌웨어가 머리를
+     arm_sdk 에 넘겨줄 때까지 --drive 는 효과 없음. 보기(얼굴·사람 박스 스트리밍)는 그대로 동작
   준비: 앱에서 video_hub 끔 + 'Stereo patch PC1' 켬, RGB 수신 IP = 이 PC
         (python utils/check_head_cam.py --set-ip → 앱에서 서비스 재시작). gstreamer 설치는 common/ctrl/head_cam.py 참고
   검출: OpenVINO Open Model Zoo face-detection-retail-0004 (300×300) / person-detection-0201 (384×384)
