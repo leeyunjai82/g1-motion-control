@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<!-- Version: 2.14
+<!-- Version: 2.15
+  2.15 - 메인 색 = pitron 스티커 'pi' 파랑 #408fd4 (사진에서 뽑은 근사값 — 원본 색 코드 확인 필요).
+         상태 OK(연결·칩·System·잡기 완료)는 초록 --ok 로 따로. 선택된 버튼은 파랑 틴트, Grab Now 는 파랑 채움
   2.14 - Wrist RPY 기본 전부 0 (robot.yaml grab.wrist_rpy_deg)
   2.13 - 이름 pitron (제목 'pitron manipulation', 로고 pitron·manipulation)
   2.12 - Control 카드 = Stop 만 (Home 은 Stop 과 같은 동작, Hold/Release 는 arm_server 가 기동 때 hold · 종료 때 반납,
@@ -48,7 +50,11 @@
 <style>
 :root{
   --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a3340;
-  --ink:#c9d4e0; --dim:#6b7785; --accent:#3ddc97; --accent2:#4aa8ff;
+  --ink:#c9d4e0; --dim:#6b7785;
+  --accent:#408fd4;      /* 메인 = pitron 'pi' 파랑 (스티커 사진 근사, 원본 색 코드 확인 필요) */
+  --accent2:#8ec5f0;     /* 링크·입력 포커스 (메인보다 밝게) */
+  --accent-tint:rgba(64,143,212,.20); --accent-deep:#1d3f5e;
+  --ok:#3ddc97;          /* 상태 OK (연결·칩·System·잡기 완료) — 메인 색과 따로 */
   --warn:#ff6b6b; --amber:#ffb454;
   --r:10px;
 }
@@ -63,7 +69,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .logo{font-weight:700;letter-spacing:.5px;font-size:15px;color:var(--accent)}
 .logo b{color:var(--ink)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);box-shadow:0 0 0 0 transparent}
-.dot.live{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.dot.live{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .topbar .right{margin-left:auto;display:flex;gap:14px;align-items:center;font-size:11px;color:var(--dim)}
 .topbar a{color:var(--accent2);text-decoration:none}
 .topbar a:hover{text-decoration:underline}
@@ -94,7 +100,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   border:1px solid var(--line);background:var(--panel2);color:var(--dim);white-space:nowrap}
 .chip b{color:var(--ink);font-weight:700}
 .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.chip.ok{color:var(--accent);border-color:#1f5a43}
+.chip.ok{color:var(--ok);border-color:#1f5a43}
 .chip.info{color:var(--accent2);border-color:#1f4a73}
 .chip.busy{color:var(--amber);border-color:#6a4a1f}
 .chip.err{color:var(--warn);border-color:#5a2b2b}
@@ -106,7 +112,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .sys .sr{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line);font-size:12px}
 .sys .sr:last-of-type{border-bottom:0}
 .sys .sr::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none}
-.sys .sr.ok::before{background:var(--accent)}.sys .sr.warn::before{background:var(--amber)}
+.sys .sr.ok::before{background:var(--ok)}.sys .sr.warn::before{background:var(--amber)}
 .sys .sr.err::before{background:var(--warn);box-shadow:0 0 6px var(--warn)}
 .sys .sr .n{color:var(--ink)}.sys .sr .p{color:var(--dim);font-size:10px}
 .sys .sr .v{margin-left:auto;color:var(--dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
@@ -124,7 +130,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .sw .tr{width:34px;height:18px;border-radius:9px;background:var(--line);position:relative;transition:.15s;flex:none}
 .sw .tr::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
   background:var(--dim);transition:.15s}
-.sw input:checked+.tr{background:#1f5a43}
+.sw input:checked+.tr{background:var(--accent-deep)}
 .sw input:checked+.tr::after{left:18px;background:var(--accent)}
 
 /* camera */
@@ -144,7 +150,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .timing{margin-top:8px;flex:none;font-size:11px;color:var(--dim);display:none}
 .timing .hd{display:flex;gap:10px;align-items:baseline;margin-bottom:4px}
 .timing .hd b{color:var(--ink);font-size:13px}
-.timing .hd .ok{color:var(--accent)}.timing .hd .ng{color:var(--warn)}
+.timing .hd .ok{color:var(--ok)}.timing .hd .ng{color:var(--warn)}
 .timing .hd .rec{margin-left:auto}
 .timing .bar{display:flex;height:12px;border-radius:4px;overflow:hidden;background:var(--panel2)}
 .timing .bar i{display:block;height:100%;border-right:1px solid var(--bg)}
@@ -157,7 +163,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .stages{display:flex;gap:3px;margin-top:8px;flex:none}
 .stages .sg{flex:1;min-width:0;text-align:center;font-size:10px;padding:5px 1px;letter-spacing:-.3px;border-radius:5px;
   background:var(--panel2);border:1px solid var(--line);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stages .sg.done{color:var(--accent);border-color:#1f5a43;background:#12261d}
+.stages .sg.done{color:var(--ok);border-color:#1f5a43;background:#12261d}
 .stages .sg.cur{color:#05221a;background:var(--amber);border-color:var(--amber);font-weight:700;animation:sgb 1s infinite}
 @keyframes sgb{50%{opacity:.6}}
 .statusline.busy{border-color:var(--amber);color:var(--amber)}
@@ -174,8 +180,9 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .btn:hover{border-color:var(--accent);color:var(--accent)}
 .btn:active{transform:translateY(1px)}
 .btn.full{width:100%}
-.btn.on{background:var(--accent);color:#05221a;border-color:var(--accent);font-weight:700}
-.btn.primary{background:var(--accent2);color:#04121f;border:none;font-weight:700}
+.btn.on{background:var(--accent-tint);color:#d6eafb;border-color:var(--accent);font-weight:700}
+.btn.primary{background:var(--accent);color:#04121f;border:none;font-weight:700}
+.btn.primary:hover{background:#5aa3e0;color:#04121f}
 .btn.warn{border-color:#5a2b2b;color:var(--warn)}
 .btn.warn:hover{border-color:var(--warn)}
 .row{display:flex;gap:6px}.row>*{flex:1}
@@ -196,7 +203,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   border-radius:7px;border:1px solid transparent}
 .mitem:hover{border-color:var(--line)}
 .mitem .nm{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.play{background:var(--accent);color:#05221a;border:none;border-radius:5px;padding:5px 11px;
+.play{background:var(--accent);color:#04121f;border:none;border-radius:5px;padding:5px 11px;
   font-weight:700;cursor:pointer;font-family:inherit}
 
 /* 실행 장치 배지 (카드 머리) — CPU / GPU / NPU */
@@ -566,7 +573,7 @@ function pollSystem(){
     const nErr=sv.filter(s=>s.state==='err').length+(f.state==='err'?1:0);
     const nWarn=warn.length+sv.filter(s=>s.state==='warn').length+(f.state==='warn'?1:0);
     tag.textContent=nErr?'ERR':nWarn?'CHECK':'OK';
-    tag.style.color=nErr?'var(--warn)':nWarn?'var(--amber)':'var(--accent)';
+    tag.style.color=nErr?'var(--warn)':nWarn?'var(--amber)':'var(--ok)';
   }).catch(()=>{tag.textContent='-';tag.style.color='var(--dim)';});
 }
 setInterval(pollSystem,2000);pollSystem();
