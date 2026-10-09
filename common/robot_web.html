@@ -1,5 +1,8 @@
 <!DOCTYPE html>
-<!-- Version: 2.11
+<!-- Version: 2.12
+  2.12 - Control 카드 = Stop 만 (Home 은 Stop 과 같은 동작, Hold/Release 는 arm_server 가 기동 때 hold · 종료 때 반납,
+         상태 줄은 위 Arm 칩과 같음). 좌측 아래 System 카드: 로봇 FSM · 서버 상태 (/system 2초),
+         Box 선택 때 팔이 안 움직일 이유(arm 미연결 · release · FSM)를 알림
   2.11 - 이름 Pion → H2 (제목 'H2 Grab', 로고 H2·grab)
   2.10 - H2 전용: 보행(Locomotion)·마커 추종·마커 모드·좌우 건네기 UI 삭제
   2.9 - Wrist RPY 기본 pitch 30 (robot.yaml grab.wrist_rpy_deg), 페이지를 열면 서버의 지금 손목 값으로 채움
@@ -95,21 +98,18 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .chip.err{color:var(--warn);border-color:#5a2b2b}
 .dot.err{background:var(--warn);box-shadow:0 0 8px var(--warn)}
 
-/* state panel (Control 카드) */
-.sec{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);margin:11px 0 6px;
-  display:flex;align-items:center;gap:8px}
-.sec::after{content:"";flex:1;height:1px;background:var(--line)}
-.sec:first-child{margin-top:0}
-.state{display:flex;align-items:center;gap:10px;margin-top:8px;padding:9px 11px;border-radius:8px;
-  border:1px solid var(--line);background:var(--panel2)}
-.state .big{font-weight:700;font-size:13px;letter-spacing:.5px}
-.state .desc{font-size:11px;color:var(--dim);margin-left:auto;text-align:right}
-.state::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
-.state.ok{border-color:#1f5a43}.state.ok::before{background:var(--accent);box-shadow:0 0 8px var(--accent)}.state.ok .big{color:var(--accent)}
-.state.info{border-color:#1f4a73}.state.info::before{background:var(--accent2);box-shadow:0 0 8px var(--accent2)}.state.info .big{color:var(--accent2)}
-.state.busy{border-color:#6a4a1f}.state.busy::before{background:var(--amber);animation:blink 1s infinite}.state.busy .big{color:var(--amber)}
-.state.err{border-color:#5a2b2b}.state.err::before{background:var(--warn)}.state.err .big{color:var(--warn)}
 @keyframes blink{50%{opacity:.25}}
+/* System 카드 (로봇 FSM · 서버 상태) */
+.sys{overflow:auto}
+.sys .sr{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line);font-size:12px}
+.sys .sr:last-of-type{border-bottom:0}
+.sys .sr::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none}
+.sys .sr.ok::before{background:var(--accent)}.sys .sr.warn::before{background:var(--amber)}
+.sys .sr.err::before{background:var(--warn);box-shadow:0 0 6px var(--warn)}
+.sys .sr .n{color:var(--ink)}.sys .sr .p{color:var(--dim);font-size:10px}
+.sys .sr .v{margin-left:auto;color:var(--dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.sys .sr.warn .v{color:var(--amber)}.sys .sr.err .v{color:var(--warn)}
+.sys .sysw{margin-top:8px;padding:7px 9px;border:1px solid #6a4a1f;border-radius:8px;font-size:11px;color:var(--amber);line-height:1.45}
 
 /* wrist table */
 .wtab{display:grid;grid-template-columns:44px 1fr 1fr;gap:6px;align-items:center}
@@ -230,21 +230,16 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   .ctl .btn{padding:5px 4px;line-height:1.25}
   .in{padding:4px 6px}
   .wtab{gap:4px}
-  .sec{margin:8px 0 5px}
-  .state{padding:6px 10px;margin-top:6px}
   .hint{margin-top:5px}
   .sw{margin-top:7px}
   .topbar{padding:8px 16px}
 }
 @media(max-height:820px){
   .ctl .btn .sub{display:none}
-  .sec{display:none}
   .btn{padding:5px 7px}
   .in{padding:2px 6px}
   .card-h{padding:6px 12px}
   .card-b{padding:9px}
-  .ctl .row+.row,.ctl .state+.row{margin-top:8px}
-  .ctl .row{margin-top:8px}.ctl .sec:first-child+.row{margin-top:0}
 }
 
 /* responsive
@@ -345,22 +340,16 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
       </div>
     </div>
 
-    <div class="card grow stretch">
-      <div class="card-h">Control</div>
+    <div class="card">
+      <div class="card-h">Control <span style="color:var(--dim)">Esc</span></div>
       <div class="card-b ctl">
-        <div class="sec">Motion</div>
-        <div class="row">
-          <button class="btn warn" onclick="stopAll()" title="Esc">⏹ Stop<span class="sub">정지·기본자세</span></button>
-          <button class="btn" onclick="goHome()">⌂ Home<span class="sub">기본자세</span></button>
-        </div>
-
-        <div class="sec">Arm 제어권</div>
-        <div class="row">
-          <button class="btn" id="arm-hold" onclick="armMode('hold')">✋ Hold<span class="sub">잡기/운반</span></button>
-          <button class="btn" id="arm-release" onclick="armMode('release')">🔓 Release<span class="sub" id="arm-release-sub">제어권 반납</span></button>
-        </div>
-        <div class="state" id="arm-state"><span class="big" id="arm-mode-lbl">-</span><span class="desc" id="arm-desc">상태 확인 중</span></div>
+        <button class="btn warn full" onclick="stopAll()" title="Esc">⏹ Stop<span class="sub">정지·기본자세</span></button>
       </div>
+    </div>
+
+    <div class="card grow">
+      <div class="card-h">System <span class="tag" id="sys-tag">-</span></div>
+      <div class="card-b sys" id="sys-list"><div class="hint">확인 중</div></div>
     </div>
   </div>
 
@@ -472,11 +461,12 @@ function devBadges(id,items){
 }
 
 let toastTimer;
-function toast(m){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');
-  clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),1800);}
+function toast(m,ms){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),ms||1800);}
 
 // ---- mode + feed ----
-function setMode(m){fetch('/set_mode?mode='+m,{method:'POST'}).then(r=>r.json()).then(()=>applyMode(m));}
+function setMode(m){fetch('/set_mode?mode='+m,{method:'POST'}).then(r=>r.json()).then(d=>{applyMode(m);
+  if(d.warn&&d.warn.length)toast('⚠️ '+d.warn.join(' · '),6000);});}   // 팔이 안 움직일 이유 (arm 미연결 · release · FSM)
 function applyMode(m){
   // 모드 바뀌면 이전 자동 끄고 체크 초기화
   const chk=document.getElementById('auto-chk');
@@ -548,51 +538,36 @@ async function stopAll(){
   try{await fetch('/stop',{method:'POST'});toast('⏹ Stopped — 기본 자세');}
   catch(e){toast('Error: '+e.message);}
 }
-async function goHome(){
-  try{const r=await fetch('/home?pose=park',{method:'POST'});const d=await r.json();
-    if(!r.ok)throw new Error(d.detail||'failed');
-    toast('⌂ Home — 기본 자세');
-  }catch(e){toast('Error: '+e.message);}
-}
 // ---- 상태 칩 / 상태 패널 공통 ----
 function setChip(id,label,val,cls){const el=document.getElementById(id);
   el.className='chip'+(cls?' '+cls:'');el.innerHTML=`${label} <b>${val}</b>`;}
-function setState(id,cls){document.getElementById(id).className='state'+(cls?' '+cls:'');}
-
-// ---- arm_sdk 제어권 (hold/release) ----
-const ARM_TXT={hold:['HOLD','팔 점유 — 잡기','ok'],
-               release:['RELEASE','로봇 제어기가 팔 사용 (제어권 반납)','info']};
-let armTarget=null, armReady=null;   // 전환 목표(서버는 완료 전까지 이전 모드를 답함) / arm_server 연결
+// ---- arm_sdk 제어권 — 위 Arm 칩만 (arm_server 가 기동 때 hold, 종료 때 반납. 수동: POST /arm_hold · /arm_release) ----
+const ARM_TXT={hold:['HOLD','ok'],release:['RELEASE','info']};
+let armReady=null;   // arm_server 연결 (/status arm_ready)
 function updateArmMode(m,switching){
-  if(switching&&armTarget)m=armTarget;
-  if(!switching)armTarget=null;
-  if(armReady===false){
-    document.getElementById('arm-mode-lbl').textContent='미연결';
-    document.getElementById('arm-desc').textContent='arm_server(50022) 응답 없음';
-    setState('arm-state','err');setChip('chip-arm','Arm','미연결','err');return;}
-  const t=ARM_TXT[m]||['-','상태 확인 불가',''];
-  document.getElementById('arm-mode-lbl').textContent=switching?(t[0]+' 전환 중'):t[0];
-  document.getElementById('arm-desc').textContent=switching?'완료까지 조작 대기':t[1];
-  setState('arm-state',switching?'busy':t[2]);
-  setChip('chip-arm','Arm',switching?t[0]+'…':t[0],switching?'busy':t[2]);
-  document.getElementById('arm-hold').classList.toggle('on',m==='hold');
-  document.getElementById('arm-release').classList.toggle('on',m==='release');}
-async function armMode(m){
-  try{const r=await fetch('/arm_'+m,{method:'POST'});const d=await r.json();
-    if(!r.ok)throw new Error(d.detail||'failed');
-    // 전환 중엔 목표 모드를 표시 (arm_server 는 완료 전까지 이전 모드를 답함)
-    armTarget=m;updateArmMode(m,true);
-    toast(m==='hold'?'✋ Hold — 팔 점유 (전환 중...)':'🔓 Release — 제어권 반납 (전환 중...)');
-    let n=0;
-    const t=setInterval(async()=>{
-      try{const s=await(await fetch('/arm_mode')).json();
-        if(s.switching){updateArmMode(m,true);}
-        else{updateArmMode(s.mode,false);clearInterval(t);
-          toast(s.mode==='hold'?'✋ Hold 완료':'🔓 Release 완료');}
-        if(++n>20)clearInterval(t);
-      }catch(e){if(++n>20)clearInterval(t);}
-    },1000);
-  }catch(e){toast('Error: '+e.message);}}
+  if(armReady===false){setChip('chip-arm','Arm','미연결','err');return;}
+  const t=ARM_TXT[m]||['-',''];
+  setChip('chip-arm','Arm',switching?t[0]+'…':t[0],switching?'busy':t[1]);}
+
+// ---- System 카드: 로봇 FSM · 서버 상태 (/system, 2초) ----
+function escHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function sysRow(st,n,p,v,why){
+  return `<div class="sr ${st||''}" title="${escHtml(why||'')}"><span class="n">${escHtml(n)}</span>`+
+    `<span class="p">${escHtml(p)}</span><span class="v">${escHtml(v||'-')}</span></div>`;}
+function pollSystem(){
+  const tag=document.getElementById('sys-tag');
+  fetch('/system').then(r=>r.json()).then(d=>{
+    const f=d.fsm||{}, sv=d.services||[], warn=d.warn||[];
+    const rows=[sysRow(f.state,'FSM','',f.text,f.why)].concat(sv.map(s=>sysRow(s.state,s.name,':'+s.port,s.text,s.why)));
+    const wbox=warn.length?`<div class="sysw">${warn.map(w=>'⚠️ '+escHtml(w)).join('<br>')}</div>`:'';
+    document.getElementById('sys-list').innerHTML=rows.join('')+wbox;
+    const nErr=sv.filter(s=>s.state==='err').length+(f.state==='err'?1:0);
+    const nWarn=warn.length+sv.filter(s=>s.state==='warn').length+(f.state==='warn'?1:0);
+    tag.textContent=nErr?'ERR':nWarn?'CHECK':'OK';
+    tag.style.color=nErr?'var(--warn)':nWarn?'var(--amber)':'var(--accent)';
+  }).catch(()=>{tag.textContent='-';tag.style.color='var(--dim)';});
+}
+setInterval(pollSystem,2000);pollSystem();
 function pollArm(){fetch('/arm_mode').then(r=>r.json()).then(d=>updateArmMode(d.mode,d.switching)).catch(()=>updateArmMode(null));}
 pollArm();setInterval(pollArm,3000);
 // Esc = Stop (팔 정지·기본 자세)

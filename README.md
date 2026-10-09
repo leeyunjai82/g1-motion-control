@@ -31,7 +31,7 @@ rs_stream      :50001   RealSense D435i (단독 점유) → MJPEG / depth API
 detect_box     :50010   박스 인식(YOLO seg, OpenVINO GPU), 파지점 (rs_stream 사용)
 arm_server     :50022   rt/arm_sdk 단독 점유 — 팔, IK, hold/release
 head_track     :50013   머리 카메라 인식 — 왼눈 얼굴·사람(NPU), 오른눈 사물(NPU), 보기 전용
-robot_server   :50000   잡기 시퀀스 + 제어 웹 UI (CPU·GPU·NPU 사용률 표시)
+robot_server   :50000   잡기 시퀀스 + 제어 웹 UI (CPU·GPU·NPU 사용률, System 카드 = 로봇 FSM·서버 상태)
 dashboard      :50003   3D URDF 뷰어 / 관절 상태 (rt/lowstate 읽기 전용)
 simulator      :8000    모션 에디터 (Joint + IK), arm_server 경유
 launcher       :80      FSM 버튼 + start_robot.sh 실행 웹

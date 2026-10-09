@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Version: 1.9
+# Version: 1.10
 # Changes:
+#   1.10 - GET /system (로봇 FSM · 서버 상태, 제어 화면 System 카드), arm_server 가 늦게 떠도 3초마다 다시 연결,
+#          Box 선택 때 팔이 안 움직일 상황(arm 미연결 · release · FSM≠4/703)이면 /set_mode 가 warn
 #   1.9 - H2 전용: 보행(/loco)·마커 추종(/follow)·마커 잡기·허리 yaw 정렬·좌우 건네기 삭제
 #   1.8 - /viz 에 비교용 다른 박스 추정 방식(other) + 차이(cmp) 추가 — 표시 전용, 잡기는 detect_box BOX_METHOD 값
 #   1.7 - 잡기 단계별 소요 시간 기록 + GET /grab_history (최근 5회) — 표시용
@@ -71,6 +73,7 @@ from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 from ctrl.arm_controller_wrapper import GLOBAL_TO_INTERNAL
 from ctrl.arm_http import ArmHttpClient
 from ctrl.hw_usage import HwUsage
+from ctrl.sys_watch import SysWatch
 
 
 
@@ -645,6 +648,62 @@ def _stop_and_park(duration=1.5):
         print(f"[STOP] 자세 복귀 실패: {e}")
 
 
+def _connect_arm(quiet=False):
+    """arm_server(50022) 연결 + park 복귀 자세 결정 → ArmHttpClient 또는 None."""
+    global BOOT_ARM_DEG
+    try:
+        a = ArmHttpClient()
+    except Exception as e:
+        if not quiet:
+            print(f"⚠️ Arm 실패: {e} — 3초마다 다시 연결 시도")
+        return None
+    if USE_BOOT_CAPTURE:
+        try:
+            BOOT_ARM_DEG = [round(float(v), 3)
+                            for v in np.degrees(a.arm_ctrl.get_current_dual_arm_q())]
+            print(f"✅ park 자세: 기동 실측 캡처 {BOOT_ARM_DEG}")
+        except Exception as e:
+            BOOT_ARM_DEG = list(DEFAULT_ARM_DEG)
+            print(f"⚠️ 캡처 실패({e}) — 기본 자세 사용")
+    else:
+        print(f"✅ park 자세: 고정값 사용")
+        try:
+            cur = np.degrees(a.arm_ctrl.get_current_dual_arm_q())
+            diff = float(np.max(np.abs(cur - np.array(BOOT_ARM_DEG))))
+            print(f"   현재 팔과의 최대 편차 {diff:.1f}도")
+        except Exception:
+            pass
+    print("✅ Arm 초기화 (arm_sdk: hold)")
+    return a
+
+
+def _arm_watch():
+    """기동 때 arm_server 가 안 떠 있었으면(start_robot.sh 순서·로봇 재부팅) 붙을 때까지 3초마다 다시 연결."""
+    global arm
+    while True:
+        time.sleep(3.0)
+        if arm is not None or grab is None:
+            continue
+        a = _connect_arm(quiet=True)
+        if a is not None:
+            arm = a
+            grab.arm, grab.robot_available = a, True
+            print("✅ arm_server 다시 연결 — 잡기 가능")
+
+
+def arm_warnings():
+    """Box 를 눌러도 팔이 안 움직일 이유 목록 (없으면 [])."""
+    w = []
+    if arm is None:
+        w.append("arm_server 미연결 — 팔이 안 움직임 (arm_server 로그 확인, 3초마다 다시 연결 시도)")
+    elif _sync_arm_mode().get("mode", ARM_MODE) != "hold":
+        w.append("제어권 반납(release) 상태 — 팔이 안 움직임 (arm_server 재시작 또는 POST /arm_hold)")
+    f = SYS.fsm_warning()
+    if f:
+        w.append(f)
+    return w
+
+
 # ==========================================
 # Lifespan
 # ==========================================
@@ -656,29 +715,7 @@ async def lifespan(app: FastAPI):
     HW.start()                     # CPU·GPU·NPU 사용률 (제어 화면 위 칩, GET /hw)
     robot_env.dds_init()
 
-    try:
-        arm = ArmHttpClient()   # arm_server(50022) 가 먼저 떠 있어야 함
-        # park() 복귀 자세 결정
-        if USE_BOOT_CAPTURE:
-            try:
-                BOOT_ARM_DEG = [round(float(v), 3)
-                                for v in np.degrees(arm.arm_ctrl.get_current_dual_arm_q())]
-                print(f"✅ park 자세: 기동 실측 캡처 {BOOT_ARM_DEG}")
-            except Exception as e:
-                BOOT_ARM_DEG = list(DEFAULT_ARM_DEG)
-                print(f"⚠️ 캡처 실패({e}) — 기본 자세 사용")
-        else:
-            print(f"✅ park 자세: 고정값 사용")
-            try:
-                cur = np.degrees(arm.arm_ctrl.get_current_dual_arm_q())
-                diff = float(np.max(np.abs(cur - np.array(BOOT_ARM_DEG))))
-                print(f"   현재 팔과의 최대 편차 {diff:.1f}도")
-            except Exception:
-                pass
-        print("✅ Arm 초기화 (arm_sdk: hold)")
-    except Exception as e:
-        print(f"⚠️ Arm 실패: {e}")
-        arm = None
+    arm = _connect_arm()          # 실패하면 None — _arm_watch 가 3초마다 다시 시도
 
     if HAND_AVAILABLE:
         try:
@@ -715,6 +752,8 @@ async def lifespan(app: FastAPI):
             return None
     grab.redetect = _redetect
     print("✅ GrabController 준비")
+    threading.Thread(target=_arm_watch, daemon=True, name="arm_watch").start()
+    SYS.start()                    # 로봇 FSM · 서버 상태 (제어 화면 System 카드, GET /system)
 
     print("[robot_server] 준비 완료  http://localhost:50000/")
     yield
@@ -743,6 +782,7 @@ async def lifespan(app: FastAPI):
 
 
 HW = HwUsage(period=1.0)          # 이 PC 의 CPU / GPU / NPU 사용률 (ctrl/hw_usage.py)
+SYS = SysWatch(robot_env.CFG.get("fsm"), period=2.0, sim=robot_env.SIM)   # 로봇 FSM · 서버 상태 (ctrl/sys_watch.py)
 
 app = FastAPI(title="H2 Robot Server", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
@@ -888,7 +928,10 @@ async def set_mode(mode: str):
         _pose_thread = threading.Thread(target=_pose, daemon=True)
         _pose_thread.start()
 
-    return {"ok": True, "mode": ACTIVE_MODE}
+    warn = await asyncio.get_running_loop().run_in_executor(None, arm_warnings) if mode == "box" else []
+    for w in warn:
+        print(f"[MODE] ⚠️ {w}")
+    return {"ok": True, "mode": ACTIVE_MODE, "warn": warn}
 
 
 def _stage_info():
@@ -983,6 +1026,10 @@ async def status():
             "hand_ready": hand is not None,
             "tts_ready": tts is not None, "active_mode": ACTIVE_MODE,
             "grab_busy": grab_busy, **_stage_info()}
+
+@app.get("/system", summary="로봇 FSM · 서버 상태 (2초마다 갱신) + 팔이 안 움직일 이유(warn)")
+def system():                     # def — arm_server 조회가 블로킹이라 스레드풀에서
+    return {**SYS.latest(), "warn": arm_warnings()}
 
 @app.get("/hw", summary="이 PC 의 CPU / GPU / NPU 사용률 [%] (1초마다 갱신, 못 읽으면 pct null + why)")
 async def hw_usage():
