@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Version: 2.16
+<!-- Version: 2.17
+  2.17 - Wrist RPY 기본 yaw 왼손 −10 · 오른손 +10 (robot.yaml grab.wrist_rpy_deg 손별)
   2.16 - 메인 색 #00b7eb (회사 메인 컬러 — ARC 로고, 사용자 2026-10-09). 메인 색을 더 씀:
          위 막대 아래 선, 카드 제목 왼쪽 막대, Mode 칩. 런처·대시보드도 같은 색
   2.15 - 메인 색 = pitron 스티커 'pi' 파랑 #408fd4 (사진에서 뽑은 근사값 — 원본 색 코드 확인 필요).
@@ -335,7 +336,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
           <span></span><span class="h" style="color:var(--accent)">LEFT</span><span class="h" style="color:var(--amber)">RIGHT</span>
           <span class="k">roll</span><input class="in" id="l-roll" type="number" value="0" step="5"><input class="in" id="r-roll" type="number" value="0" step="5">
           <span class="k">pitch</span><input class="in" id="l-pitch" type="number" value="0" step="5"><input class="in" id="r-pitch" type="number" value="0" step="5">
-          <span class="k">yaw</span><input class="in" id="l-yaw" type="number" value="0" step="5"><input class="in" id="r-yaw" type="number" value="0" step="5">
+          <span class="k">yaw</span><input class="in" id="l-yaw" type="number" value="-10" step="5"><input class="in" id="r-yaw" type="number" value="10" step="5">
         </div>
         <button class="btn full" style="margin-top:9px" onclick="applyWrist()">Apply</button>
       </div>

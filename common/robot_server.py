@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Version: 1.10
+# Version: 1.11
 # Changes:
+#   1.11 - Center(건네기) 는 옆에서 잡았어도 양손 가운데를 몸 정면(y 0)으로 옮겨 건넴 (Place 는 원래 자리 그대로)
+#          손목 기본값을 손별로 (robot.yaml grab.wrist_rpy_deg: {left: [...], right: [...]} 또는 [r, p, y] 양손 같게)
 #   1.10 - GET /system (로봇 FSM · 서버 상태, 제어 화면 System 카드), arm_server 가 늦게 떠도 3초마다 다시 연결,
 #          Box 선택 때 팔이 안 움직일 상황(arm 미연결 · release · FSM≠4/703)이면 /set_mode 가 warn
 #   1.9 - H2 전용: 보행(/loco)·마커 추종(/follow)·마커 잡기·허리 yaw 정렬·좌우 건네기 삭제
@@ -128,7 +130,14 @@ READY_XYZ      = [float(v) for v in robot_env.CFG["grab"]["ready_xyz"]]
 # ↑ Box 버튼(대기 자세)·잡기 끝 복귀(⑪ Home) 왼손 [x, y, z] (IK 좌표, 오른손은 y 반대)
 LIFT_ABOVE     = float(robot_env.CFG["grab"]["lift_above"])
 # ↑ 들기 높이 = 박스 윗면 + lift_above [m] — 몸쪽으로 당겨 높이 들면 어깨가 카메라 거치대 요크에 닿음
-WRIST_RPY_DEG  = [float(v) for v in robot_env.CFG["grab"].get("wrist_rpy_deg", [0.0, 0.0, 0.0])]
+def _wrist_cfg():
+    """grab.wrist_rpy_deg — [roll, pitch, yaw] (양손 같게) 또는 {left: [...], right: [...]} [deg]."""
+    w = robot_env.CFG["grab"].get("wrist_rpy_deg", [0.0, 0.0, 0.0])
+    if isinstance(w, dict):
+        return {s: [float(v) for v in w.get(s, [0.0, 0.0, 0.0])] for s in ("left", "right")}
+    w = [float(v) for v in w]
+    return {"left": w, "right": list(w)}
+WRIST_RPY_DEG  = _wrist_cfg()   # {"left": [r, p, y], "right": [r, p, y]}
 # ↑ 손목 RPY 기본값 [roll, pitch, yaw] deg, 양손 같게. 웹 Wrist RPY 로 바꾸면 그 값
 LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽)
 WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # Home(pose=zero) 허리 pitch (H2 허리는 arm_sdk 로 안 움직임)
@@ -180,11 +189,7 @@ class GrabController:
         self.robot_available = robot_available
 
         # 손목 RPY
-        r, p, y = WRIST_RPY_DEG
-        self.wrist_params = {
-            'left':  {'roll': r, 'pitch': p, 'yaw': y},
-            'right': {'roll': r, 'pitch': p, 'yaw': y},
-        }
+        self.wrist_params = {s: dict(zip(('roll', 'pitch', 'yaw'), WRIST_RPY_DEG[s])) for s in ('left', 'right')}
         # handover 방향
         self.handover_direction = DEFAULT_HANDOVER   # center (정면 건네기) | place (제자리 내려놓기)
 
@@ -286,7 +291,11 @@ class GrabController:
             self._place_back(grab_x_base, grp_off_L, grp_off_R, grab_z, lift_z, l_rot, r_rot, yc)
             return
 
-        self._stage("건네기")      # 정면 (허리 고정)
+        # 건네기는 항상 몸 정면 가운데 (y 0) — 옆에서 잡았어도 양손 가운데를 0 으로 옮김 (허리 고정이라 팔로만)
+        if abs(yc) > 0.005:
+            print(f"[HANDOVER] 잡은 자리 y {yc*100:+.1f} cm → 가운데(y 0)로 건넴")
+        yc = 0.0
+        self._stage("건네기")
         hl = [HANDOVER_X, yc + grp_off_L + LEFT_HAND_Y_OFFSET, lift_z]
         hr = [HANDOVER_X, yc - grp_off_R, lift_z]
         if not self._move(hl, hr, 1.5, "⑧ 건네기", l_rot, r_rot):

@@ -66,17 +66,17 @@ cd ~/project/h2-motion-control
 ## 잡기 시퀀스 (robot_server)
 
 Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위쪽 접근 → 측면 하강 → 잡기 → 몸쪽으로 당기기 → 들기 →
-**Place**: 원래 자리에 내려놓기 / **Center**: 정면으로 건네기(2초 뒤 놓기) → 대기 자세 복귀.
+**Place**: 원래 자리에 내려놓기 / **Center**: 몸 정면 가운데로 건네기 — 옆에서 잡았어도 가운데로 옮김 (2초 뒤 놓기) → 대기 자세 복귀.
 
 값은 전부 `robots/h2/robot.yaml grab` 에 있습니다.
 
 | 키 | 지금 값 | 뜻 |
 | --- | --- | --- |
 | `ready_xyz` | [0.10, 0.25, 0.30] | 대기·복귀 왼손 위치 (IK pelvis 기준 m, 오른손 y 반대) |
-| `z_offset` | −0.014 | 잡는 높이 = 박스 윗면 − H/2 + z_offset |
+| `z_offset` | 0.02 | 잡는 높이 = 박스 윗면 − H/2 + z_offset |
 | `lift_above` | 0.10 | 들기 높이 = 박스 윗면 + 이 값 (0.15 면 어깨가 거치대 요크에 닿음) |
 | `pull_x` | −0.15 | 잡은 뒤 몸쪽으로 당김 |
-| `wrist_rpy_deg` | [0, 0, 0] | 손목 기본 자세 (웹 Wrist RPY 기본값) |
+| `wrist_rpy_deg` | 왼 [0, 0, −10] · 오른 [0, 0, 10] | 손목 기본 자세 [roll, pitch, yaw] (웹 Wrist RPY 기본값) |
 | `auto_zone` | x 0.35–0.45 | 자동 잡기 영역 (박스 중심, torso 기준) |
 | `default_handover` | place | 기본 = 제자리 내려놓기 |
 
