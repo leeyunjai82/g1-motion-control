@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Version: 1.11
+# Version: 1.12
 # Changes:
+#   1.12 - grab.squeeze: 잡을 때 양손을 박스 안쪽으로 더 미는 거리 (위치 제어라 이만큼이 쥐는 힘) — 잡기~들기~건네기 유지,
+#          손 벌림에서 풀림. 이전에는 왼손 보정 +3 cm 때문에 양손 합쳐 1 cm 만 조여 건네는 중 박스가 미끄러짐 (사용자 2026-10-09)
 #   1.11 - Center(건네기) 는 옆에서 잡았어도 양손 가운데를 몸 정면(y 0)으로 옮겨 건넴 (Place 는 원래 자리 그대로)
 #          손목 기본값을 손별로 (robot.yaml grab.wrist_rpy_deg: {left: [...], right: [...]} 또는 [r, p, y] 양손 같게)
 #   1.10 - GET /system (로봇 FSM · 서버 상태, 제어 화면 System 카드), arm_server 가 늦게 떠도 3초마다 다시 연결,
@@ -140,6 +142,7 @@ def _wrist_cfg():
 WRIST_RPY_DEG  = _wrist_cfg()   # {"left": [r, p, y], "right": [r, p, y]}
 # ↑ 손목 RPY 기본값 [roll, pitch, yaw] deg, 양손 같게. 웹 Wrist RPY 로 바꾸면 그 값
 LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽)
+GRAB_SQUEEZE = float(robot_env.CFG["grab"].get("squeeze", 0.0))   # 잡을 때 양손을 박스 안쪽으로 더 [m] (각 손)
 WAIST_BASE_PITCH = float(robot_env.CFG["grab"]["waist_base_pitch_deg"])   # Home(pose=zero) 허리 pitch (H2 허리는 arm_sdk 로 안 움직임)
 
 # 잡은 뒤 → 건네기 구간 타이밍 (s)
@@ -473,8 +476,13 @@ class GrabController:
         time.sleep(0.2)
 
         # 잡기 — 실제 L/R 점 + X는 몸쪽으로 당김(GRAB_X_OFFSET)
-        gripL = [Lx + GRAB_X_OFFSET, Ly + LEFT_HAND_Y_OFFSET, grab_z]
-        gripR = [Rx + GRAB_X_OFFSET, Ry, grab_z]
+        #   + 조이기: L/R 에서 박스 안쪽(중심 쪽)으로 GRAB_SQUEEZE — 팔은 위치 제어라 목표가 박스 안으로 들어간 만큼 쥠.
+        #     이후 대칭 정렬·들기·건네기·제자리 놓기는 이 손 간격 그대로 (align_to_hands), 손 벌림에서 풀림
+        gripL = [Lx + GRAB_X_OFFSET - oLx*GRAB_SQUEEZE, Ly - oLy*GRAB_SQUEEZE + LEFT_HAND_Y_OFFSET, grab_z]
+        gripR = [Rx + GRAB_X_OFFSET - oRx*GRAB_SQUEEZE, Ry - oRy*GRAB_SQUEEZE, grab_z]
+        if GRAB_SQUEEZE:
+            print(f"[GRAB-BOX] 조이기 각 손 {GRAB_SQUEEZE*100:.1f} cm 안쪽 — 손 간격 {abs(gripL[1] - gripR[1])*100:.1f} cm "
+                  f"(L/R 점 간격 {abs(Ly - Ry)*100:.1f} cm)")
         self._stage("잡기")
         if not self._move(gripL, gripR, 2.5, "⑥ 잡기", l_rot, r_rot): return
         time.sleep(1.0)
