@@ -1,23 +1,23 @@
 #!/bin/bash
 # Launcher 웹 (http://<robot-ip>/ , 포트 80) — FSM 버튼 / start_robot.sh 실행
-# 사용: ROBOT=g1 ./launcher.sh   (ROBOT 은 sudo 뒤 run_launcher.py 인자로 넘긴다)
+# 사용: ./launcher.sh   (H2 전용 — ROBOT 은 sudo 뒤 run_launcher.py 인자로 넘긴다)
 # start_fsm.sh 와 같이 sudo 로 tv 환경 python 을 실행한다 (비밀번호는 여기서 한 번만).
 #
 # 기동 전 정리 (이전 실행이 남아 있으면):
 #   1) 이전 run_launcher.py   — SIGTERM (launcher 가 start_robot.sh 를 정상 종료시킴) → 25초 후 KILL
 #   2) 남은 start_robot.sh    — SIGTERM (스크립트의 Ctrl+C 종료 시퀀스)              → 15초 후 KILL
-#   3) 남은 로봇 서버 6개      — SIGTERM (arm_server 는 weight 반납 후 종료)          → 5초 후 KILL
+#   3) 남은 로봇 서버          — SIGTERM (arm_server 는 weight 반납 후 종료)          → 5초 후 KILL
 #   start_robot.sh 의 sweep 은 바로 SIGKILL 이지만, 여기서는 TERM 을 먼저 보내
 #   arm_server 가 팔 제어권을 천천히 반납할 시간을 준다.
 #
 # 종료: Ctrl+C  (실행 중인 Robot 서버도 정상 종료 시퀀스로 같이 정지)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# ROBOT 미지정/미지원이면 여기서 거부 (이전 실행 정리보다 먼저)
+# robot.yaml 없음 / enabled: false 면 여기서 거부 (이전 실행 정리보다 먼저)
 source "$SCRIPT_DIR/robot_env.sh" || exit 1
 require_robot
 PY="$TV_PY"
-TARGETS=("rs_stream" "arm_server" "robot_server" "dashboard" "detect_marker" "detect_box")
+TARGETS=("rs_stream" "arm_server" "robot_server" "dashboard" "detect_box" "head_track")
 
 # 실행 형태에만 맞는 패턴 (vim/tail 등 파일명이 들어간 다른 명령은 건드리지 않게)
 #   launcher : "<...>python <...>run_launcher.py"  ← TERM 은 python 에만.

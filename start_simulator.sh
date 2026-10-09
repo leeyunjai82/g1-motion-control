@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Motion Editor(simulator) 실행 — 모드 2개 (기본값 없음, 반드시 지정)
 #
-#   ROBOT=h2 ./start_simulator.sh virtual
+#   ./start_simulator.sh virtual
 #       가상: URDF/메시 3D + fake_robot (ROBOT_SIM=1, DDS 도메인 1). 로봇 없이 모션 편집·모터 번호 화면 연습.
 #       띄우는 것: fake_robot → arm_server → dashboard(3D) → simulator
 #
-#   ROBOT=g1 ./start_simulator.sh real
+#   ./start_simulator.sh real
 #       실기: 실제 로봇을 움직인다 (DDS 도메인 0). arm_server / dashboard 가 이미 떠 있으면 재사용.
-#   ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real
+#   ROBOT_CHECK=1 ./start_simulator.sh real
 #       robot.yaml enabled: false 로봇(H2)은 '모터 번호 확인 모드' 로만 실기 실행
 #       (arm_server / dashboard / simulator 만 허용, 잡기·보행 서버는 거부). 로봇을 지지한 상태에서 사용.
 #
@@ -20,7 +20,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 MODE="${1:-}"
 if [ "$MODE" != "virtual" ] && [ "$MODE" != "real" ]; then
-  echo "Usage: ROBOT=<robot> $0 virtual|real" >&2
+  echo "Usage: $0 virtual|real" >&2
   echo "  virtual : 가상 (URDF 3D + fake_robot, 로봇 없이)" >&2
   echo "  real    : 실기 (enabled: false 로봇은 ROBOT_CHECK=1 필요 — 모터 번호 확인 전용)" >&2
   exit 1
@@ -30,7 +30,7 @@ source "$ROOT/robot_env.sh" || exit 1
 if [ "$MODE" = "virtual" ]; then
   # 가상은 enabled: false 로봇도 허용 → robot.yaml 존재만 확인
   if [ -z "${ROBOT:-}" ] || [ ! -f "$ROOT/robots/${ROBOT}/robot.yaml" ]; then
-    echo "❌ ROBOT 을 지정하세요 (robots/<robot>/robot.yaml 필요) — 예: ROBOT=h2 $0 virtual" >&2
+    echo "❌ robots/${ROBOT:-h2}/robot.yaml 없음" >&2
     exit 2
   fi
   export ROBOT_SIM=1
@@ -39,7 +39,7 @@ else
   unset ROBOT_SIM
   if [ "${ROBOT_CHECK:-}" = "1" ]; then
     if [ -z "${ROBOT:-}" ] || [ ! -f "$ROOT/robots/${ROBOT}/robot.yaml" ]; then
-      echo "❌ ROBOT 을 지정하세요 — 예: ROBOT_CHECK=1 ROBOT=h2 $0 real" >&2; exit 2
+      echo "❌ robots/${ROBOT:-h2}/robot.yaml 없음" >&2; exit 2
     fi
     echo "⚠️  실기 모터 번호 확인 모드 (ROBOT=$ROBOT) — 로봇을 지지하고, 주변을 비우고, E-STOP 을 손에 두세요."
     read -r -p "   계속하려면 yes 입력: " ans

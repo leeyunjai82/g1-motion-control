@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # robot_env.sh — start_*.sh / launcher.sh / activate_tv.sh 공용 (source 해서 사용)
 #
-#   require_robot  : ROBOT 미지정 / robots/<ROBOT>/robot.yaml 없음 / enabled: false 면 실행 거부
+#   ROBOT          : H2 전용 — 안 주면 h2 (source 할 때 export). h2 가 아니면 require_robot 이 거부
+#   require_robot  : robots/<ROBOT>/robot.yaml 없음 / enabled: false 면 실행 거부
 #   CONDA_BASE     : conda 설치 위치 (계정명 하드코딩 없음)
 #   TV_PY          : tv 환경 python 절대경로 (sudo 실행용 — sudoers NOPASSWD 경로와 같아야 함)
 #   ensure_robot_sdk : robot.yaml sdk.commit 이 있는 로봇(H2)의 unitree_sdk2py 를 third_party/ 에 준비
@@ -9,6 +10,7 @@
 # conda 위치 우선순위: $CONDA_BASE → $HOME/miniconda3 → $HOME/anaconda3 → $HOME/miniforge3 → /opt/conda
 
 _ROBOT_ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export ROBOT="${ROBOT:-h2}"      # H2 전용 저장소
 
 # 지원 로봇 = robots/<robot>/robot.yaml 이 있고 enabled: true 인 것
 _enabled_robots() {
@@ -21,9 +23,8 @@ _enabled_robots() {
 require_robot() {
   local r="${ROBOT:-}" ok
   ok="$(_enabled_robots)"
-  if [ -z "$r" ]; then
-    echo "❌ ROBOT 이 지정되지 않았습니다 — 실행 거부 (기본값 없음)" >&2
-    echo "   사용 예: ROBOT=g1 $0 ...   (지원: $ok)" >&2
+  if [ "$r" != "h2" ]; then
+    echo "❌ ROBOT='$r' — 이 저장소는 H2 전용 (ROBOT 을 비우거나 h2)" >&2
     exit 2
   fi
   case " $ok " in

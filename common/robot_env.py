@@ -1,12 +1,11 @@
 """
-robot_env.py — 실행 대상 로봇 선택 (ROBOT 환경변수) + 로봇별 설정(robot.yaml)
+robot_env.py — 로봇 설정(robots/h2/robot.yaml) 읽기. 이 저장소는 H2 전용.
 
-  ROBOT=g1 python robot_server.py
+  python robot_server.py            # ROBOT 을 안 주면 h2
 
-  · ROBOT 미지정 / 미지원 / robot.yaml 의 enabled=false 이면 import 시점에 바로 종료한다 (기본값 없음).
-    다른 로봇을 연결해 둔 채 잘못된 설정으로 지령을 보내는 사고를 막기 위함.
-  · 로봇별 파일(URDF, 메시, 모션 JSON, IK 모델 캐시, robot.yaml)은 robots/<ROBOT>/ 에 둔다.
-  · 로봇마다 다른 값은 robots/<ROBOT>/robot.yaml → CFG 로 읽는다.
+  · ROBOT 환경변수는 남겨 두었지만 h2 만 받는다 (다른 값이면 import 시점에 종료).
+  · robot.yaml 의 enabled=false 면 실행 거부 (시뮬 ROBOT_SIM=1 · 모터 번호 확인 ROBOT_CHECK=1 제외).
+  · 로봇 파일(URDF, 메시, 모션 JSON, IK 모델 캐시, robot.yaml)은 robots/h2/ 에 있다.
 """
 import os
 import sys
@@ -29,7 +28,7 @@ def _available():
 
 def _fail(msg):
     print(f"[robot_env] ❌ {msg}", file=sys.stderr)
-    print(f"[robot_env]    사용 예: ROBOT=g1 ./start_robot.sh   (robots/: {', '.join(_available())})",
+    print(f"[robot_env]    이 저장소는 H2 전용 — ROBOT 은 비우거나 h2   (robots/: {', '.join(_available())})",
           file=sys.stderr)
     sys.exit(2)
 
@@ -85,9 +84,9 @@ DDS_DOMAIN = 1 if SIM else 0
 CHECK = os.environ.get("ROBOT_CHECK", "").strip() == "1"
 CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py", "init_fsm.py", "robot_state.py", "arm_sdk_test.py", "cam_marker_check.py", "hand_to_marker.py"}   # init_fsm: start_fsm.sh, robot_state: 읽기 전용 진단
 
-ROBOT = os.environ.get("ROBOT", "").strip().lower()
-if not ROBOT:
-    _fail("ROBOT 환경변수가 없습니다 — 실행 거부 (기본값 없음)")
+ROBOT = os.environ.get("ROBOT", "").strip().lower() or "h2"
+if ROBOT != "h2":
+    _fail(f"ROBOT='{ROBOT}' — 이 저장소는 H2 전용 (G1 코드는 git 이력에)")
 
 ROBOT_DIR = os.path.join(ROBOTS_DIR, ROBOT)
 try:
@@ -143,7 +142,7 @@ CAMERA_Y     = float(CAMERA["y"])
 CAMERA_Z     = float(CAMERA["z"])
 CAMERA_PITCH_DEG = float(CAMERA["pitch_deg"])
 CAMERA_PITCH = float(np.radians(CAMERA_PITCH_DEG))
-CAMERA_K     = tuple(float(v) for v in CAMERA["intrinsics"])   # (fx, fy, ppx, ppy) 컬러 640×480 — detect_box / detect_marker / sim   # rad (G1 47.6° → 0.8307767239493009, 비트 동일)
+CAMERA_K     = tuple(float(v) for v in CAMERA["intrinsics"])   # (fx, fy, ppx, ppy) 컬러 640×480 — detect_box / sim
 
 JOINTS = CFG["joints"]
 FSM    = CFG["fsm"]

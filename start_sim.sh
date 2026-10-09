@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 # 시뮬레이터 실행 — 로봇 없이 잡기/건네기 시퀀스 시험
-# 사용: ROBOT=h2 ./start_sim.sh            가상 카메라 (가상 박스)     → http://localhost:50010/
-#       ROBOT=h2 ./start_sim.sh real-cam   실물 D435i + 실제 박스 인식 → http://localhost:50012/
-#       (ROBOT=g1 도 가능)
+# 사용: ./start_sim.sh            가상 카메라 (가상 박스)     → http://localhost:50010/
+#       ./start_sim.sh real-cam   실물 D435i + 실제 박스 인식 → http://localhost:50012/
 # 종료: Ctrl+C
 #
 # 구성 (ROBOT_SIM=1 → DDS 도메인 1, 실기 도메인 0 과 분리):
 #   fake_robot (DDS 가짜 로봇) → arm_server(50022) → robot_server(50000) → dashboard(50003)
 #   → sim_server(50010, 가짜 detect_box + 조작 화면)
-#   rs_stream / detect_box / detect_marker 는 띄우지 않는다 (카메라 없음).
-#   robot.yaml 의 enabled: false 로봇(H2)도 시뮬에서는 실행된다 — 실기 경로(start_robot.sh 등)는 계속 거부.
+#   rs_stream / detect_box 는 띄우지 않는다 (카메라 없음).
 set -u
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 source "$ROOT/robot_env.sh" || exit 1
 # 시뮬은 enabled: false 로봇도 허용 → robots/<ROBOT>/robot.yaml 존재만 확인
 if [ -z "${ROBOT:-}" ] || [ ! -f "$ROOT/robots/${ROBOT}/robot.yaml" ]; then
-  echo "❌ ROBOT 을 지정하세요 (robots/<robot>/robot.yaml 필요) — 예: ROBOT=h2 $0" >&2
+  echo "❌ robots/${ROBOT:-h2}/robot.yaml 없음" >&2
   exit 2
 fi
 export ROBOT_SIM=1
@@ -25,7 +23,7 @@ CAM="${1:-virtual}"
 case "$CAM" in
   virtual)  unset SIM_CAMERA ;;
   real-cam) export SIM_CAMERA=real ;;   # 카메라·인식(rs_stream + detect_box) 실물, 로봇만 가상
-  *) echo "Usage: ROBOT=<robot> $0 [real-cam]" >&2; exit 1 ;;
+  *) echo "Usage: $0 [real-cam]" >&2; exit 1 ;;
 esac
 
 LOG_DIR="$ROOT/logs"

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# 통합 잡기 서비스 실행 스크립트
+# H2 잡기 서비스 실행 스크립트
 # 위치: <repo>/start_robot.sh
-# 사용: ROBOT=g1 ./start_robot.sh
+# 사용: ./start_robot.sh            (H2 전용 — ROBOT 은 안 줘도 h2)
 # 종료: Ctrl+C (TERM 후 8초 안 죽으면 KILL)
 set -u
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-# ROBOT 미지정/미지원이면 여기서 거부 (이전 서버 정리보다 먼저)
+# robot.yaml 없음 / enabled: false 면 여기서 거부 (이전 서버 정리보다 먼저)
 source "$ROOT/robot_env.sh" || exit 1
 require_robot
 LOG_DIR="$ROOT/logs"
@@ -16,7 +16,7 @@ mkdir -p "$LOG_DIR"
 DAY="$(date '+%Y%m%d')"
 
 # 관리 대상 스크립트 (이름 기준 sweep)
-TARGETS=("rs_stream.py" "arm_server.py" "robot_server.py" "dashboard.py" "detect_marker.py" "detect_box.py" "head_track.py")
+TARGETS=("rs_stream.py" "arm_server.py" "robot_server.py" "dashboard.py" "detect_box.py" "head_track.py")
 
 # 로그 타임스탬프 필터 stamp() 는 robot_env.sh 에 있음 (mawk 줄 단위 처리 포함)
 
@@ -72,10 +72,7 @@ sweep_zombies "cleanup"
 source "$ROOT/activate_tv.sh" || exit 1
 cd "$ROOT/common"
 
-# 보행·마커 추종이 없는 로봇(robot.yaml features.locomotion: false, H2)은 마커 인식(detect_marker)을 띄우지 않는다
-LOCO=$(python -c 'import sys,yaml; print(1 if (yaml.safe_load(open(sys.argv[1])).get("features") or {}).get("locomotion", True) else 0)' \
-       "$ROOT/robots/$ROBOT/robot.yaml") || exit 1
-# 머리 카메라 인식(head_track, H2): robot.yaml 에 head_track 이 있고 gstreamer 가 깔려 있을 때만
+# 머리 카메라 인식(head_track): robot.yaml 에 head_track 이 있고 gstreamer 가 깔려 있을 때만
 HEADCAM=$(python -c 'import sys,yaml; print(1 if yaml.safe_load(open(sys.argv[1])).get("head_track") else 0)' \
        "$ROOT/robots/$ROBOT/robot.yaml") || exit 1
 if [ "$HEADCAM" = "1" ] && ! command -v gst-launch-1.0 >/dev/null 2>&1; then
@@ -130,8 +127,8 @@ trap cleanup INT TERM
 
 # ==========================================
 # 시작
-#   rs_stream(50001) → robot_server(50000, arm 제어) → dashboard(50003, 뷰어)
-#   → 인식기(50011/50010)
+#   rs_stream(50001) → arm_server(50022) → robot_server(50000) → dashboard(50003)
+#   → detect_box(50010) → head_track(50013)
 #   ※ 로그: 하루 단위 파일(_$DAY) + append(>>) + 줄별 타임스탬프
 #     $!는 python PID 유지(graceful 종료 보존)
 # ==========================================
@@ -155,13 +152,6 @@ python -u dashboard.py          > >(stamp >> "$LOG_DIR/dashboard_$DAY.log")     
 PIDS+=($!); NAMES+=("dashboard")
 sleep 2
 
-if [ "$LOCO" = "1" ]; then
-  echo "[start] detect_marker (50011) ..."
-  python -u ctrl/detect_marker.py > >(stamp >> "$LOG_DIR/detect_marker_$DAY.log") 2>&1 &
-  PIDS+=($!); NAMES+=("detect_marker")
-  sleep 1
-fi
-
 echo "[start] detect_box    (50010) ..."
 python -u ctrl/detect_box.py    > >(stamp >> "$LOG_DIR/detect_box_$DAY.log")    2>&1 &
 PIDS+=($!); NAMES+=("detect_box")
@@ -174,26 +164,8 @@ if [ "$HEADCAM" = "1" ]; then
   sleep 1
 fi
 
-if [ "$LOCO" = "1" ]; then
-cat <<EOF
-  ✓ 6개 서버 실행 중  (ROBOT=$ROBOT)
-    - arm_server    : http://localhost:50022/status    (팔 전용 — arm_sdk 단독 점유)
-    - Robot control : http://localhost:50000/          (제어 + 잡기)
-    - Dashboard     : http://localhost:50003/dashboard (3D viewer + video + depth)
-    - rs_stream     : http://localhost:50001/video_feed
-    - detect_marker : http://localhost:50011/          (마커 인식)
-    - detect_box    : http://localhost:50010/          (박스 인식)
-
-  사용:
-    1) http://localhost:50000/ 접속 (제어)
-    2) Grab Mode에서 Marker / Box 선택
-    3) 자동: 인식 웹(50011/50010)에서 자동 ON + 영역 설정
-       수동: 50000 웹의 [수동 잡기]
-    4) 로봇 시각화는 http://localhost:50003/dashboard
-EOF
-else
-cat <<EOF
-  ✓ 5개 서버 실행 중  (ROBOT=$ROBOT, 보행·마커 추종 없음 → detect_marker 생략)
+cat <<EOF2
+  ✓ H2 서버 실행 중
     - arm_server    : http://localhost:50022/status    (팔 전용 — arm_sdk 단독 점유)
     - Robot control : http://localhost:50000/          (제어 + 잡기)
     - Dashboard     : http://localhost:50003/dashboard (3D viewer + video + depth)
@@ -206,13 +178,10 @@ cat <<EOF
     2) Grab Mode → Box, Handover → Place(내려놓기) 또는 Center(건네기)
     3) [Grab Now] (수동) — 자동은 50010 웹에서 자동 ON + 영역 설정
     4) 로봇 시각화는 http://localhost:50003/dashboard
-EOF
-fi
-cat <<EOF
 
   로그: $LOG_DIR  (하루 단위 _$DAY + append + 타임스탬프)
   실시간: tail -f $LOG_DIR/robot_server_$DAY.log
   종료: Ctrl+C
-EOF
+EOF2
 
 wait
