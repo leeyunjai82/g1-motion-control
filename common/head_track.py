@@ -11,10 +11,12 @@ head_track.py — H2 머리 추종 서버 (포트 50013): 머리 카메라 왼�
   검출: OpenVINO Open Model Zoo face-detection-retail-0004 (300×300) / person-detection-0201 (384×384)
         → common/models/omz. 설정은 robot.yaml head_track (mode, gain, deadband, max_speed_deg, hfov_deg …)
 
-  제어 (카메라가 머리와 같이 돌므로 화면 오차만 0 으로 — 내부 파라미터·카메라 위치 보정 필요 없음)
+  제어 ('느낌만' — 사람 쪽으로 조금만 돌림. 카메라가 머리와 같이 도니 내부 파라미터·카메라 위치 보정 필요 없음)
     e = (대상 점 − 화면 중심) / (화면 반폭, 반높이)   ∈ [−1, 1]
-    원하는 각 = 프레임 받을 때의 실측 머리각 + gain · (pitch: +e_y · vfov/2, yaw: −e_x · hfov/2)   (pitch + = 숙임, yaw + = 왼쪽)
-    |e| < deadband 인 축은 지금 명령 유지. 프레임마다 변화량 ≤ max_speed_deg · dt
+    대상 방향 ≈ 프레임 받을 때 실측 머리각 + (pitch: +e_y · vfov/2, yaw: −e_x · hfov/2)   (pitch + = 숙임, yaw + = 왼쪽)
+      → smooth 로 고르게 (지수 평균)
+    원하는 각 = home + follow_ratio · (대상 방향 − home)  → track_range_deg 안으로 자름
+    지금 명령과 deadband_deg 안이면 그 축은 그대로. 변화 속도 ≤ max_speed_deg
     대상 점: 얼굴 = 박스 중심, 사람 = 박스 위에서 person_aim 비율 아래 (≈ 머리)
     대상 고르기: 가장 큰 것. 단 지금 대상(가장 가까운 박스)보다 switch_ratio 배 이상 클 때만 바꿈
     새 대상은 confirm_frames 프레임 연속 보여야 따라감 (한 프레임 오검출에 머리가 튀지 않게)
@@ -86,6 +88,7 @@ class Tracker(threading.Thread):
         self.meas = None                   # arm_server 실측 [pitch, yaw] deg
         self.look = None                   # /look·/home 요청 (추종 끈 상태에서 보낼 각)
         self.tgt = None                    # 지금 대상 {"box", "kind", "pt", "area"}
+        self.dir = None                    # 대상 방향 [pitch, yaw] deg (지수 평균)
         self.last_seen = 0.0
         self.last_face = 0.0
         self.streak = 0                    # 후보가 연속으로 보인 프레임 수
@@ -126,24 +129,31 @@ class Tracker(threading.Thread):
         self.meas = np.array(hs["meas"], float)
         if self.cmd is None:
             self.cmd = np.array(hs["target"], float)
+        h = cfg("home_deg", {"pitch": 10.0, "yaw": 0.0})
+        home = np.array([h["pitch"], h["yaw"]], float)
         if self.look is not None:                                  # /look, /home
+            self.dir = None
             want, speed = np.array(self.look[:2], float), float(self.look[2])
         elif not self.enabled:
+            self.dir = None
             return
         elif self.tgt is not None:
             H, W = img_shape[:2]
             ex = (self.tgt["pt"][0] - W / 2) / (W / 2)
             ey = (self.tgt["pt"][1] - H / 2) / (H / 2)
-            g, db = float(cfg("gain", 0.5)), float(cfg("deadband", 0.06))
-            want = self.cmd.copy()
-            if abs(ey) > db:
-                want[0] = self.meas[0] + g * ey * float(cfg("vfov_deg", 75.0)) / 2
-            if abs(ex) > db:
-                want[1] = self.meas[1] - g * ex * float(cfg("hfov_deg", 90.0)) / 2
-            speed = float(cfg("max_speed_deg", 40.0))
+            d = np.array([self.meas[0] + ey * float(cfg("vfov_deg", 75.0)) / 2,
+                          self.meas[1] - ex * float(cfg("hfov_deg", 90.0)) / 2])
+            a = float(cfg("smooth", 0.3))
+            self.dir = d if self.dir is None else (1 - a) * self.dir + a * d
+            want = home + float(cfg("follow_ratio", 0.4)) * (self.dir - home)
+            r = cfg("track_range_deg", {"pitch": [-20.0, 20.0], "yaw": [-30.0, 30.0]})
+            want = np.clip(want, [r["pitch"][0], r["yaw"][0]], [r["pitch"][1], r["yaw"][1]])
+            db = float(cfg("deadband_deg", 3.0))
+            want = np.where(np.abs(want - self.cmd) < db, self.cmd, want)
+            speed = float(cfg("max_speed_deg", 25.0))
         elif now - self.last_seen > float(cfg("lost_s", 2.5)):
-            h = cfg("home_deg", {"pitch": 10.0, "yaw": 0.0})
-            want, speed = np.array([h["pitch"], h["yaw"]], float), float(cfg("home_speed_deg", 15.0))
+            self.dir = None
+            want, speed = home, float(cfg("home_speed_deg", 15.0))
         else:
             return                                                 # 잠깐 놓침 — 그 자리 유지
         step = speed * dt
@@ -171,9 +181,7 @@ class Tracker(threading.Thread):
             b = self.tgt["box"]
             cv2.rectangle(v, (int(b[0]), int(b[1])), (int(b[2]), int(b[3])), (0, 255, 0), 2)
             cv2.circle(v, (int(self.tgt["pt"][0]), int(self.tgt["pt"][1])), 4, (0, 255, 0), -1)
-        db = float(cfg("deadband", 0.06))
-        cv2.rectangle(v, (int(W / 2 * (1 - db)), int(H / 2 * (1 - db))), (int(W / 2 * (1 + db)), int(H / 2 * (1 + db))),
-                      (255, 255, 255), 1)
+        cv2.drawMarker(v, (W // 2, H // 2), (255, 255, 255), cv2.MARKER_CROSS, 16, 1)
         head = "-" if self.meas is None else f"pitch {self.meas[0]:+.1f}  yaw {self.meas[1]:+.1f}"
         state = "TRACK" if (self.enabled and self.drive) else ("VIEW" if not self.drive else "OFF")
         cv2.putText(v, f"{state}  {self.fps:.1f} fps  det {self.det_ms:.0f} ms  head {head}", (6, 18),

@@ -6,8 +6,9 @@ ov_detect.py — OpenVINO Open Model Zoo SSD 검출기 (얼굴 / 사람)
     person : person-detection-0201          입력 1×3×384×384 BGR (retail-0013 은 위에서 내려보는 매장 카메라용 — 눈높이 사람을 놓침)
   출력 1×1×200×7 = [image_id, label, conf, x_min, y_min, x_max, y_max] (0–1), image_id −1 이후는 무효
 
-  det = OvSSD("face", device="CPU", conf=0.6)
+  det = OvSSD("face", device="NPU", conf=0.6)   # 안 되면 HETERO:NPU,CPU → CPU 로 자동 (det.device = 실제 장치)
   boxes = det(bgr)        # [(x0, y0, x1, y1, conf), ...] 원본 픽셀, conf 내림차순
+  컴파일 결과는 ~/.cache/g1-motion-control/openvino 에 캐시 (NPU 첫 컴파일이 느려서)
 """
 import os
 
@@ -22,6 +23,22 @@ except (ImportError, AttributeError):
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "omz")
 MODELS = {"face": "face-detection-retail-0004", "person": "person-detection-0201"}
+CACHE_DIR = os.path.expanduser("~/.cache/g1-motion-control/openvino")
+
+
+def compile_with_fallback(core, model, device):
+    """device 로 컴파일, 실패하면 HETERO:device,CPU (안 되는 층만 CPU) → CPU. 반환 (compiled, 실제 장치)."""
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    order = [device] if device in ("CPU", "AUTO") or device.startswith("HETERO") else [device, f"HETERO:{device},CPU", "CPU"]
+    err = None
+    for d in order:
+        try:
+            return core.compile_model(model, d, {"CACHE_DIR": CACHE_DIR}), d
+        except Exception as e:      # noqa: BLE001 — 장치 없음·지원 안 되는 층 등
+            err = e
+            why = " ".join(ln.strip() for ln in str(e).splitlines() if ln.strip() and ".cpp:" not in ln)[:200]
+            print(f"[ov_detect] {d} 컴파일 실패 → 다음 장치: {why}")
+    raise err
 
 
 class OvSSD:
@@ -30,7 +47,7 @@ class OvSSD:
         if not os.path.exists(xml):
             raise FileNotFoundError(f"모델 없음: {xml}")
         core = _Core()
-        self.compiled = core.compile_model(core.read_model(xml), device)
+        self.compiled, device = compile_with_fallback(core, core.read_model(xml), device)
         self.out = self.compiled.output(0)
         _, _, self.h, self.w = [int(d) for d in self.compiled.input(0).shape]
         self.conf = float(conf)

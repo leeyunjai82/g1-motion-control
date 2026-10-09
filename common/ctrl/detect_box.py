@@ -93,7 +93,8 @@ YOLO_MODEL = os.environ.get("YOLO_MODEL", _DEFAULT_MODEL)
 YOLO_CONF  = 0.4
 # OpenVINO면 intel:cpu, 아니면 cpu
 YOLO_DEVICE = os.environ.get("YOLO_DEVICE",
-                             "intel:cpu" if YOLO_MODEL.endswith("openvino_model") else "cpu")
+                             ((robot_env.CFG.get("vision") or {}).get("box_device") or "intel:cpu")
+                             if YOLO_MODEL.endswith("openvino_model") else "cpu")   # robot.yaml vision.box_device (H2: intel:gpu)
 
 SMOOTH_WINDOW_SEC = 2.0
 

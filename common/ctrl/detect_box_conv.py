@@ -79,7 +79,8 @@ _DEFAULT_MODEL = _OV_DIR if os.path.isdir(_OV_DIR) else _PT
 YOLO_MODEL = os.environ.get("YOLO_MODEL", _DEFAULT_MODEL)
 YOLO_CONF  = 0.4
 YOLO_DEVICE = os.environ.get("YOLO_DEVICE",
-                             "intel:cpu" if YOLO_MODEL.endswith("openvino_model") else "cpu")
+                             ((robot_env.CFG.get("vision") or {}).get("box_device") or "intel:cpu")
+                             if YOLO_MODEL.endswith("openvino_model") else "cpu")   # robot.yaml vision.box_device (H2: intel:gpu)
 
 # 박스는 대기손에 막혀 catch 지점에서 정지하므로 창을 조금 길게 잡아 검출 깜빡임 흡수.
 SMOOTH_WINDOW_SEC = 0.8
