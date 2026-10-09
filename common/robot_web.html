@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<!-- Version: 2.15
+<!-- Version: 2.16
+  2.16 - 메인 색 #00b7eb (회사 메인 컬러 — ARC 로고, 사용자 2026-10-09). 메인 색을 더 씀:
+         위 막대 아래 선, 카드 제목 왼쪽 막대, Mode 칩. 런처·대시보드도 같은 색
   2.15 - 메인 색 = pitron 스티커 'pi' 파랑 #408fd4 (사진에서 뽑은 근사값 — 원본 색 코드 확인 필요).
          상태 OK(연결·칩·System·잡기 완료)는 초록 --ok 로 따로. 선택된 버튼은 파랑 틴트, Grab Now 는 파랑 채움
   2.14 - Wrist RPY 기본 전부 0 (robot.yaml grab.wrist_rpy_deg)
@@ -51,9 +53,9 @@
 :root{
   --bg:#0e1116; --panel:#161b22; --panel2:#1c232d; --line:#2a3340;
   --ink:#c9d4e0; --dim:#6b7785;
-  --accent:#408fd4;      /* 메인 = pitron 'pi' 파랑 (스티커 사진 근사, 원본 색 코드 확인 필요) */
-  --accent2:#8ec5f0;     /* 링크·입력 포커스 (메인보다 밝게) */
-  --accent-tint:rgba(64,143,212,.20); --accent-deep:#1d3f5e;
+  --accent:#00b7eb;      /* 메인 = 회사 메인 컬러 (ARC 로고 #00B7EB, 사용자 2026-10-09) — 런처·대시보드와 같음 */
+  --accent2:#7fd8f5;     /* 링크·입력 포커스 (메인보다 밝게) */
+  --accent-tint:rgba(0,183,235,.20); --accent-deep:#08465a;
   --ok:#3ddc97;          /* 상태 OK (연결·칩·System·잡기 완료) — 메인 색과 따로 */
   --warn:#ff6b6b; --amber:#ffb454;
   --r:10px;
@@ -65,7 +67,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   background-image:radial-gradient(circle at 20% 0%,#16202c 0%,var(--bg) 55%);
   height:100vh;display:flex;flex-direction:column;overflow:hidden}
 .topbar{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);
-  background:linear-gradient(90deg,#11161d,#0e1116)}
+  background:linear-gradient(90deg,#11161d,#0e1116);box-shadow:inset 0 -1px 0 rgba(0,183,235,.45)}   /* 메인 색 선 */
 .logo{font-weight:700;letter-spacing:.5px;font-size:15px;color:var(--accent)}
 .logo b{color:var(--ink)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);box-shadow:0 0 0 0 transparent}
@@ -88,7 +90,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .card.fill.robot{min-height:240px}
 .card.stretch{flex:1 0 auto}           /* 버튼 카드: 내용보다 작아지지 않음 */
 .card.stretch>.card-b{justify-content:flex-start}
-.card-h{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);
+.card-h{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);box-shadow:inset 3px 0 0 var(--accent);
   padding:9px 13px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;
   background:var(--panel2)}
 .card-h .tag{color:var(--accent);font-weight:700}
@@ -101,7 +103,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .chip b{color:var(--ink);font-weight:700}
 .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
 .chip.ok{color:var(--ok);border-color:#1f5a43}
-.chip.info{color:var(--accent2);border-color:#1f4a73}
+.chip.info{color:var(--accent);border-color:#0b5a70}
 .chip.busy{color:var(--amber);border-color:#6a4a1f}
 .chip.err{color:var(--warn);border-color:#5a2b2b}
 .dot.err{background:var(--warn);box-shadow:0 0 8px var(--warn)}
@@ -180,9 +182,9 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 .btn:hover{border-color:var(--accent);color:var(--accent)}
 .btn:active{transform:translateY(1px)}
 .btn.full{width:100%}
-.btn.on{background:var(--accent-tint);color:#d6eafb;border-color:var(--accent);font-weight:700}
+.btn.on{background:var(--accent-tint);color:#c8f0fc;border-color:var(--accent);font-weight:700}
 .btn.primary{background:var(--accent);color:#04121f;border:none;font-weight:700}
-.btn.primary:hover{background:#5aa3e0;color:#04121f}
+.btn.primary:hover{background:#33c5ef;color:#04121f}
 .btn.warn{border-color:#5a2b2b;color:var(--warn)}
 .btn.warn:hover{border-color:var(--warn)}
 .row{display:flex;gap:6px}.row>*{flex:1}
