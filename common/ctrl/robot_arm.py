@@ -25,13 +25,30 @@ ARM_SLOTS    = [int(i) for i in _J["arm"]]          # 팔 14축, IK q 순서
 WAIST_SLOTS  = [int(i) for i in _J["waist"]]        # yaw, roll, pitch
 HEAD_SLOTS   = {int(i) for i in (_J.get("head") or [])}
 WEIGHT_SLOT  = int(_J["weight_slot"])               # arm_sdk weight (motor_cmd[WEIGHT_SLOT].q)
+
+
+def _arm_urdf_limits():
+    """ARM_SLOTS 순서의 URDF 관절 한계 (lo, hi) [rad] — robot.yaml joints.map(URDF 이름 → 슬롯) 로 찾음. 못 읽으면 None."""
+    try:
+        import pinocchio as pin
+        m = pin.buildModelFromUrdf(robot_env.URDF_PATH)
+        name_of = {int(v): k for k, v in (_J.get("map") or {}).items()}
+        idx = [m.joints[m.getJointId(name_of[s])].idx_q for s in ARM_SLOTS]
+        return np.asarray(m.lowerPositionLimit)[idx].copy(), np.asarray(m.upperPositionLimit)[idx].copy()
+    except Exception as e:      # noqa: BLE001 — 한계를 못 읽어도 제어는 계속 (경고만)
+        logging.getLogger(__name__).warning(f"URDF 팔 관절 한계를 못 읽음 — 팔 목표를 자르지 않음: {e}")
+        return None
+
+
+# 팔 목표를 URDF 관절 한계 안으로 자름 (모든 팔 명령 공통 — IK 는 원래 한계 안, 관절 직접 명령·모션 파일 대비)
+ARM_LIMITS = _arm_urdf_limits()
 INIT_SLOTS   = [int(i) for i in _J["init_slots"]]   # 시작 시 mode/kp/kd/q 설정 슬롯
 WRIST_SLOTS  = {int(i) for i in _J["wrist"]}
 WEAK_SLOTS   = {int(i) for i in _J["weak"]}
-# 허리를 시작 시 현재각으로만 잡고 이후 명령하지 않음 (xr_teleoperate H2_ArmController 와 같음). G1 false = 허리 명령 (기존)
+# 허리를 시작 시 현재각으로만 잡고 이후 명령하지 않음 (xr_teleoperate H2_ArmController 와 같음, H2 robot.yaml true)
 WAIST_HOLD   = bool(_J.get("waist_hold_initial", False))
-ARM_VEL_LIMIT = float(_G.get("arm_velocity_limit", 20.0))   # 팔 관절 속도 제한 [rad/s] (G1 20 → speed_gradual_max 로 30, H2 공식 30)
-# 머리 [pitch, yaw] 슬롯 (robot.yaml joints.map head_pitch_joint / head_yaw_joint — G1 은 없음).
+ARM_VEL_LIMIT = float(_G.get("arm_velocity_limit", 20.0))   # 팔 관절 속도 제한 [rad/s] (H2 robot.yaml 30 = 공식 기본)
+# 머리 [pitch, yaw] 슬롯 (robot.yaml joints.map head_pitch_joint / head_yaw_joint). 703 에서는 arm_sdk 로 안 움직임 (FACTS.md).
 # 명령은 joints.head_range_deg 안으로 자르고, 송신 루프가 gains.head_velocity_limit 속도로 목표까지 옮김
 HEAD_ORDER   = [int(_J["map"][k]) for k in ("head_pitch_joint", "head_yaw_joint") if k in (_J.get("map") or {})]
 _HR          = _J.get("head_range_deg") or {}
@@ -142,7 +159,7 @@ class ArmController:
         self.msg = unitree_hg_msg_dds__LowCmd_()
         self.msg.mode_pr = 0
         # LowCmd.mode_machine — robot.yaml lowcmd.mode_machine
-        #   0 (기본, G1 기존 동작) / "lowstate" = 수신한 rt/lowstate.mode_machine 을 그대로 (xr_teleoperate H2_ArmController 방식)
+        #   0 / "lowstate" = 수신한 rt/lowstate.mode_machine 을 그대로 (xr_teleoperate H2_ArmController 방식, H2 robot.yaml)
         _mm = (robot_env.CFG.get("lowcmd") or {}).get("mode_machine", 0)
         self.msg.mode_machine = int(self._last_lowstate_msg.mode_machine) if _mm == "lowstate" else int(_mm)
         logger_mp.info(f"LowCmd mode_machine = {self.msg.mode_machine} (robot.yaml lowcmd.mode_machine: {_mm})")
@@ -150,7 +167,7 @@ class ArmController:
         # 현재 상태 읽기 및 초기 타겟 설정
         current_all_q = self.get_current_motor_q()
         self.q_target = self.get_current_dual_arm_q()
-        self.waist_q_target = current_all_q[WAIST_SLOTS]   # robot.yaml joints.waist (G1: 12, 13, 14번)
+        self.waist_q_target = current_all_q[WAIST_SLOTS]   # robot.yaml joints.waist (H2: 14, 12, 13 = yaw, roll, pitch)
         self.head_q_target = current_all_q[HEAD_ORDER] if HEAD_ORDER else np.zeros(0)   # [pitch, yaw] — 시작 각도 유지
         self.head_q_cmd = self.head_q_target.copy()       # 속도 제한을 거친 실제 송신값
 
@@ -257,7 +274,7 @@ class ArmController:
                 self.msg.motor_cmd[id].dq  = 0
                 self.msg.motor_cmd[id].tau = arm_tauff_target[idx]
 
-            # 2. 허리 제어 업데이트 (robot.yaml joints.waist, G1: 12, 13, 14번)
+            # 2. 허리 제어 업데이트 (robot.yaml joints.waist — H2 는 시작 각도 유지)
             for i, joint_idx in enumerate(WAIST_SLOTS):
                 self.msg.motor_cmd[joint_idx].q   = waist_q_target[i]
                 self.msg.motor_cmd[joint_idx].dq  = 0
@@ -287,7 +304,7 @@ class ArmController:
             # 속도 점진적 증가 처리
             if self._speed_gradual_max:
                 t_elapsed = start_time - self._gradual_start_time
-                _top = max(30.0, ARM_VEL_LIMIT)          # G1: 20 → 30 (기존), H2: 30 그대로 (공식은 점진 증가 없음)
+                _top = max(30.0, ARM_VEL_LIMIT)          # H2: 30 그대로 (공식은 점진 증가 없음)
                 self.arm_velocity_limit = ARM_VEL_LIMIT + ((_top - ARM_VEL_LIMIT) * min(1.0, t_elapsed / 5.0))
 
             current_time = time.time()
@@ -297,6 +314,15 @@ class ArmController:
     # ==================== 제어 메서드 ====================
 
     def ctrl_dual_arm(self, q_target, tauff_target):
+        if ARM_LIMITS is not None:
+            q = np.clip(np.asarray(q_target, dtype=float), ARM_LIMITS[0], ARM_LIMITS[1])
+            over = np.abs(q - np.asarray(q_target, dtype=float))
+            if over.max() > np.radians(0.5) and time.time() - getattr(self, "_limit_warn_t", 0.0) > 2.0:
+                self._limit_warn_t = time.time()
+                k = int(over.argmax())
+                logger_mp.warning(f"팔 목표가 URDF 관절 한계 밖 — 잘라서 보냄 (슬롯 {ARM_SLOTS[k]}: "
+                                  f"{np.degrees(q_target[k]):.1f}° → {np.degrees(q[k]):.1f}°)")
+            q_target = q
         with self.ctrl_lock:
             self.q_target = q_target
             self.tauff_target = tauff_target
@@ -442,10 +468,10 @@ class ArmController:
 
 
 
-# 예전 이름 (호환용) — 내용은 위 ArmController (ROBOT 에 따라 G1/H2)
+# 예전 이름 (호환용) — 내용은 위 ArmController
 G1_29_ArmController = ArmController
 
-# ---- G1 참고용 관절 번호 (제어 코드는 위 robot.yaml 값만 사용 — 이 enum 은 참고/하위 호환용) ----
+# ---- 예전 G1 관절 번호 enum (arm_controller_wrapper import 호환용 — 제어 코드는 위 robot.yaml 값만 사용) ----
 class G1_29_JointArmIndex(IntEnum):
     kLeftShoulderPitch = 15
     kLeftShoulderRoll  = 16
