@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/robot_env.sh" || exit 1
 require_robot
 PY="$TV_PY"
-TARGETS=("rs_stream" "arm_server" "robot_server" "dashboard" "detect_box" "head_track")
+TARGETS=("rs_stream" "arm_server" "robot_server" "dashboard" "detect_box" "head_track" "head_cam_on")
 
 # 실행 형태에만 맞는 패턴 (vim/tail 등 파일명이 들어간 다른 명령은 건드리지 않게)
 #   launcher : "<...>python <...>run_launcher.py"  ← TERM 은 python 에만.

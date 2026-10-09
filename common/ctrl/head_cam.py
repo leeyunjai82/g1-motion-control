@@ -7,9 +7,10 @@ head_cam.py — H2 머리 쌍안 카메라 수신 (공식 'Bilateral Data Stream
   깊이 : PC1(192.168.123.161) TCP 5000 — Y16 544×448 10 fps, mm (0·65535 = 무효)
          헤더 36 B <IQQIIII (magic 'Y16 ' 0x59313620, seq, 보낸 쪽 시각 us, w, h, format, data_size) + w·h·2 B
          (공식 deb unitree-dep-img 1.0.0 의 dep_img_client.c 와 같은 형식)
-  로봇: 앱에서 video_hub 끄고 'Stereo patch PC1' 서비스 켬 (기본 자동 시작 아님).
+  로봇: 앱에서 video_hub 끄고 'Stereo patch PC1' 서비스 켬 (기본 자동 시작 아님, 로봇을 다시 켜면 기본으로 돌아감)
+        → utils/head_cam_on.py 가 PC 에서 대신 함 (robot_state RPC + 수신 IP, start_robot.sh 가 실행)
   이 PC: sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
-쓰는 곳: utils/check_head_cam.py (수신 확인), common/head_track.py (얼굴·사람·사물 인식)
+쓰는 곳: utils/check_head_cam.py (수신 확인), common/head_track.py (얼굴·사람·사물 인식), utils/head_cam_on.py (로봇 쪽 준비)
 """
 import re
 import shutil
@@ -18,11 +19,13 @@ import struct
 import subprocess
 import threading
 import time
+import urllib.request
 
 import numpy as np
 
 PC1 = "192.168.123.161"
 RGB_PORTS = {"left": 5004, "right": 5006, "raw": 5002}
+SET_IP_PORT = 9080                       # PC1 RGB 수신 IP 설정 서버 (stereo_patch_pc1 서비스가 켜져 있을 때)
 RTP_CAPS = "application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96"
 MAGIC = 0x59313620                       # 'Y16 '
 HDR = struct.Struct("<IQQIIII")          # 36 B, packed
@@ -78,6 +81,26 @@ def my_ip(peer):
         return "?"
     finally:
         s.close()
+
+
+def port_open(host, port, timeout=1.0):
+    """TCP 접속되면 True."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def set_receive_ip(ip, host=PC1, timeout=5.0):
+    """RGB 수신 IP 를 ip 로 (http://PC1:9080/set?ip=…). 적용은 서비스 재시작 뒤 (공식 문서) → (성공 여부, 응답·오류 문자열)."""
+    url = f"http://{host}:{SET_IP_PORT}/set?ip={ip}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            body = r.read(300).decode(errors="replace").strip()[:200]
+            return 200 <= r.status < 300, f"{url} -> HTTP {r.status} {body}"
+    except OSError as e:
+        return False, f"{url} failed: {e}"
 
 
 class DepthRx(threading.Thread):

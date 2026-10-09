@@ -65,8 +65,8 @@ def wait_rgb(port, who):
             who.err = ""
             print(f"[head_track] head camera RGB {rx.size[0]}x{rx.size[1]} (UDP {port})")
             return rx
-        who.err = (f"no head camera RGB (UDP {port}) - app: video_hub off, Stereo patch PC1 on, "
-                   f"receiver IP = {my_ip(PC1)}")
+        who.err = (f"no head camera RGB (UDP {port}) - robot side: utils/head_cam_on.py (start_robot.sh runs it; "
+                   f"or app: video_hub off, Stereo patch PC1 on), receiver IP = {my_ip(PC1)}")
 
 
 def jpeg(img, q=80):

@@ -54,7 +54,7 @@ cd ~/project/h2-motion-control
 #   → 제어 UI : http://<pc-ip>:50000/     (Grab Mode → Box, Handover → Place / Center, Grab Now)
 #   → 3D 뷰어 : http://<pc-ip>:50003/dashboard
 #   → 박스 인식 : http://<pc-ip>:50010/   (자동 잡기 ON)
-#   → 머리 카메라 : http://<pc-ip>:50013/ (앱에서 video_hub 끔 · Stereo patch PC1 켬)
+#   → 머리 카메라 : http://<pc-ip>:50013/ (로봇 쪽 서비스는 start_robot.sh 가 자동 준비 — utils/head_cam_on.py)
 
 # 3. 모션 에디터 — 모드 지정 필수 (virtual | real)
 ./start_simulator.sh real   # 실기 (start_robot.sh 와 함께 써도 됨 — arm_server 재사용)
@@ -108,7 +108,8 @@ Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위�
 - **D435i (가슴, 박스 인식)**: 등판 거치대 `robots/h2/cad/camera_bracket/` (v3: 숙임 60°). 장착값은 `robot.yaml camera`
   (x, y, z [m, torso_link 기준], pitch_deg). 숙임각 실측: `utils/check_rsimu.py --sec 5`, 위치 확인: `utils/cam_marker_check.py`.
 - **머리 쌍안 카메라**: `utils/check_head_cam.py` (수신 확인·깊이 클릭), 인식은 `common/head_track.py` (`robot.yaml head_track`).
-  로봇을 켤 때마다 앱에서 video_hub 끔 · Stereo patch PC1 켬 (재부팅하면 기본으로 돌아감). 서비스 목록·켜기/끄기: `utils/robot_services.py` (H2 응답 여부 확인 필요).
+  로봇을 다시 켜면 앱 설정이 기본(video_hub 켜짐 · Stereo patch 꺼짐)으로 돌아감 → `start_robot.sh` 가 `utils/head_cam_on.py` 로 매번 자동 준비
+  (video_hub 끔 · stereo_patch_pc1 켬 · 수신 IP = 이 PC · 재시작, `robot.yaml head_track.robot_setup`). 서비스 목록: `utils/robot_services.py`.
 
 ## 디렉터리
 

@@ -12,7 +12,9 @@ robot_services.py — 로봇 서비스 목록 보기 / 켜기·끄기 (앱의 �
   python utils/robot_services.py --off video_hub --on <이름> --yes    # 확인 없이 (스크립트용)
   python utils/robot_services.py --iface <인터페이스>     # DDS 네트워크 인터페이스 지정 (기본 자동)
 
-  status 는 로봇이 준 원래 값 그대로 출력 (뜻은 문서에 없음 — 앱 화면과 비교해서 확인).
+  status 는 로봇이 준 원래 값 그대로 출력. 문서에 뜻이 없음 — 0 = 켜짐 / 1 = 꺼짐 으로 추정
+    (근거: 실기 2026-10-09 목록에서 응답 중인 robot_state 와 앱 연결용 webrtc_* 가 0. 앱 화면과 비교해서 확인 필요).
+  H2 실기 응답 확인 (2026-10-09): 27 개 — video_hub, stereo_patch_pc1 포함. 머리 카메라 준비는 utils/head_cam_on.py.
   protect True 인 서비스는 바꾸지 않음 (로봇도 거부, 코드 5202).
   보행·균형 관련 서비스를 끄면 로봇이 넘어질 수 있음 → 이름을 정확히 확인하고 쓸 것.
 """

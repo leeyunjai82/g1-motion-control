@@ -12,7 +12,8 @@ check_head_cam.py — H2 머리 쌍안 카메라 수신 확인: 왼눈(또는 �
            (공식 unitree-dep-img 1.0.0 deb 의 dep_img_client.c 와 같은 형식 → deb·v4l2loopback 없이 직접 읽음)
 
   준비
-    로봇: 앱에서 video_hub 끄기 (충돌) → 'Stereo patch PC1' 서비스 켜기 (기본 자동 시작 아님)
+    로봇: python utils/head_cam_on.py 한 번 (video_hub 끔 · stereo_patch_pc1 켬 · 수신 IP = 이 PC · 재시작 — start_robot.sh 도 실행)
+          또는 앱에서 video_hub 끄기 (충돌) → 'Stereo patch PC1' 서비스 켜기 (기본 자동 시작 아님, 로봇을 다시 켜면 기본으로 돌아감)
           RGB 수신 IP 를 이 PC 로: --set-ip (= curl "http://192.168.123.161:9080/set?ip=<이 PC IP>") → 앱에서 서비스 껐다 켜기
     이 PC: sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
                             gstreamer1.0-plugins-ugly gstreamer1.0-libav

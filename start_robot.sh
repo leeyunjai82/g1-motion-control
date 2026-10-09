@@ -16,7 +16,7 @@ mkdir -p "$LOG_DIR"
 DAY="$(date '+%Y%m%d')"
 
 # 관리 대상 스크립트 (이름 기준 sweep)
-TARGETS=("rs_stream.py" "arm_server.py" "robot_server.py" "dashboard.py" "detect_box.py" "head_track.py")
+TARGETS=("rs_stream.py" "arm_server.py" "robot_server.py" "dashboard.py" "detect_box.py" "head_track.py" "head_cam_on.py")
 
 # 로그 타임스탬프 필터 stamp() 는 robot_env.sh 에 있음 (mawk 줄 단위 처리 포함)
 
@@ -158,6 +158,10 @@ PIDS+=($!); NAMES+=("detect_box")
 sleep 1
 
 if [ "$HEADCAM" = "1" ]; then
+  # 로봇 쪽 준비 (video_hub 끔 · stereo_patch_pc1 켬 · 수신 IP = 이 PC) — robot.yaml head_track.robot_setup. 한 번 돌고 끝남
+  echo "[start] head_cam_on         ... 머리 카메라 로봇 서비스 준비 (로그 head_track_$DAY.log)"
+  python -u ../utils/head_cam_on.py > >(stamp >> "$LOG_DIR/head_track_$DAY.log")    2>&1 &
+  PIDS+=($!); NAMES+=("head_cam_on")
   echo "[start] head_track    (50013) ... 머리 카메라 왼눈 얼굴·사람 / 오른눈 사물 (보기만)"
   python -u head_track.py       > >(stamp >> "$LOG_DIR/head_track_$DAY.log")    2>&1 &
   PIDS+=($!); NAMES+=("head_track")
@@ -171,7 +175,7 @@ cat <<EOF2
     - Dashboard     : http://localhost:50003/dashboard (3D viewer + video + depth)
     - rs_stream     : http://localhost:50001/video_feed
     - detect_box    : http://localhost:50010/          (박스 인식)
-    - head_track    : http://localhost:50013/          (머리 카메라 인식 — 앱 video_hub 끔·Stereo patch PC1 켬 필요, 로그 head_track_$DAY.log)
+    - head_track    : http://localhost:50013/          (머리 카메라 인식 — 로봇 서비스는 head_cam_on 이 준비, 로그 head_track_$DAY.log)
 
   사용:
     1) http://localhost:50000/ 접속 (제어)
