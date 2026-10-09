@@ -1,5 +1,5 @@
 """
-arm_server.py — G1 팔/허리 전용 서버 (포트 50022)
+arm_server.py — H2 팔/허리 전용 서버 (포트 50022)
 
 rt/arm_sdk 를 이 프로세스가 단독 점유한다. 팔·허리를 움직이는 모든
 프로그램(robot_server, 외부 프로젝트, SLAM 개발자)은 반드시 이 서버의
@@ -156,7 +156,7 @@ async def lifespan(app: FastAPI):
     os._exit(0)
 
 
-app = FastAPI(title="G1 Arm Server", lifespan=lifespan)
+app = FastAPI(title="H2 Arm Server", lifespan=lifespan)
 
 
 # ---------------- 조회 ----------------
@@ -204,7 +204,7 @@ def _do_hold(duration):
 def _do_release(duration, arm_deg):
     global ARM_MODE, _switching
     try:
-        # loco 기본자세로 보간 후 반납 — 인계 순간 튐 최소화
+        # 기본 자세로 보간 후 반납 — 인계 순간 튐 최소화
         arm.move_waist_smooth(yaw=PARK_WAIST_DEG[0], roll=PARK_WAIST_DEG[1],
                               pitch=PARK_WAIST_DEG[2], duration=duration)
         if arm_deg is not None:

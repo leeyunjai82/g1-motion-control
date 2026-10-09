@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
-run_launcher.py — G1 자세(FSM) 제어 + start_robot.sh 실행 웹 (포트 80)
+run_launcher.py — H2 자세(FSM) 제어 + start_robot.sh 실행 웹 (포트 80)
 
   ./launcher.sh             (start_fsm.sh 와 같이 sudo 로 tv 환경 python 실행)
   → http://<robot-ip>/   (포트 80 — root 실행 필요, launcher.sh 의 sudo)
+  sudo <tv python> run_launcher.py [robot]   (robot 생략 시 h2 — 이 저장소는 H2 전용)
 
 자세 — FSM 단계별 버튼 (LocoClient.SetFsmId 직접 호출, 연속 시퀀스 없음)
-  사람이 로봇 상태를 보고 한 단계씩 누른다. init_fsm.py 의 stand = 1 → 4 → 501.
+  FSM 번호·이름·버튼 라벨은 robots/h2/robot.yaml fsm (damp/lock/run/sit, names, labels) 에서 만든다.
+  사람이 로봇 상태를 보고 한 단계씩 누른다. init_fsm.py 의 stand = 1 → 4 → 703.
   버튼을 누르면 5초 카운트다운 후 전송 (취소 가능, 대기 중 Damp 는 눌러서 교체 가능).
   전송 직전에 허용 조건을 다시 검사한다.
-  현재 FSM(GetFsmId)에서 갈 수 있는 단계만 허용:
-  · 1   Damping              : 항상 (서 있으면 넘어짐 — 경고창)
-  · 4   Lock Standing        : FSM 1 에서 / 501 에서(= no-bal, Robot 정지 상태만)
-  · 501 Walk (3DoF waist)    : FSM 4 에서
-  · 3   Sit Down             : FSM 4·501 에서, Robot 정지 상태만 (경고창)
+  현재 FSM(GetFsmId)에서 갈 수 있는 단계만 허용 (H2 값):
+  · 1   Damp                 : 항상 (서 있으면 넘어짐 — 경고창)
+  · 4   FixStand             : FSM 1 에서 / 703 에서(Robot 정지 상태만)
+  · 703 PhaseWalk (balance)  : FSM 4 에서 — 제자리 밸런스 서기 (H2 는 보행 없음, arm_sdk 동작)
+  · 3   Sit                  : 서 있을 때(fsm.standing), Robot 정지 상태만 (경고창)
   · FSM 조회 불가 시 순서 제한 없음 (Robot 실행 중 4/3 차단만 유지) — 순서는 사람이 지킨다
-  · Robot 시작은 FSM 501 에서만
+  · Robot 시작은 FSM 703 에서만
 
   ./start_fsm.sh / utils/init_fsm.py 는 수정하지 않았다 — 터미널에서 따로 쓸 수 있다.
   단, 둘을 동시에 쓰면 서로의 진행을 모른다. 한쪽만 쓸 것.
@@ -31,6 +33,7 @@ run_launcher.py — G1 자세(FSM) 제어 + start_robot.sh 실행 웹 (포트 80
   · 웹 버튼은 비상정지가 아니다. 물리 E-STOP / 리모컨을 항상 손에 둘 것.
 """
 
+import html
 import json
 import os
 import pwd
@@ -42,10 +45,9 @@ import time
 from collections import deque
 
 # 로봇 선택 — launcher.sh 가 sudo 뒤에서 인자로 넘긴다 (sudo 가 환경변수를 지우므로).
-#   sudo <tv python> run_launcher.py <robot>
+#   sudo <tv python> run_launcher.py <robot>      (H2 전용 — 인자가 없거나 비어 있으면 h2)
 # os.environ 에 넣어 두면 start_robot.sh(_user_env) 에도 그대로 전달된다.
-if len(sys.argv) > 1:
-    os.environ["ROBOT"] = sys.argv[1]
+os.environ["ROBOT"] = (sys.argv[1].strip() if len(sys.argv) > 1 else "") or "h2"
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "common"))
 import robot_env   # ROBOT 미지정/미지원이면 여기서 종료
 
@@ -102,21 +104,42 @@ def _logfile(name):
 # ==========================================
 # FSM (자세) — LocoClient 직접 호출, 단계별
 # ==========================================
-# FSM ID — robots/<ROBOT>/robot.yaml fsm (G1: 1 Damping / 4 Lock Standing / 501 Walk 3DoF waist / 3 Sit)
+# FSM ID — robots/h2/robot.yaml fsm (H2: 1 Damp / 4 FixStand / 703 PhaseWalk(제자리 밸런스) / 3 Sit)
+#   화면 버튼·안내 문구·JS 상수는 아래 값으로 만든다 (_render_html).
 _F = robot_env.FSM
 FSM_NAME = {int(k): str(v) for k, v in _F["names"].items()}
 FSM_BAL = {int(k): True for k in _F["balance"]}   # 밸런스 제어 여부 (나머지 없음)
 STANDING = {int(k) for k in _F["standing"]}
 FSM_DAMP, FSM_LOCK, FSM_RUN, FSM_SIT = int(_F["damp"]), int(_F["lock"]), int(_F["run"]), int(_F["sit"])
 _LBL = _F["labels"]
-# 화면(HTML) 버튼 id/onclick 이 1 / 4 / 3 을 직접 쓴다 — 다른 값이면 화면을 같이 고쳐야 하므로 거부
-if (FSM_DAMP, FSM_LOCK, FSM_SIT) != (1, 4, 3):
-    raise SystemExit(f"[launcher] ❌ robot.yaml fsm damp/lock/sit = {(FSM_DAMP, FSM_LOCK, FSM_SIT)} — "
-                     "launcher 화면은 1/4/3 기준. run_launcher.py HTML 수정 필요")
+STEPS = (FSM_DAMP, FSM_LOCK, FSM_RUN, FSM_SIT)
+
+
+def _check_fsm_cfg():
+    """robot.yaml fsm 이 launcher 단계(damp → lock → run, sit)와 맞는지 — 어긋나면 기동 거부."""
+    errs = []
+    for key, fid in (("damp", FSM_DAMP), ("lock", FSM_LOCK), ("run", FSM_RUN), ("sit", FSM_SIT)):
+        if fid not in FSM_NAME:
+            errs.append(f"fsm.{key}={fid} 가 fsm.names 에 없음")
+    if len(set(STEPS)) != len(STEPS):
+        errs.append(f"damp/lock/run/sit 중복 {STEPS}")
+    if FSM_LOCK not in STANDING or FSM_RUN not in STANDING:
+        errs.append(f"lock({FSM_LOCK})·run({FSM_RUN}) 은 fsm.standing {sorted(STANDING)} 에 있어야 함")
+    if FSM_DAMP in STANDING or FSM_SIT in STANDING:
+        errs.append(f"damp({FSM_DAMP})·sit({FSM_SIT}) 는 fsm.standing 에 없어야 함")
+    if FSM_RUN not in FSM_BAL:
+        errs.append(f"run({FSM_RUN}) 은 fsm.balance {sorted(FSM_BAL)} 에 있어야 함 (arm_sdk 밸런스 서기)")
+    for key in ("lock_button", "run_button", "run_enter"):
+        if not str((_LBL or {}).get(key) or "").strip():
+            errs.append(f"fsm.labels.{key} 없음")
+    if errs:
+        raise SystemExit(f"[launcher] ❌ robots/{robot_env.ROBOT}/robot.yaml fsm 설정 오류 — " + "; ".join(errs))
+
+
+_check_fsm_cfg()
 POLL_SEC = 1.0
 DELAY_SEC = 5.0                   # 버튼 → 전송 지연
-API_GET_FSM_ID = 7001             # ROBOT_API_ID_LOCO_GET_FSM_ID (g1_loco_api.py)
-STEPS = (FSM_DAMP, FSM_LOCK, FSM_RUN, FSM_SIT)
+API_GET_FSM_ID = 7001             # ROBOT_API_ID_LOCO_GET_FSM_ID (h2_loco_api.py)
 ROBOT_BUSY = "Robot 서버 실행 중 — 먼저 [Robot 정지]"
 
 
@@ -134,7 +157,7 @@ def allowed(target, cur, robot_running):
             return True, ""
         if cur == FSM_RUN:
             return (False, ROBOT_BUSY) if robot_running else (True, "")
-        return False, f"{FSM_LOCK} 는 FSM {FSM_DAMP}(Damping) 또는 {FSM_RUN} 에서만 (현재 {cur})"
+        return False, f"{FSM_LOCK} 는 FSM {FSM_DAMP}({FSM_NAME[FSM_DAMP]}) 또는 {FSM_RUN} 에서만 (현재 {cur})"
     if target == FSM_RUN:
         return (True, "") if cur == FSM_LOCK else (False, f"{FSM_RUN} 은 FSM {FSM_LOCK}({_LBL['lock_button']}) 에서만 (현재 {cur})")
     if target == FSM_SIT:
@@ -240,7 +263,7 @@ class FsmCtl:
             raise HTTPException(400, f"FSM 은 {STEPS} 중 하나")
         with self.lock:
             if self.busy is not None:
-                if target == 1 and self.busy != 1 and time.time() < self.fire_at:
+                if target == FSM_DAMP and self.busy != FSM_DAMP and time.time() < self.fire_at:
                     self.log(f"FSM {self.busy} 대기 취소 — Damp 로 교체")
                     self.cancel.set()
                 else:
@@ -407,7 +430,7 @@ async def lifespan(app: FastAPI):
         _stop_robot()
 
 
-app = FastAPI(title="G1 Launcher", lifespan=lifespan)
+app = FastAPI(title=f"{robot_env.ROBOT.upper()} Launcher", lifespan=lifespan)
 
 
 @app.post("/fsm/{target}")
@@ -460,7 +483,7 @@ def i18n_js():
 HTML = r"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>G1 Launcher</title>
+<title>@@TITLE@@</title>
 <style>
 :root{--bg:#0e1116;--panel:#161b22;--panel2:#1c232d;--line:#2a3340;--ink:#c9d4e0;--dim:#6b7785;
   --accent:#3ddc97;--accent2:#4aa8ff;--warn:#ff6b6b;--amber:#ffb454}
@@ -521,21 +544,14 @@ pre{margin:0;flex:1;min-height:120px;overflow:auto;background:#0a0d12;border:1px
 .mbox .run{background:#5a1f1f;border-color:var(--warn);color:#fff}
 </style></head><body>
 <script src="/i18n.js"></script>
-<div class="top"><b>G1 Launcher</b><span class="r">:80 · 웹 버튼은 비상정지가 아닙니다 — E-STOP/리모컨을 손에 두세요</span><span id="lang-slot" style="margin-left:12px"></span></div>
+<div class="top"><b>@@TITLE@@</b><span class="r">:80 · 웹 버튼은 비상정지가 아닙니다 — E-STOP/리모컨을 손에 두세요</span><span id="lang-slot" style="margin-left:12px"></span></div>
 <div class="wrap">
   <div class="card">
     <div class="h"><span>자세 (FSM)</span><span></span></div>
     <div class="b">
       <div class="fsmnow unk" id="fsmnow"><span class="k">현재 FSM</span><span class="v" id="fsm-v">확인 중</span><span class="n" id="fsm-n"></span><span class="bal" id="fsm-b"></span></div>
-      <div class="note">일어서기: <b>1 → 4 → 501</b> 순서로, 로봇이 자리 잡은 걸 보고 다음 단계를 누르세요</div>
-      <div class="row">
-        <button class="st" id="b-1" onclick="fsm(1)"><span class="no">1</span>Damping<small>힘 빼기 · 항상 가능</small></button>
-        <button class="go" id="b-4" onclick="fsm(4)"><span class="no">4</span>Lock Standing<small>밸런스 없음 · 1 / 501 에서</small></button>
-        <button class="go" id="b-501" onclick="fsm(501)"><span class="no">501</span>Walk 3DoF waist<small>밸런스 · arm_sdk · 4 에서</small></button>
-      </div>
-      <div class="row">
-        <button class="ok" id="b-3" onclick="fsm(3)"><span class="no">3</span>Sit Down<small>밸런스 없음 · 서 있을 때</small></button>
-      </div>
+      <div class="note">일어서기: <b>@@STAND_SEQ@@</b> 순서로, 로봇이 자리 잡은 걸 보고 다음 단계를 누르세요</div>
+@@FSM_BUTTONS@@
       <div class="row" style="align-items:stretch">
         <div class="state" id="fsm-s" style="flex:3">대기</div>
         <button class="st" id="b-cancel" onclick="fsmCancel()" style="flex:1;padding:8px;display:none">취소</button>
@@ -547,7 +563,7 @@ pre{margin:0;flex:1;min-height:120px;overflow:auto;background:#0a0d12;border:1px
     <div class="h"><span>로봇 서버 <code>start_robot.sh</code></span><span></span></div>
     <div class="b">
       <div class="row">
-        <button class="go" id="b-rstart" onclick="robotStart()">Robot 시작<small>FSM 501 에서만 · 6개 서버</small></button>
+        <button class="go" id="b-rstart" onclick="robotStart()">Robot 시작<small>FSM @@RUN@@ 에서만 · 6개 서버</small></button>
         <button class="st" id="b-rstop" onclick="robotStop()">Robot 정지<small>Ctrl+C 와 동일</small></button>
       </div>
       <div class="state" id="rb-s">정지됨</div>
@@ -561,6 +577,8 @@ pre{margin:0;flex:1;min-height:120px;overflow:auto;background:#0a0d12;border:1px
   <div class="mb"><button id="m-no">취소</button><button class="run" id="m-yes">실행</button></div>
 </div></div>
 <script>
+// FSM 번호·이름 — run_launcher.py 가 robot.yaml fsm 으로 채움
+const FSM=@@FSM_JS@@;
 const host=location.hostname;
 // 경고 모달 — Promise<bool>
 function warn(title,big,body){return new Promise(res=>{
@@ -577,14 +595,14 @@ document.getElementById('links').innerHTML=
   `<a href="http://${host}:50000/" target="_blank">Control :50000</a>`+
   `<a href="http://${host}:50003/dashboard" target="_blank">Dashboard :50003</a>`;
 let CUR=null;
-// Damp / Sit 만 경고 후 실행, 4 / 501 은 바로 실행
+// Damp / Sit 만 경고 후 실행, lock / run 은 바로 실행
 async function confirmFsm(t){
-  const standing=[4,500,501].includes(CUR);
-  if(t===1)return warn('Damp (FSM 1)',
+  const standing=FSM.standing.includes(CUR);
+  if(t===FSM.damp)return warn(`${FSM.names[t]} (FSM ${t})`,
     standing?'지금 서 있습니다 — 힘이 빠져 넘어집니다!':
     CUR===null?'현재 상태 확인 불가 — 서 있다면 힘이 빠져 넘어집니다!':'모터 힘이 빠집니다',
     '· 로봇을 사람이 받치고 있거나 스탠드에 묶여 있습니까?\n· 주변에 사람/장애물이 없습니까?');
-  if(t===3)return warn('Sit Down (FSM 3)','로봇이 천천히 앉습니다 (밸런스 제어 없음)',
+  if(t===FSM.sit)return warn(`${FSM.names[t]} (FSM ${t})`,'로봇이 천천히 앉습니다 (밸런스 제어 없음)',
     '· 팔을 몸 옆으로 내렸습니까?\n· 앉는 동안 로봇을 받치고 있습니까?\n· 엉덩이 아래 공간이 비어 있습니까?');
   return true;}
 async function post(u){const r=await fetch(u,{method:'POST'});const d=await r.json().catch(()=>({}));
@@ -606,20 +624,20 @@ async function poll(){try{const d=await(await fetch('/status')).json();
   if(f.cur===null){nw.className='fsmnow unk';document.getElementById('fsm-v').textContent='확인 불가';
     document.getElementById('fsm-n').textContent=(f.cur_err||'')+' — 순서 제한 없음'+
       (f.last_sent!==null?` · 마지막 전송 ${f.last_sent}`:'');}
-  else{nw.className='fsmnow '+([500,501].includes(f.cur)?'bal':f.cur===4?'std':'low');
+  else{nw.className='fsmnow '+(f.cur_bal?'bal':FSM.standing.includes(f.cur)?'std':'low');
     document.getElementById('fsm-v').textContent=f.cur;
     document.getElementById('fsm-n').textContent=f.cur_name;}
   const fb=document.getElementById('fsm-b');
   if(f.cur===null){fb.textContent='';fb.className='bal';}
   else{fb.textContent=f.cur_bal?'밸런스 제어':'밸런스 없음';fb.className='bal '+(f.cur_bal?'on':'off');}
   const ref=f.cur!==null?f.cur:f.last_sent;          // 조회 불가면 마지막 전송 기준
-  // 버튼: 갈 수 있는 단계만 활성(조회 불가면 제한 없음), 다음 단계 강조 (1→4→501)
+  // 버튼: 갈 수 있는 단계만 활성(조회 불가면 제한 없음), 다음 단계 강조 (damp → lock → run)
   CUR=f.cur;
-  const next={1:4,4:501}[ref];
-  [1,4,501,3].forEach(t=>{const b=document.getElementById('b-'+t);
-    // 대기 중엔 다른 버튼 잠금 — 단 Damp(1)는 대기 중 교체 가능
+  const next=ref!==null?FSM.next[ref]:undefined;
+  FSM.steps.forEach(t=>{const b=document.getElementById('b-'+t);
+    // 대기 중엔 다른 버튼 잠금 — 단 Damp 는 대기 중 교체 가능
     const pend=f.busy!==null&&f.remain>0;
-    b.disabled=(f.busy!==null&&!(t===1&&pend&&f.busy!==1))||!f.allowed[t];
+    b.disabled=(f.busy!==null&&!(t===FSM.damp&&pend&&f.busy!==FSM.damp))||!f.allowed[t];
     b.classList.toggle('next',t===next&&f.busy===null);
     b.classList.toggle('pend',t===f.busy);});
   const cb=document.getElementById('b-cancel');
@@ -630,8 +648,8 @@ async function poll(){try{const d=await(await fetch('/status')).json();
   else setState('fsm-s','','대기');
   fill(document.getElementById('fsm-log'),f.log);
   // 로봇 서버
-  document.getElementById('b-rstart').disabled=r.running||f.busy!==null||(f.cur!==null&&f.cur!==501);
-  document.getElementById('b-rstart').classList.toggle('next',f.cur===501&&!r.running);
+  document.getElementById('b-rstart').disabled=r.running||f.busy!==null||(f.cur!==null&&f.cur!==FSM.run);
+  document.getElementById('b-rstart').classList.toggle('next',f.cur===FSM.run&&!r.running);
   document.getElementById('b-rstop').disabled=!r.running;
   if(r.running)setState('rb-s','on',`실행 중 (${Math.floor(r.elapsed/60)}분 ${Math.floor(r.elapsed%60)}초)`);
   else if(r.label)setState('rb-s',r.rc===0?'':'err',`정지됨 (rc=${r.rc})`);
@@ -643,26 +661,48 @@ poll();setInterval(poll,500);
 
 
 
-def _render_html(h):
-    """HTML 의 G1 FSM 값을 robot.yaml 값으로 바꾼다 (G1 이면 원문 그대로).
-    목록 → 임시 표식 → 단독 '501' → 표식을 실제 값으로 (G1 목록 안의 501 이 두 번 바뀌지 않게)."""
-    js = lambda xs: "[" + ",".join(str(x) for x in xs) + "]"
-    lists = [
-        ("[4,500,501]", js(sorted(STANDING))),
-        ("[500,501]", js(sorted(STANDING & set(FSM_BAL)))),
-        ("{1:4,4:501}", f"{{{FSM_DAMP}:{FSM_LOCK},{FSM_LOCK}:{FSM_RUN}}}"),
-        ("[1,4,501,3]", js(STEPS)),                       # 순서 유지 (정렬 안 함)
+def _fsm_button(fid, cls, label, note):
+    return (f'<button class="{cls}" id="b-{fid}" onclick="fsm({fid})"><span class="no">{fid}</span>'
+            f'{html.escape(str(label))}<small>{html.escape(note)}</small></button>')
+
+
+def _bal_txt(fid):
+    return "밸런스" if fid in FSM_BAL else "밸런스 없음"
+
+
+def fsm_buttons():
+    """FSM 단계 버튼 [(id, class, 라벨, 설명)] — robot.yaml fsm (names / labels / damp·lock·run·sit)."""
+    return [
+        (FSM_DAMP, "st", FSM_NAME[FSM_DAMP], "힘 빼기 · 항상 가능"),
+        (FSM_LOCK, "go", _LBL["lock_button"], f"{_bal_txt(FSM_LOCK)} · {FSM_DAMP} / {FSM_RUN} 에서"),
+        (FSM_RUN, "go", _LBL["run_button"],
+         f"{_bal_txt(FSM_RUN)} · arm_sdk · {FSM_LOCK} 에서"),
+        (FSM_SIT, "ok", FSM_NAME[FSM_SIT], f"{_bal_txt(FSM_SIT)} · 서 있을 때"),
     ]
-    reps = [(old, f"@@L{k}@@", 1) for k, (old, _) in enumerate(lists)] + [
-        ("<b>G1 Launcher</b>", f"<b>{robot_env.ROBOT.upper()} Launcher</b>", 1),
-        ("Lock Standing<small>", f"{_LBL['lock_button']}<small>", 1),
-        ("Walk 3DoF waist<small>", f"{_LBL['run_button']}<small>", 1),
-        ("501", str(FSM_RUN), 10),
-    ] + [(f"@@L{k}@@", new, 1) for k, (_, new) in enumerate(lists)]
+
+
+def _render_html(h):
+    """HTML 의 @@...@@ 자리에 robot.yaml fsm 값으로 만든 버튼·문구·JS 상수를 넣는다."""
+    btn = {b[0]: _fsm_button(*b) for b in fsm_buttons()}
+    rows = (f'      <div class="row">\n        {btn[FSM_DAMP]}\n        {btn[FSM_LOCK]}\n        {btn[FSM_RUN]}\n      </div>\n'
+            f'      <div class="row">\n        {btn[FSM_SIT]}\n      </div>')
+    js = {"damp": FSM_DAMP, "lock": FSM_LOCK, "run": FSM_RUN, "sit": FSM_SIT,
+          "steps": list(STEPS), "standing": sorted(STANDING),
+          "next": {str(FSM_DAMP): FSM_LOCK, str(FSM_LOCK): FSM_RUN},
+          "names": {str(k): v for k, v in sorted(FSM_NAME.items())}}
+    reps = [
+        ("@@TITLE@@", f"{robot_env.ROBOT.upper()} Launcher", 2),
+        ("@@STAND_SEQ@@", f"{FSM_DAMP} → {FSM_LOCK} → {FSM_RUN}", 1),
+        ("@@FSM_BUTTONS@@", rows, 1),
+        ("@@RUN@@", str(FSM_RUN), 1),
+        ("@@FSM_JS@@", json.dumps(js, ensure_ascii=False).replace("</", "<\\/"), 1),
+    ]
     for old, new, n in reps:
         if h.count(old) != n:
-            raise SystemExit(f"[launcher] HTML 치환 대상 '{old}' 개수 {h.count(old)} ≠ {n}")
+            raise SystemExit(f"[launcher] HTML 자리표시 '{old}' 개수 {h.count(old)} ≠ {n}")
         h = h.replace(old, new)
+    if "@@" in h:
+        raise SystemExit("[launcher] HTML 에 채우지 않은 자리표시가 남음")
     return h
 
 

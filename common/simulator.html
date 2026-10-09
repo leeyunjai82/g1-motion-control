@@ -3,10 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Unitree G1 | Motion Editor</title>
-<!-- Version: 7.1 — 이동 패드 재배치(회전 2개를 전진 양옆 같은 줄에, 한글 라벨+단축키), 좁은 폭 슬라이더 잘림 수정
+<title>Unitree H2 | Motion Editor</title>
+<!-- Version: 7.2 — H2 전용: 보행 없음 (robot.yaml features.locomotion false) → 이동 패드·키보드 이동·타임라인 이동 명령 제거.
+                  예전 모션 파일의 locomotion 프레임은 타임라인에 SKIP 으로 표시, 재생 시 서버가 경고 후 건너뜀
+     Version: 7.1 — 이동 패드 재배치(회전 2개를 전진 양옆 같은 줄에, 한글 라벨+단축키), 좁은 폭 슬라이더 잘림 수정
      Version: 7.0 — simulator.html(관절 v5.2) + simulator_ik.html(IK v6.3) 통합
-  - 좌측 패널 Joint/IK 모드 토글, 이동·손·타임라인 공용
+  - 좌측 패널 Joint/IK 모드 토글, 손·타임라인 공용
   - 타임라인에 관절/IK 프레임 혼재 가능 (백엔드 /set_motion 이 프레임별 판별)
   - EMERGENCY STOP = 동결(freeze), 홈 복귀는 별도 버튼(/go_home) -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -87,27 +89,8 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
 .rot-controls{margin-top:.5rem;padding-top:.4rem;border-top:1px dashed var(--border-primary)}
 .rot-label{font-size:.72rem;color:var(--accent-rot);margin-bottom:.3rem}
 
-/* ---- 이동/손 ---- */
+/* ---- 손 ---- */
 .section-title{font-size:.95rem;font-weight:500;margin:0 0 .6rem;text-align:center}
-.loco-section{margin-bottom:.9rem}
-#locomotion-controls{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,4rem);gap:.4rem}
-.loco-btn{background:var(--bg-tertiary);border:1px solid var(--border-primary);color:var(--text-primary);
-  border-radius:.5rem;cursor:pointer;font:inherit;display:flex;flex-direction:column;align-items:center;
-  justify-content:center;gap:.15rem;padding:.3rem;position:relative}
-.loco-btn .ic{font-size:1.5rem;line-height:1}
-.loco-btn .nm{font-size:.78rem}
-.loco-btn .key{position:absolute;top:.3rem;right:.4rem;font-family:var(--font-mono);font-size:.62rem;
-  color:var(--text-secondary);border:1px solid var(--border-primary);border-radius:.25rem;padding:0 .25rem}
-.loco-btn:hover{border-color:var(--accent-primary)}
-.loco-btn:active,.loco-btn.pressed{background:var(--accent-primary);color:var(--bg-primary)}
-.loco-btn.turn{color:var(--accent-rot);border-color:#4a3a63}
-.loco-btn.turn .ic{font-size:1.9rem;font-weight:700}
-.loco-btn.turn:hover{border-color:var(--accent-rot)}
-#loco-turn_left{grid-area:1/1}#loco-forward{grid-area:1/2}#loco-turn_right{grid-area:1/3}
-#loco-left{grid-area:2/1}#loco-stop{grid-area:2/2;color:var(--accent-danger);border-color:#5a2b2b}#loco-right{grid-area:2/3}
-#loco-backward{grid-area:3/2}
-.loco-hint{font-size:.7rem;color:var(--text-secondary);text-align:center;margin-top:.4rem}
-.hand-controls-container{padding-top:.8rem;border-top:1px solid var(--border-primary)}
 .hand-selector{display:flex;gap:.4rem;margin-bottom:.6rem}
 .hand-selector button{flex:1;padding:.4rem;background:var(--bg-tertiary);border:1px solid var(--border-primary);
   color:var(--text-secondary);border-radius:.4rem;cursor:pointer;font-size:.8rem}
@@ -135,6 +118,7 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
 .frame-type{font-family:var(--font-mono);font-size:.68rem;padding:.1rem .35rem;border-radius:.3rem}
 .frame-type.joint{color:var(--accent-primary);border:1px solid var(--accent-primary)}
 .frame-type.ik{color:var(--accent-ik);border:1px solid var(--accent-ik)}
+.frame-type.skip{color:var(--accent-danger);border:1px solid var(--accent-danger)}
 .frame-detail{font-family:var(--font-mono);font-size:.65rem;color:var(--text-secondary)}
 .delete-frame-btn{background:transparent;border:none;color:var(--text-secondary);cursor:pointer;font-size:1.1rem}
 .delete-frame-btn:hover{color:var(--accent-danger)}
@@ -150,7 +134,7 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
 <script src="/i18n.js"></script>
 <div class="app-container">
   <header class="app-header">
-    <h1 class="app-title">Motion Editor <span>v7.1</span> <a href="/check" style="font-size:13px;margin-left:10px;color:#5aa9ff">모터 번호 확인 →</a></h1>
+    <h1 class="app-title">H2 Motion Editor <span>v7.2</span> <a href="/check" style="font-size:13px;margin-left:10px;color:#5aa9ff">모터 번호 확인 →</a></h1>
     <div class="mode-toggle">
       <button id="mode-joint" class="active">Joint · 관절</button>
       <button id="mode-ik">IK · 좌표</button>
@@ -219,21 +203,8 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
     </div>
   </div>
 
-  <!-- 중앙: 이동 + 손 (공용) -->
+  <!-- 중앙: 손 (공용) — 보행 없음 (H2) -->
   <div id="controls-panel" class="panel">
-    <div class="loco-section">
-    <h4 class="section-title" style="color:var(--accent-primary)">이동</h4>
-    <div id="locomotion-controls">
-      <button id="loco-turn_left" class="loco-btn turn"><span class="key">A ←</span><span class="ic">↺</span><span class="nm">좌회전</span></button>
-      <button id="loco-forward" class="loco-btn"><span class="key">W ↑</span><span class="ic">▲</span><span class="nm">전진</span></button>
-      <button id="loco-turn_right" class="loco-btn turn"><span class="key">D →</span><span class="ic">↻</span><span class="nm">우회전</span></button>
-      <button id="loco-left" class="loco-btn"><span class="key">Q</span><span class="ic">◀</span><span class="nm">좌측 이동</span></button>
-      <button id="loco-stop" class="loco-btn"><span class="ic">■</span><span class="nm">정지</span></button>
-      <button id="loco-right" class="loco-btn"><span class="key">E</span><span class="ic">▶</span><span class="nm">우측 이동</span></button>
-      <button id="loco-backward" class="loco-btn"><span class="key">S ↓</span><span class="ic">▼</span><span class="nm">후진</span></button>
-    </div>
-    <div class="loco-hint">키보드: 누르는 동안 이동 · 떼면 정지</div>
-    </div>
     <div class="hand-controls-container">
       <h4 class="section-title" style="color:var(--accent-hand)">손 제어</h4>
       <div class="hand-selector">
@@ -254,12 +225,6 @@ body{font-family:var(--font-sans);background:var(--bg-primary);color:var(--text-
     <div class="settings-grid">
       <div><label for="travel-time-input">프레임 시간 (초)</label>
         <input type="number" id="travel-time-input" value="1.0" min="0.1" step="0.1"></div>
-      <div><label for="locomotion-command-select">이동 명령</label>
-        <select id="locomotion-command-select">
-          <option value="none">없음</option><option value="forward">전진</option><option value="backward">후진</option>
-          <option value="left">좌측</option><option value="right">우측</option>
-          <option value="turn_left">좌회전</option><option value="turn_right">우회전</option><option value="stop">정지</option>
-        </select></div>
       <div><label for="hand-motion-select">손 모션</label>
         <select id="hand-motion-select"><option value="none">없음</option></select></div>
       <div><label for="hand-target-select">손 선택</label>
@@ -294,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const API_BASE = `http://${location.hostname}:8000`;
   const API = {
     MOTOR: `${API_BASE}/set_motor`, WAIST: `${API_BASE}/set_waist`,
-    IK: `${API_BASE}/set_ik`, LOCO: `${API_BASE}/set_loco_motion`,
+    IK: `${API_BASE}/set_ik`,
     MOTION: `${API_BASE}/set_motion`, STOP: `${API_BASE}/stop_motion`,
     HOME: `${API_BASE}/go_home`,
     HAND: `${API_BASE}/set_hand`, HAND_MOTIONS: `${API_BASE}/hand_motions`
@@ -515,35 +480,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // ==================== 걷기 (공용) ====================
-  let locoTimeout;
-  function sendLoco(dir) {
-    clearTimeout(locoTimeout);
-    locoTimeout = setTimeout(() => apiCall(API.LOCO, { direction: dir }), 30);
-  }
-  document.getElementById('locomotion-controls').addEventListener('mousedown', e => {
-    const btn = e.target.closest('.loco-btn');
-    if (btn) sendLoco(btn.id.replace('loco-', ''));
-  });
-  const KEY_MAP = {
-    'ArrowUp':'forward','w':'forward','ArrowDown':'backward','s':'backward',
-    'ArrowLeft':'turn_left','a':'turn_left','ArrowRight':'turn_right','d':'turn_right',
-    'q':'left','e':'right'
-  };
-  document.addEventListener('keydown', e => {
-    if (['INPUT','SELECT'].includes(e.target.tagName)) return;
-    if (KEY_MAP[e.key]) sendLoco(KEY_MAP[e.key]);
-  });
-  document.addEventListener('keyup', e => { if (KEY_MAP[e.key]) sendLoco('stop'); });
-
   // ==================== 타임라인 (공용, 프레임 혼재) ====================
   function addFrame() {
     const duration = parseFloat(document.getElementById('travel-time-input').value) || 1.0;
-    const loco = document.getElementById('locomotion-command-select').value;
     const hand = document.getElementById('hand-motion-select').value;
     const handTarget = document.getElementById('hand-target-select').value;
     const savePose = document.getElementById('save-pose-checkbox').checked;
-    if (!savePose && loco === 'none' && hand === 'none') return;
+    if (!savePose && hand === 'none') return;
     const frame = { duration };
     if (savePose) {
       if (editorMode === 'joint') {
@@ -555,7 +498,6 @@ document.addEventListener('DOMContentLoaded', () => {
         frame.left_rpy = rpy.left; frame.right_rpy = rpy.right;
       }
     }
-    if (loco !== 'none') frame.locomotion = { direction: loco };
     if (hand !== 'none') frame.hand_motion = { hand: handTarget, motion: hand };
     motionFrames.push(frame);
     renderTimeline();
@@ -576,7 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const hasArm = f.pose.targets.some(x => x.motor_index >= 15);
       parts.push([hasArm && '팔', hasWaist && '허리'].filter(Boolean).join('+') || '자세');
     }
-    if (f.locomotion) parts.push(f.locomotion.direction);
+    if (f.locomotion) parts.push('⚠ 걷기 프레임 — 재생 시 건너뜀 (보행 없음)');
     if (f.hand_motion) parts.push(`${f.hand_motion.hand}:${f.hand_motion.motion}`);
     return parts.join(' · ') || '-';
   }
@@ -585,7 +527,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = document.getElementById('timeline-table-body');
     tbody.innerHTML = motionFrames.map((f, i) => {
       const t = frameType(f);
-      const badge = t ? `<span class="frame-type ${t}">${t === 'ik' ? 'IK' : 'JNT'}</span>` : '-';
+      const badge = t ? `<span class="frame-type ${t}">${t === 'ik' ? 'IK' : 'JNT'}</span>`
+        : (f.locomotion && !f.hand_motion) ? '<span class="frame-type skip">SKIP</span>' : '-';
       return `<tr data-index="${i}">
         <td>${i+1}</td><td>${badge}</td>
         <td class="frame-detail">${frameDetail(f)}</td>
@@ -650,8 +593,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const file = e.target.files[0]; if (!file) return;
       const reader = new FileReader();
       reader.onload = evt => {
-        try { motionFrames = JSON.parse(evt.target.result); renderTimeline(); }
-        catch { alert('파일 오류'); }
+        try {
+          const frames = JSON.parse(evt.target.result);
+          if (!Array.isArray(frames)) throw new Error('not a frame list');
+          motionFrames = frames; renderTimeline();
+        } catch { alert('파일 오류'); return; }
+        // 예전(G1) 모션 파일의 걷기 프레임 — 보행 없는 로봇이라 재생 시 서버가 건너뜀 (데이터는 그대로 둠)
+        const nWalk = motionFrames.filter(f => f && f.locomotion).length;
+        if (nWalk) alert(`걷기 프레임 ${nWalk}개 — 보행이 없는 로봇이라 재생 시 건너뜁니다`);
       };
       reader.readAsText(file);
     };

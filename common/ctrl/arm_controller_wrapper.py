@@ -1,7 +1,7 @@
 """
-G1 로봇 통합 제어 Wrapper 클래스
-- 원본(.bak)의 모든 기능(양팔 IK, 단일/다중 관절 보간) 유지
-- 허리(Waist) 3축 보간 제어 기능 추가
+H2 팔 제어 Wrapper (arm_server 가 사용)
+- 양팔 IK, 단일/다중 관절 보간, 허리 3축 보간 (H2 허리는 robot.yaml waist_hold_initial 로 시작 각도 유지)
+- 보행(LocoClient Move) 래퍼는 H2 전용 전환 때 삭제 — FSM·EnableArmSDK 용 LocoClient 는 robot_arm.py 가 직접 씀
 """
 
 import time
@@ -15,19 +15,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-import robot_env
+import robot_env   # noqa: F401 — robots/h2 설정·SDK 경로 (unitree_sdk2py 보다 먼저)
 from ctrl.robot_arm import ArmController, G1_29_JointArmIndex
 from ctrl.robot_arm_ik import ArmIK
-
-# Locomotion 관련 임포트
-try:
-    from unitree_sdk2py.core.channel import ChannelFactoryInitialize # dds
-    import robot_env
-    LocoClient = robot_env.loco_client_class()   # robot.yaml sdk.loco_module (G1: unitree_sdk2py.g1.loco.g1_loco_client)
-    LOCO_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ Locomotion 라이브러리 로드 실패: {e}")
-    LOCO_AVAILABLE = False
 
 
 # ==================== 관절 정보 (허리 + 팔 통합 매핑) ====================
@@ -59,45 +49,11 @@ INTERNAL_TO_GLOBAL = {info[0]: info[1] for info in JOINT_INFO}
 JOINT_NAMES = [info[2] for info in (sorted(JOINT_INFO, key=lambda x: x[0]) if isinstance(JOINT_INFO[0], tuple) else [])] # 이름 리스트
 
 
-# ==================== Locomotion Client ====================
-
-class LocoClientWrapper:
-    """원본과 동일한 걷기 제어 클래스"""
-    def __init__(self):
-        if not LOCO_AVAILABLE:
-            raise RuntimeError("Locomotion library not available")
-        robot_env.dds_init()
-        self.client = LocoClient()
-        self.client.SetTimeout(0.0001)
-        self.client.Init()
-        print(dir(self.client))
-
-    def move(self, vx, vy, vyaw):
-        self.client.Move(vx, vy, vyaw, continous_move=False)
-
-    def stop(self):
-        self.client.Move(0, 0, 0, continous_move=False)
-
-    def damp(self):
-        self.client.Damp()
-
-    def forward(self, speed=0.3): self.move(speed, 0, 0)
-    def backward(self, speed=0.3): self.move(-speed, 0, 0)
-    def left(self, speed=0.3): self.move(0, speed, 0)
-    def right(self, speed=0.3): self.move(0, -speed, 0)
-    def turn_left(self, speed=0.3): self.move(0, 0, speed)
-    def turn_right(self, speed=0.3): self.move(0, 0, -speed)
-    def set_height(self, height): 
-        print(height)
-        self.client.SetStandHeight(height)
-
-
 # ==================== Arm & Waist Controller ====================
 
 class ArmControllerWrapper:
-    """G1 로봇 양팔 및 허리 통합 제어 (원본 기능 전체 포함)"""
+    """양팔 및 허리 통합 제어"""
 
-    GROUND_TO_PELVIS = 0.782
     DEFAULT_X_RANGE = (0.1, 0.6)
     DEFAULT_Y_RANGE = (0.0, 0.4)
     DEFAULT_Z_RANGE = (-0.3, 0.5)
@@ -156,9 +112,6 @@ class ArmControllerWrapper:
 
     def get_current_joints_deg(self):
         return np.degrees(self.get_current_joints_rad())
-
-    def get_height_from_ground(self, z): return self.GROUND_TO_PELVIS + z
-    def get_z_from_height(self, h): return h - self.GROUND_TO_PELVIS
 
     # -------------------- 허리(Waist) 제어 (신규 추가) --------------------
 

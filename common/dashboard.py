@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-G1 URDF Live Motor Visualization Server (Live-only, integrated, offline-ready)
+H2 URDF Live Motor Visualization Server (Live-only, integrated, offline-ready)
 
 Routes:
   /            -> Full UI (3D viewer)
@@ -127,7 +127,7 @@ except Exception as e:
 # URDF 관절 이름 → 모터 슬롯 (robots/<ROBOT>/robot.yaml joints.map)
 JOINT_TO_MOTOR = {str(k): int(v) for k, v in robot_env.JOINTS["map"].items()}
 
-app = FastAPI(title="G1 URDF Viewer")
+app = FastAPI(title="H2 URDF Viewer")
 
 app.add_middleware(
     CORSMiddleware,
@@ -267,7 +267,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>G1 URDF Live Viewer</title>
+<title>H2 URDF Live Viewer</title>
 <script src="/vendor/three.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -350,7 +350,7 @@ body.dashboard-mode .right { width: 240px; }
 <body>
 <script src="/i18n.js"></script>
 <header>
-  <h1>&#x1F916; G1 Live Viewer</h1>
+  <h1>&#x1F916; H2 Live Viewer</h1>
   <span class="badge" id="statusBadge">Loading...</span>
   <span class="badge live" id="liveBadge" style="display:none">● LIVE</span>
   <span style="margin-left:auto;font-size:10px;color:#2a2a3a" id="imuDisp">IMU: -</span>
@@ -847,7 +847,7 @@ if(wireBtn)wireBtn.addEventListener('click',function(){wireMode=!wireMode;this.c
 const axisBtn=document.getElementById('axisBtn');
 if(axisBtn)axisBtn.addEventListener('click',function(){axisMode=!axisMode;this.classList.toggle('on',axisMode);allAxes.forEach(a=>a.visible=axisMode);});
 const ssBtn=document.getElementById('ssBtn');
-if(ssBtn)ssBtn.addEventListener('click',()=>{renderer.render(scene,camera);const a=document.createElement('a');a.download='g1_viewer.png';a.href=cv.toDataURL('image/png');a.click();});
+if(ssBtn)ssBtn.addEventListener('click',()=>{renderer.render(scene,camera);const a=document.createElement('a');a.download='h2_viewer.png';a.href=cv.toDataURL('image/png');a.click();});
 
 cv.addEventListener('click',e=>{
   if(!allMeshes.length)return;

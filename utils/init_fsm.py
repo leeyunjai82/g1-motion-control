@@ -4,16 +4,20 @@ import time
 
 # 로봇 선택 — start_fsm.sh 가 sudo 뒤에서 두 번째 인자로 넘긴다 (sudo 가 환경변수를 지우므로).
 #   python init_fsm.py <stand|sit|bal|damp|no-bal> <robot> [check]
-#   check : 모터 번호 확인 모드 (ROBOT_CHECK=1) — enabled: false 로봇(H2) 기립/앉기용. start_fsm.sh 가 확인 후 넘긴다.
-# FSM ID 는 robots/<robot>/robot.yaml fsm (G1: damp 1 / lock 4 / run 501 / sit 3).
+#   <robot> : h2 (이 저장소는 H2 전용 — 다른 값이면 robot_env 가 거부)
+#   check : 모터 번호 확인 모드 (ROBOT_CHECK=1) — enabled: false 일 때 기립/앉기용. start_fsm.sh 가 확인 후 넘긴다.
+# FSM ID 는 robots/h2/robot.yaml fsm (H2: damp 1 Damp / lock 4 FixStand / run 703 PhaseWalk(제자리 밸런스) / sit 3 Sit).
+#   stand  = damp → 5초 → lock → 10초 → run (1 → 4 → 703)
+#   bal    = run (703),  no-bal = lock (4),  damp = 1,  sit = 3
+#   <FSM ID> = robot.yaml fsm.names 에 있는 ID 만 (0 Zero Torque, 1 Damp, 2 Squat, 3 Sit, 4 FixStand, 601 HybridWalk, 701 WalkNew, 703 PhaseWalk)
 if len(sys.argv) < 3 or not (sys.argv[1] in ("stand", "sit", "bal", "damp", "no-bal") or sys.argv[1].isdigit()):
-    print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot> [check]")
+    print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot=h2> [check]")
     sys.exit(1)
 
 os.environ["ROBOT"] = sys.argv[2]
 if len(sys.argv) > 3:
     if sys.argv[3] != "check":
-        print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot> [check]")
+        print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot=h2> [check]")
         sys.exit(1)
     os.environ["ROBOT_CHECK"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "common"))

@@ -1,6 +1,6 @@
 """
-simulator.py — G1 Motion Editor 통합본 (관절 + IK)
-Version: 7.0
+simulator.py — H2 Motion Editor 통합본 (관절 + IK)
+Version: 7.2
 
 simulator.py(관절 편집기 v5.3) + simulator_ik.py(IK 편집기 v6.3) 통합.
 
@@ -9,21 +9,26 @@ simulator.py(관절 편집기 v5.3) + simulator_ik.py(IK 편집기 v6.3) 통합.
     → robot_server 와 동시에 떠도 arm_sdk 이중 송신이 없다.
     → 단독 사용 시에도 arm_server 를 먼저 띄워야 한다:
          python arm_server.py   →   python simulator.py
-  - 걷기: LocoClientWrapper 직접 (다중 클라이언트 성립 실기 확인됨)
+  - 보행 없음 (H2: robot.yaml features.locomotion false) — 이 편집기는 걷기 명령
+    (LocoClient Move/StopMove 등)을 보내지 않는다. 이동 패드·/set_loco_motion·
+    모션의 이동 프레임 생성은 v7.2 에서 제거.
   - 손: HandController (단일 동글) 직접
 
 UI:
   /   통합 simulator.html (좌측 패널 Joint/IK 모드 토글, 타임라인 공용)
 
 엔드포인트 = 두 편집기의 합집합:
-  공통: /hand_motions /set_hand /set_loco_motion /set_motion /stop_motion
+  공통: /hand_motions /set_hand /set_motion /stop_motion /go_home
   관절: /set_motor /set_waist /set_all_motors /joint_info
   IK  : /set_ik /ik_position
+  확인: /check (joint_check — 모터 번호 확인)
   /set_motion 은 프레임에 pose(관절)와 left_xyz/right_xyz(IK)가 섞여 있어도
   프레임별로 자동 판별해 실행한다.
+  예전(G1) 모션 파일의 locomotion(걷기) 프레임은 실행하지 않고 경고를 출력한 뒤
+  건너뛴다 (같은 프레임의 팔/손 동작은 실행, 걷기만 있는 프레임은 대기 없이 통과).
 
 안전 변경:
-  - /stop_motion(긴급 정지)은 이동하지 않는다 — loco 정지 + 보간 중단 +
+  - /stop_motion(긴급 정지)은 이동하지 않는다 — 보간 중단 +
     현재 자세 동결(freeze) + 손 펴기. (구버전은 관절 0도/홈으로 '이동'했는데,
     0도는 앞으로 나란히라 정지 중 팔이 크게 움직였음)
   - 기동 시 자동 홈 이동/허리 리셋 없음 (arm_server 가 자세를 이미 유지 중)
@@ -31,9 +36,8 @@ UI:
 """
 
 import os
-import time
 import asyncio
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import uvicorn
 import numpy as np
@@ -51,8 +55,8 @@ import robot_env   # ROBOT 미지정/미지원이면 여기서 종료
 USE_HAND_CONTROL = True
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
-from ctrl.arm_controller_wrapper import (LocoClientWrapper, JOINT_INFO,
-                                         JOINT_NAMES, GLOBAL_TO_INTERNAL)
+from ctrl.arm_controller_wrapper import (JOINT_INFO, JOINT_NAMES,
+                                         GLOBAL_TO_INTERNAL)
 from ctrl.arm_http import ArmHttpClient
 
 hand_controller = None
@@ -85,9 +89,6 @@ class WaistCommand(BaseModel):
     pitch: float = 0.0
     duration: float = 1.0
 
-class LocoCommand(BaseModel):
-    direction: str
-
 class HandCommand(BaseModel):
     hand: str                        # left | right | both
     motion: str
@@ -107,22 +108,23 @@ class MotorTarget(BaseModel):
 class PoseData(BaseModel):
     targets: List[MotorTarget]
 
-class LocomotionData(BaseModel):
-    direction: str
-
 class HandMotionData(BaseModel):
     hand: str
     motion: str
 
 class MotionFrame(BaseModel):
-    """관절(pose)과 IK(left_xyz/right_xyz) 프레임 공용 — 프레임별 자동 판별."""
+    """관절(pose)과 IK(left_xyz/right_xyz) 프레임 공용 — 프레임별 자동 판별.
+
+    locomotion: 예전(G1) 모션 파일 호환용으로 받기만 한다 (형식 무관 — 422 로 막지 않음).
+                H2 는 보행이 없으므로 실행하지 않고 경고 후 건너뛴다.
+    """
     duration: float
     pose: Optional[PoseData] = None
     left_xyz:  Optional[List[float]] = None
     right_xyz: Optional[List[float]] = None
     left_rpy:  Optional[List[float]] = None
     right_rpy: Optional[List[float]] = None
-    locomotion: Optional[LocomotionData] = None
+    locomotion: Optional[Any] = None
     hand_motion: Optional[HandMotionData] = None
 
 
@@ -130,7 +132,6 @@ class MotionFrame(BaseModel):
 # 전역 상태
 # ==========================================
 arm:  Optional[ArmHttpClient]     = None
-loco: Optional[LocoClientWrapper] = None
 STOP_REQUESTED = False
 
 current_ik_position = {"left": [0.1, 0.2, 0.2], "right": [0.1, -0.2, 0.2]}
@@ -165,8 +166,6 @@ async def execute_hand_motion(hand: str, motion: str, release: bool = False):
 # ==========================================
 async def emergency_stop():
     print("!!! 긴급 정지 (동결) !!!")
-    if loco:
-        loco.stop()
     if arm:
         loop = asyncio.get_running_loop()
         try:
@@ -205,17 +204,11 @@ def _move_ik(left_xyz, right_xyz, left_rpy, right_rpy, duration):
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global hand_controller, arm, loco
-    print("--- G1 Motion Editor 통합본 (v7.0) ---")
-    print("  팔/허리: arm_server(50022) 경유 · 걷기: LocoClient · 손: 단일 동글")
+    global hand_controller, arm
+    print(f"--- {robot_env.ROBOT.upper()} Motion Editor 통합본 (v7.2) ---")
+    print("  팔/허리: arm_server(50022) 경유 · 보행 없음 · 손: 단일 동글")
 
-    robot_env.dds_init()
-
-    try:
-        loco = LocoClientWrapper()
-        print("✅ Loco 초기화")
-    except Exception as e:
-        print(f"⚠️ Loco 실패: {e}")
+    robot_env.dds_init()   # /check (joint_check) 의 rt/lowstate 구독용
 
     try:
         arm = ArmHttpClient()          # arm_server 가 먼저 떠 있어야 함
@@ -237,7 +230,7 @@ async def lifespan(app: FastAPI):
     print("--- 서버 종료 (자세 유지 — arm_server 관리) ---")
 
 
-app = FastAPI(title="G1 Motion Editor (통합)", version="7.0", lifespan=lifespan)
+app = FastAPI(title="H2 Motion Editor (통합)", version="7.2", lifespan=lifespan)
 
 # 모터 번호 확인 화면 (/check) — 가상/실기 모두
 from joint_check import router as joint_check_router
@@ -383,39 +376,8 @@ async def go_home():
 
 
 # ==========================================
-# 걷기 API
-# ==========================================
-last_loco_command = {"direction": None, "timestamp": 0}
-loco_lock = asyncio.Lock()
-
-
-@app.post("/set_loco_motion")
-async def set_loco_motion(command: LocoCommand):
-    global last_loco_command
-    if not loco:
-        return {"status": "error", "message": "Loco 미초기화"}
-    async with loco_lock:
-        now = time.time()
-        if (command.direction == last_loco_command["direction"]
-                and now - last_loco_command["timestamp"] < 0.1):
-            return {"status": "skipped"}
-        last_loco_command = {"direction": command.direction, "timestamp": now}
-    try:
-        dmap = {"forward": loco.forward, "backward": loco.backward,
-                "left": loco.left, "right": loco.right,
-                "turn_left": loco.turn_left, "turn_right": loco.turn_right,
-                "stop": loco.stop}
-        method = dmap.get(command.direction)
-        if not method:
-            return {"status": "error", "message": f"Unknown: {command.direction}"}
-        await asyncio.get_running_loop().run_in_executor(None, method)
-        return {"status": "success"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-# ==========================================
 # 모션 시퀀스 — 관절/IK 프레임 자동 판별
+#   보행 없음 (H2) — locomotion 프레임은 경고 후 건너뜀
 # ==========================================
 @app.post("/set_motion")
 async def set_motion(motion_sequence: List[MotionFrame]):
@@ -428,6 +390,17 @@ async def set_motion(motion_sequence: List[MotionFrame]):
         if STOP_REQUESTED:
             print(f"[모션] 중단: 프레임 {i+1}")
             break
+        has_body = bool((frame.left_xyz and frame.right_xyz)
+                        or (frame.pose and frame.pose.targets) or frame.hand_motion)
+        if frame.locomotion is not None:
+            # 예전(G1) 모션 파일의 걷기 프레임 — H2 는 보행 없음. 걷기 명령은 절대 보내지 않는다.
+            if not has_body:
+                print(f"[모션] ⚠️ 프레임 {i+1}/{len(motion_sequence)}: 걷기(locomotion) 프레임 "
+                      f"{frame.locomotion!r} — 보행 없는 로봇이라 건너뜀")
+                continue
+            print(f"[모션] ⚠️ 프레임 {i+1}/{len(motion_sequence)}: 걷기(locomotion) "
+                  f"{frame.locomotion!r} 무시 — 팔/손 동작만 실행")
+
         print(f"[모션] 프레임 {i+1}/{len(motion_sequence)} ({frame.duration}초)")
 
         hand_future = None
@@ -472,22 +445,7 @@ async def set_motion(motion_sequence: List[MotionFrame]):
             await asyncio.gather(*tasks)
             did_arm = True
 
-        # --- 걷기 ---
-        if frame.locomotion and loco:
-            dmap = {"forward": loco.forward, "backward": loco.backward,
-                    "left": loco.left, "right": loco.right,
-                    "turn_left": loco.turn_left, "turn_right": loco.turn_right}
-            method = dmap.get(frame.locomotion.direction)
-            if method:
-                start = time.time()
-                while time.time() - start < frame.duration:
-                    if STOP_REQUESTED:
-                        break
-                    method()
-                    await asyncio.sleep(0.02)
-                if not STOP_REQUESTED:
-                    loco.stop()
-        elif not did_arm:
+        if not did_arm:
             await asyncio.sleep(frame.duration)
 
         if hand_future:
@@ -498,8 +456,6 @@ async def set_motion(motion_sequence: List[MotionFrame]):
         STOP_REQUESTED = False
     else:
         print("[모션] 완료")
-        if loco:
-            loco.stop()
     return {"status": "success"}
 
 
@@ -520,10 +476,42 @@ async def i18n_js():
     return FileResponse(os.path.join(current_dir, "i18n.js"), media_type="application/javascript")
 
 
+def _joint_limits_js():
+    """에디터 슬라이더 한계 = H2 URDF [deg] — 팔은 모터 슬롯 번호(15–28), 허리는 0 yaw / 1 roll / 2 pitch.
+    simulator.html 의 JOINT_LIMITS(예전 G1 값)를 페이지를 내보낼 때 이것으로 바꾼다. 못 읽으면 None (html 값 그대로)."""
+    try:
+        import json
+        import re as _re
+        import pinocchio as pin
+        m = pin.buildModelFromUrdf(robot_env.URDF_PATH)
+        name_of = {int(v): k for k, v in robot_env.JOINTS["map"].items()}
+
+        def lim(slot):
+            q = m.joints[m.getJointId(name_of[int(slot)])].idx_q
+            return [round(float(np.degrees(m.lowerPositionLimit[q])), 1), round(float(np.degrees(m.upperPositionLimit[q])), 1)]
+        out = {i: lim(slot) for i, slot in enumerate(robot_env.JOINTS["waist"])}        # 0 yaw, 1 roll, 2 pitch
+        out.update({int(slot): lim(slot) for slot in robot_env.JOINTS["arm"]})
+        return "const JOINT_LIMITS = " + json.dumps(out) + ";", _re
+    except Exception as e:      # noqa: BLE001
+        print(f"[simulator] ⚠️ URDF 관절 한계 못 읽음 — html 기본값 사용: {e}")
+        return None, None
+
+
+_JL = _joint_limits_js()
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     p = os.path.join(current_dir, "simulator.html")
-    return FileResponse(p) if os.path.exists(p) else HTMLResponse("simulator.html 없음")
+    if not os.path.exists(p):
+        return HTMLResponse("simulator.html 없음")
+    html = open(p, encoding="utf-8").read()
+    js, _re = _JL
+    if js:
+        html, n = _re.subn(r"const JOINT_LIMITS = \{[^}]*\};", lambda _m: js, html, count=1)
+        if n != 1:
+            print("[simulator] ⚠️ simulator.html 에서 JOINT_LIMITS 를 못 찾음 — 슬라이더 한계는 html 값")
+    return HTMLResponse(html)
 
 
 if __name__ == "__main__":

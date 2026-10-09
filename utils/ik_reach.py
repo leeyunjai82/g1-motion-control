@@ -1,20 +1,29 @@
-"""사용: python utils/ik_reach.py <g1|h2> <urdf> -
+"""사용: python utils/ik_reach.py [urdf]          (기본 robots/h2/H2.urdf)
+       python utils/ik_reach.py h2 [urdf] [-]   (예전 형식도 그대로 — 셋째 인자(메시 폴더)는 쓰지 않음)
 
-H2 / G1 양팔 IK 도달 범위 비교 (오프라인, pinocchio DLS — casadi 불필요).
+H2 양팔 IK 도달 범위 표 (오프라인, pinocchio DLS — casadi 불필요, 로봇 불필요).
 
-robot_arm_ik.py 와 같은 축소 모델: 다리·허리(·헤드) 잠금, L_ee/R_ee = *_wrist_yaw_joint + x 0.05.
-목표: 양손 대칭, 손 자세 = 단위 회전(G1 wrist_params 기본 0,0,0 과 동일), pelvis 기준.
+robot_arm_ik.py 와 같은 축소 모델: 다리·허리·헤드 잠금, L_ee/R_ee = *_wrist_yaw_joint + x 0.05.
+목표: 양손 대칭, 손 자세 = 단위 회전, pelvis 기준.
+
+잡기 시퀀스 전체 확인은 utils/grab_reach.py (서버 IK · robot.yaml grab 값).
 """
+import os
 import sys
 import numpy as np
 import pinocchio as pin
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_URDF = os.path.join(REPO_ROOT, "robots", "h2", "H2.urdf")
+
 LOCK_COMMON = [f"{s}_{j}_joint" for s in ("left", "right")
                for j in ("hip_pitch", "hip_roll", "hip_yaw", "knee", "ankle_pitch", "ankle_roll")]
 LOCK_COMMON += ["waist_yaw_joint", "waist_roll_joint", "waist_pitch_joint"]
+H2_EXTRA_LOCK = ["head_pitch_joint", "head_yaw_joint"]   # robot.yaml ik.lock_joints 의 헤드
 
 
 def build(urdf, mesh_dir, extra_lock):
+    """축소 모델. mesh_dir 은 쓰지 않음 (기구학만 — 호출부 호환용 인자)."""
     full = pin.buildModelFromUrdf(urdf)       # 기구학만 (메시 불필요)
     lock = [full.getJointId(n) for n in LOCK_COMMON + extra_lock if full.existJointName(n)]
     m = pin.buildReducedModel(full, lock, np.zeros(full.nq))
@@ -74,8 +83,12 @@ def grid(name, urdf, mesh_dir, extra_lock, half_w):
 
 
 if __name__ == "__main__":
-    which = sys.argv[1]
-    if which == "g1":
-        grid("G1 (robots/g1)", sys.argv[2], sys.argv[3], [], 0.17)
-    else:
-        grid(f"H2 ({sys.argv[2]})", sys.argv[2], sys.argv[3], ["head_pitch_joint", "head_yaw_joint"], 0.17)
+    args = sys.argv[1:]
+    if args and args[0].lower() == "g1":
+        sys.exit("G1 지원 제거됨 — 이 저장소는 H2 전용. 사용: python utils/ik_reach.py [robots/h2/H2.urdf]")
+    if args and args[0].lower() == "h2":
+        args = args[1:]                      # 예전 형식: h2 <urdf> <mesh_dir|->
+    urdf = args[0] if args else DEFAULT_URDF
+    if not os.path.isfile(urdf):
+        sys.exit(f"URDF 없음: {urdf}\n사용: python utils/ik_reach.py [robots/h2/H2.urdf]")
+    grid(f"H2 ({urdf})", urdf, None, H2_EXTRA_LOCK, 0.17)
