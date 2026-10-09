@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Version: 2.8
+<!-- Version: 2.9
+  2.9 - Wrist RPY 기본 pitch 30 (robot.yaml grab.wrist_rpy_deg), 페이지를 열면 서버의 지금 손목 값으로 채움
   2.8 - 위 칩에 이 PC 의 CPU / GPU / NPU 사용률 (robot_server /hw, 1초). 카드 머리에 실제 실행 장치 배지
         (Camera View = detect_box, Head Vision = 왼눈 L / 오른눈 R — OpenVINO EXECUTION_DEVICES, AUTO 로 바뀐 것도 실제 장치로)
   2.7 - 우측 위 Head Vision 카드: 머리 카메라(head_track :50013)가 인식한 것만 잘라 한 줄 (왼눈 얼굴·사람, 오른눈 사물).
@@ -349,7 +350,7 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
         <div class="wtab">
           <span></span><span class="h" style="color:var(--accent)">LEFT</span><span class="h" style="color:var(--amber)">RIGHT</span>
           <span class="k">roll</span><input class="in" id="l-roll" type="number" value="0" step="5"><input class="in" id="r-roll" type="number" value="0" step="5">
-          <span class="k">pitch</span><input class="in" id="l-pitch" type="number" value="0" step="5"><input class="in" id="r-pitch" type="number" value="0" step="5">
+          <span class="k">pitch</span><input class="in" id="l-pitch" type="number" value="30" step="5"><input class="in" id="r-pitch" type="number" value="30" step="5">
           <span class="k">yaw</span><input class="in" id="l-yaw" type="number" value="0" step="5"><input class="in" id="r-yaw" type="number" value="0" step="5">
         </div>
         <button class="btn full" style="margin-top:9px" onclick="applyWrist()">Apply</button>
@@ -591,6 +592,9 @@ function setHandover(dir){const yaw=document.getElementById('ho-yaw').value||30;
     hoMark(d.direction);});}
 function hoMark(dir){['left','center','right','place'].forEach(k=>document.getElementById('ho-'+k).classList.toggle('on',k===dir));}
 document.addEventListener('DOMContentLoaded',()=>{if(window.UI&&window.UI.handover)hoMark(window.UI.handover);});
+// 손목 입력칸 = 서버의 지금 값 (기본 robot.yaml grab.wrist_rpy_deg, Apply 하면 그 값)
+document.addEventListener('DOMContentLoaded',()=>{const w=window.UI&&window.UI.wrist;if(!w)return;
+  for(const [s,k] of [['l','left'],['r','right']])for(const a of ['roll','pitch','yaw']){const e=document.getElementById(`${s}-${a}`);if(e&&w[k])e.value=w[k][a];}});
 
 // ---- motions ----
 async function refreshMotions(){const el=document.getElementById('mlist');

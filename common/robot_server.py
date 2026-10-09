@@ -162,6 +162,8 @@ ALIGN_TO_HANDS = bool(robot_env.CFG["grab"].get("align_to_hands", False))
 HANDOVER_X     = float(robot_env.CFG["grab"]["handover_x"])   # 건네기 손 x (IK 좌표) — robot.yaml grab.handover_x (G1 0.30)
 READY_XYZ      = [float(v) for v in robot_env.CFG["grab"].get("ready_xyz", [0.15, 0.25, 0.20])]
 LIFT_ABOVE     = float(robot_env.CFG["grab"].get("lift_above", 0.15))
+WRIST_RPY_DEG  = [float(v) for v in robot_env.CFG["grab"].get("wrist_rpy_deg", [0.0, 0.0, 0.0])]
+# ↑ 손목 RPY 기본값 [roll, pitch, yaw] deg, 양손 같게 (robot.yaml grab.wrist_rpy_deg). 웹 Wrist RPY 로 바꾸면 그 값
 # ↑ 들기 높이 = 박스 윗면 + lift_above [m] (robot.yaml grab.lift_above, 기본 0.15). H2 0.10 — 몸쪽으로 당겨 높이 들면 어깨가 거치대 요크에 닿음
 # ↑ Box 버튼(대기 자세)·잡기 끝 복귀(⑪ Home) 왼손 [x, y, z] (IK 좌표, 오른손은 y 반대) — robot.yaml grab.ready_xyz (G1 기본 0.15, 0.25, 0.20)
 LEFT_HAND_Y_OFFSET = float(robot_env.CFG["grab"].get("left_hand_y_offset", 0.0))   # 왼손 y 보정 [m] (+ = 바깥/왼쪽, G1 0.0)
@@ -232,9 +234,10 @@ class GrabController:
         self.robot_available = robot_available
 
         # 손목 RPY
+        r, p, y = WRIST_RPY_DEG
         self.wrist_params = {
-            'left':  {'roll': 0.0, 'pitch': 0.0, 'yaw':  0.0},
-            'right': {'roll': 0.0, 'pitch': 0.0, 'yaw':  0.0},
+            'left':  {'roll': r, 'pitch': p, 'yaw': y},
+            'right': {'roll': r, 'pitch': p, 'yaw': y},
         }
         # handover 방향
         self.handover_direction = DEFAULT_HANDOVER   # center|left|right|place (place = 제자리 내려놓기)
@@ -1779,7 +1782,8 @@ def _ui_inject():
     if not has_motions:
         hide += ["#card-motions"]
     ui = {"robot": robot_env.ROBOT, "locomotion": LOCOMOTION, "waist_locked": WAIST_LOCKED, "motions": has_motions,
-          "handover": grab.handover_direction if grab else DEFAULT_HANDOVER}
+          "handover": grab.handover_direction if grab else DEFAULT_HANDOVER,
+          "wrist": grab.wrist_params if grab else None}
     css = (",".join(hide) + "{display:none!important}") if hide else ""
     js = ("" if LOCOMOTION else
           "document.addEventListener('DOMContentLoaded',()=>{const e=document.getElementById('arm-release-sub');"
