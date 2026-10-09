@@ -3,7 +3,8 @@
 head_track.py — H2 머리 추종 서버 (포트 50013): 머리 카메라 왼눈 영상에서 가장 큰 얼굴(없으면 사람)을 화면 가운데로
 
   ROBOT=h2 python common/head_track.py            # 보기만 (머리 명령 안 함) → http://<pc-ip>:50013/
-  ROBOT=h2 python common/head_track.py --drive    # arm_server(:50022) POST /head 로 머리 명령 (arm_server 가 떠 있어야 함)
+  ROBOT=h2 python common/head_track.py --drive    # 머리 명령 준비 — 웹 '추종 켜기' 를 눌러야 움직임 (arm_server :50022 필요)
+  ROBOT=h2 python common/head_track.py --drive --track-on   # 시작하자마자 추종
 
   준비: 앱에서 video_hub 끔 + 'Stereo patch PC1' 켬, RGB 수신 IP = 이 PC
         (python utils/check_head_cam.py --set-ip → 앱에서 서비스 재시작). gstreamer 설치는 common/ctrl/head_cam.py 참고
@@ -72,13 +73,13 @@ def arm_head(pitch=None, yaw=None, timeout=0.3):
 
 
 class Tracker(threading.Thread):
-    def __init__(self, port, drive, mode, device):
+    def __init__(self, port, drive, mode, device, track_on=False):
         super().__init__(daemon=True)
         self.port, self.drive, self.mode = port, drive, mode
         self.rx = None
         self.face = OvSSD("face", device, cfg("face_conf", 0.6)) if mode in ("face", "auto") else None
         self.person = OvSSD("person", device, cfg("person_conf", 0.5)) if mode in ("person", "auto") else None
-        self.enabled = drive
+        self.enabled = drive and track_on   # --drive 만이면 꺼진 채 시작 → 웹 '추종 켜기'
         self.lock = threading.Lock()
         self.jpeg = None
         self.cmd = None                    # 마지막으로 보낸 머리 목표 [pitch, yaw] deg
@@ -317,7 +318,8 @@ def make_app(tr):
 
 def main():
     ap = argparse.ArgumentParser(description="H2 머리 추종 (얼굴 → 사람)")
-    ap.add_argument("--drive", action="store_true", help="arm_server /head 로 머리 명령 (없으면 보기만)")
+    ap.add_argument("--drive", action="store_true", help="arm_server /head 로 머리 명령 가능 (없으면 보기만)")
+    ap.add_argument("--track-on", action="store_true", help="--drive 와 같이: 시작하자마자 추종 (기본은 웹에서 '추종 켜기')")
     ap.add_argument("--mode", choices=("face", "person", "auto"), default=cfg("mode", "auto"))
     ap.add_argument("--device", default=cfg("device", "CPU"), help="OpenVINO 장치 CPU / GPU / NPU / AUTO")
     ap.add_argument("--rgb", choices=("left", "right"), default="left")
@@ -329,7 +331,7 @@ def main():
         C["face_conf"] = a.face_conf
     if a.person_conf is not None:
         C["person_conf"] = a.person_conf
-    tr = Tracker(RGB_PORTS[a.rgb], a.drive, a.mode, a.device)
+    tr = Tracker(RGB_PORTS[a.rgb], a.drive, a.mode, a.device, a.track_on)
     if a.drive:
         hs, err = arm_head()
         print(f"[head_track] arm_server 머리: {hs if hs else err}")
