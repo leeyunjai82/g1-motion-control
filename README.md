@@ -57,7 +57,7 @@ cd ~/project/h2-motion-control
 #   → 머리 카메라 : http://<pc-ip>:50013/ (로봇 쪽 서비스는 start_robot.sh 가 자동 준비 — utils/head_cam_on.py)
 
 # 3. 모션 에디터 — 모드 지정 필수 (virtual | real)
-./start_simulator.sh real   # 실기 (start_robot.sh 와 함께 써도 됨 — arm_server 재사용)
+./start_editor.sh real     # 실기 (start_robot.sh 와 함께 써도 됨 — arm_server 재사용)
 
 # (선택) 웹 런처 — FSM 버튼 + start_robot.sh 실행 (포트 80, sudo)
 ./launcher.sh
@@ -82,24 +82,24 @@ Box 버튼 → 대기 자세 → (자동 또는 Grab Now) → 재검출 → 위�
 
 오프라인 확인 도구: `python utils/grab_reach.py` (박스 위치별로 서버와 같은 IK 로 손이 끝까지 가는지).
 
-## 시뮬레이터 (로봇 없이 시험)
+## 잡기 시뮬레이터 (`start_grab_sim.sh`, 로봇 없이 시험)
 
 ```bash
-./start_sim.sh            # 가상 카메라 + 가상 박스  → http://<pc-ip>:50010/
-./start_sim.sh real-cam   # 실물 D435i + 실제 박스 인식, 로봇만 가상 → http://<pc-ip>:50012/
+./start_grab_sim.sh            # 가상 카메라 + 가상 박스  → http://<pc-ip>:50010/
+./start_grab_sim.sh real-cam   # 실물 D435i + 실제 박스 인식, 로봇만 가상 → http://<pc-ip>:50012/
 ```
 
 - `sim/fake_robot.py` 가 로봇 역할 (`rt/arm_sdk` 를 받아 관절을 움직이고 `rt/lowstate` 를 냄, 기구학만).
 - `sim/sim_server.py` 가 detect_box(50010) 자리를 대신 → **robot_server / arm_server 는 실기와 같은 코드** 로 잡기 시퀀스를 돕니다.
 - **안전**: `ROBOT_SIM=1` → DDS 도메인 1. 실기(도메인 0)와 섞이지 않고, 실기 스택이 떠 있으면(포트 사용 중) 시작을 거부합니다.
 
-## Motion Editor 모드 (`start_simulator.sh`)
+## 모션 에디터 (`start_editor.sh`)
 
 | 명령 | 모드 | 띄우는 것 |
 | --- | --- | --- |
-| `./start_simulator.sh virtual` | **가상** — URDF/메시 3D + fake_robot (DDS 도메인 1) | fake_robot, arm_server, dashboard, simulator |
-| `./start_simulator.sh real` | **실기** — 실제 로봇이 움직임 | arm_server·dashboard(떠 있으면 재사용), simulator |
-| `ROBOT_CHECK=1 ./start_simulator.sh real` | **실기 · 모터 번호 확인 전용** | 위와 같음. 잡기 서버는 실행 거부, 시작 시 `yes` 확인 |
+| `./start_editor.sh virtual` | **가상** — URDF/메시 3D + fake_robot (DDS 도메인 1) | fake_robot, arm_server, dashboard, simulator |
+| `./start_editor.sh real` | **실기** — 실제 로봇이 움직임 | arm_server·dashboard(떠 있으면 재사용), simulator |
+| `ROBOT_CHECK=1 ./start_editor.sh real` | **실기 · 모터 번호 확인 전용** | 위와 같음. 잡기 서버는 실행 거부, 시작 시 `yes` 확인 |
 
 모터 번호 확인 화면: `http://<pc-ip>:8000/check` — 절차는 `robots/h2/FACTS.md` 와 `common/joint_check.py` 머리말.
 
@@ -119,8 +119,8 @@ h2-motion-control/
 ├── activate_tv.sh          # tv conda 환경 활성화 + H2 SDK(third_party/) 준비
 ├── start_fsm.sh            # 자세 전환 (stand / damp / ...)
 ├── start_robot.sh          # 전체 스택 (rs_stream, arm, robot, dashboard, detect_box, head_track)
-├── start_simulator.sh      # 모션 에디터
-├── start_sim.sh            # 시뮬레이터 (fake_robot + 서버 + 가상 박스, DDS 도메인 1)
+├── start_editor.sh         # 모션 에디터 (:8000, virtual | real)
+├── start_grab_sim.sh       # 잡기 시뮬레이터 (fake_robot + 서버 + 가상 박스, DDS 도메인 1)
 ├── launcher.sh / run_launcher.py   # 웹 런처 (:80)
 ├── sim/                    # fake_robot.py, sim_server.py
 ├── common/

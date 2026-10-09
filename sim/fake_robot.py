@@ -2,7 +2,7 @@
 """
 fake_robot.py — 로봇 없이 서버 스택을 시험하기 위한 기구학 가짜 로봇 (DDS)
 
-  ROBOT=h2 ROBOT_SIM=1 python sim/fake_robot.py      (보통은 ./start_sim.sh 가 띄운다)
+  ROBOT=h2 ROBOT_SIM=1 python sim/fake_robot.py      (보통은 ./start_grab_sim.sh 가 띄운다)
 
 동작
   · DDS 도메인 1 (robot_env.DDS_DOMAIN) 전용. ROBOT_SIM=1 이 아니면 실행 거부

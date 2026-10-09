@@ -72,7 +72,7 @@ CHECK = {"arm_server": _arm, "head_track": _head, "detect_box": _detect, "dashbo
 class SysWatch:
     def __init__(self, fsm_cfg=None, period=2.0, sim=False):
         fsm_cfg = fsm_cfg or {}
-        self.sim = bool(sim)                     # start_sim.sh 는 rs_stream 을 안 띄움 (가상 카메라)
+        self.sim = bool(sim)                     # start_grab_sim.sh 는 rs_stream 을 안 띄움 (가상 카메라)
         self.names = {int(k): str(v) for k, v in (fsm_cfg.get("names") or {}).items()}
         self.arm_fsm = {int(v) for v in (fsm_cfg.get("lock"), fsm_cfg.get("run")) if v is not None}
         self.run_fsm = fsm_cfg.get("run")
@@ -96,7 +96,7 @@ class SysWatch:
 
     def _fsm(self):
         if self.sim:
-            return {"id": None, "state": "off", "text": "시뮬", "why": "start_sim.sh — 가상 로봇에는 FSM 없음"}
+            return {"id": None, "state": "off", "text": "시뮬", "why": "start_grab_sim.sh — 가상 로봇에는 FSM 없음"}
         try:
             code, fid = self._loco().GetFsmId()
         except Exception as e:                   # noqa: BLE001 — SDK·DDS 오류는 화면에 이유로

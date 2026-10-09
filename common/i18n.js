@@ -89,7 +89,7 @@
     'RGB 없음': 'no RGB',
     '로봇 없음': 'no robot',
     '자동 ON': 'auto ON',
-    'start_sim.sh — 가상 로봇에는 FSM 없음': 'start_sim.sh — the virtual robot has no FSM',
+    'start_grab_sim.sh — 가상 로봇에는 FSM 없음': 'start_grab_sim.sh — the virtual robot has no FSM',
     '시뮬': 'sim',
     '⚠ 걷기 프레임 — 재생 시 건너뜀 (보행 없음)': '⚠ walk frame — skipped on playback (no walking)',
     '내려놓기': 'put down',

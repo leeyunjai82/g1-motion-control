@@ -2,7 +2,7 @@
 """
 sim_server.py — 시뮬레이터: 가상 박스 + 가짜 detect_box (포트 50010) + 조작 화면
 
-  ROBOT=h2 ROBOT_SIM=1 python sim/sim_server.py     (보통은 ./start_sim.sh 가 띄운다)
+  ROBOT=h2 ROBOT_SIM=1 python sim/sim_server.py     (보통은 ./start_grab_sim.sh 가 띄운다)
   → http://localhost:50010/
 
 하는 일
@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.join(ROOT, "common"))
 import robot_env
 
 if not robot_env.SIM:
-    print("[sim_server] ❌ ROBOT_SIM=1 에서만 실행 (start_sim.sh)")
+    print("[sim_server] ❌ ROBOT_SIM=1 에서만 실행 (start_grab_sim.sh)")
     sys.exit(2)
 
 import cv2
@@ -44,7 +44,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize, ChannelSubscriber
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
 
-# SIM_CAMERA=real (start_sim.sh real-cam): 카메라·인식은 실물 (rs_stream + detect_box:50010), 로봇만 가상.
+# SIM_CAMERA=real (start_grab_sim.sh real-cam): 카메라·인식은 실물 (rs_stream + detect_box:50010), 로봇만 가상.
 #   이 서버는 가상 박스/가짜 detect_box 를 끄고 조작 화면만 50012 에서 제공한다.
 REAL_CAM = os.environ.get("SIM_CAMERA", "").strip() == "real"
 PORT = 50012 if REAL_CAM else 50010   # 가상 카메라일 때는 detect_box 자리(50010)를 대신한다

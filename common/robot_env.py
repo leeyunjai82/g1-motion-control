@@ -73,14 +73,14 @@ def load_config(robot):
     return cfg
 
 
-# 시뮬레이션 모드 (ROBOT_SIM=1, start_sim.sh) — sim/fake_robot.py 가 로봇 역할.
+# 시뮬레이션 모드 (ROBOT_SIM=1, start_grab_sim.sh) — sim/fake_robot.py 가 로봇 역할.
 #   DDS 도메인 1 을 써서 실기(도메인 0)와 절대 섞이지 않게 한다.
 #   enabled: false 로봇(H2 등)도 시뮬에서는 실행 허용 (실기 명령 경로는 계속 닫힘).
 SIM = os.environ.get("ROBOT_SIM", "").strip() == "1"
 DDS_DOMAIN = 1 if SIM else 0
 
-# 실기 모터 번호 확인 모드 (ROBOT_CHECK=1, start_simulator.sh real) — enabled: false 로봇을 실기에서
-# '확인 목적으로만' 띄운다. 허용 프로세스: arm_server / simulator / dashboard 뿐 (잡기·보행 서버는 거부).
+# 실기 모터 번호 확인 모드 (ROBOT_CHECK=1, start_editor.sh real) — enabled: false 로봇을 실기에서
+# '확인 목적으로만' 띄운다. 허용 프로세스: arm_server / simulator / dashboard 뿐 (잡기 서버는 거부).
 CHECK = os.environ.get("ROBOT_CHECK", "").strip() == "1"
 CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py", "init_fsm.py", "robot_state.py", "arm_sdk_test.py", "cam_marker_check.py", "hand_to_marker.py"}   # init_fsm: start_fsm.sh, robot_state: 읽기 전용 진단
 

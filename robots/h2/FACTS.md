@@ -169,7 +169,7 @@ zero 자세에서 손목 프레임 회전 = 단위 행렬 (G1·H2 모두 URDF FK
 ⚠️ box 모드 건네기는 G1 과 같이 **받았는지 확인하지 않고 2초 뒤 손을 벌립니다** (`HANDOVER_HOLD_SEC`).
 아무도 안 받으면 그 높이에서 박스가 떨어집니다. H2 는 G1 보다 높은 위치라 받는 사람이 있을 때만 실행할 것.
 
-## 시뮬레이터 검증 (start_sim.sh, 2026-10) — 실제 서버 코드 그대로
+## 시뮬레이터 검증 (start_grab_sim.sh, 2026-10) — 실제 서버 코드 그대로
 
 `sim/fake_robot.py` (기구학 가짜 로봇) + `sim/sim_server.py` (가짜 detect_box) 로 robot_server / arm_server 를 수정 없이 실행.
 위 "IK 가능 범위" 표들은 손 목표를 박스 중심 x 에 둔 근사이고, 실제 box 모드는 손 목표 x = 박스 x − 0.15 (`GRAB_X_OFFSET`) —
@@ -208,7 +208,7 @@ detect_box 의 K(640×480)로 계산. 박스 중심 x 0.45 m 일 때 화면에 �
 
 ## 실기 모터 번호 확인 절차 (최종 조정 전)
 
-`ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real` → `http://<pc>:8000/check` (README "모터 번호 확인" 참고).
+`ROBOT_CHECK=1 ROBOT=h2 ./start_editor.sh real` → `http://<pc>:8000/check` (README "모터 번호 확인" 참고).
 
 | 확인 대상 | 방법 | 이번에 특히 볼 것 |
 | --- | --- | --- |

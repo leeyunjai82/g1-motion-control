@@ -2,7 +2,7 @@
 """
 cam_tilt.py — D435i 내장 IMU(가속도)로 카메라가 아래로 숙인 각 측정 → robot.yaml camera.pitch_deg 확인용
 
-  rs_stream.py(start_sim real-cam / start_robot) 가 카메라를 쓰고 있으면 먼저 끌 것 (장치 동시 사용 불가).
+  rs_stream.py(start_grab_sim real-cam / start_robot) 가 카메라를 쓰고 있으면 먼저 끌 것 (장치 동시 사용 불가).
   conda activate tv (또는 source activate_tv.sh)
   python utils/cam_tilt.py            # 3초 평균, 1회
   python utils/cam_tilt.py --watch    # 계속 출력 (장착 각도 맞추면서 볼 때), Ctrl+C 종료

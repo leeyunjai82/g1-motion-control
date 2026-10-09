@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 시뮬레이터 실행 — 로봇 없이 잡기/건네기 시퀀스 시험
-# 사용: ./start_sim.sh            가상 카메라 (가상 박스)     → http://localhost:50010/
-#       ./start_sim.sh real-cam   실물 D435i + 실제 박스 인식 → http://localhost:50012/
+# 잡기 시뮬레이터 — 로봇 없이 잡기/내려놓기/건네기 시퀀스 시험 (모션 에디터는 ./start_editor.sh, 이것과 다름)
+# 사용: ./start_grab_sim.sh            가상 카메라 (가상 박스)     → http://localhost:50010/
+#       ./start_grab_sim.sh real-cam   실물 D435i + 실제 박스 인식 → http://localhost:50012/
 # 종료: Ctrl+C
 #
 # 구성 (ROBOT_SIM=1 → DDS 도메인 1, 실기 도메인 0 과 분리):
@@ -37,7 +37,7 @@ for p in 50000 50001 50003 50010 50012 50022; do
   if curl -s -m 1 -o /dev/null "http://localhost:$p/" 2>/dev/null; then busy="$busy $p"; fi
 done
 if [ -n "$busy" ]; then
-  echo "❌ 포트 사용 중:$busy — 실행 중인 start_robot.sh / start_sim.sh 를 먼저 종료하세요" >&2
+  echo "❌ 포트 사용 중:$busy — 실행 중인 start_robot.sh / start_grab_sim.sh 를 먼저 종료하세요" >&2
   exit 1
 fi
 

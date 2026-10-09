@@ -2,7 +2,7 @@
 """
 hand_to_marker.py — 카메라로 잰 마커 위치로 손을 보내 카메라→IK 좌표 변환을 실물로 확인
 
-  준비: 로봇 FSM 703(stand), arm_server 실행 중 (ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real), hold·weight 1
+  준비: 로봇 FSM 703(stand), arm_server 실행 중 (ROBOT_CHECK=1 ROBOT=h2 ./start_editor.sh real), hold·weight 1
         카메라를 쓰는 다른 프로그램(rs_stream 등)은 꺼 둘 것 — 이 도구가 카메라를 직접 연다.
   실행: ROBOT_CHECK=1 ROBOT=h2 python utils/hand_to_marker.py --id 0              # 마커 위 10 cm
         ROBOT_CHECK=1 ROBOT=h2 python utils/hand_to_marker.py --id 0 --above 0.05  # 5 cm 위
@@ -151,7 +151,7 @@ def main():
     try:
         st = arm("/status", timeout=2.0)
     except Exception as e:  # noqa: BLE001
-        sys.exit(f"❌ arm_server(50022) 응답 없음 ({e}) — 다른 터미널에서 'ROBOT_CHECK=1 ROBOT=h2 ./start_simulator.sh real' 먼저")
+        sys.exit(f"❌ arm_server(50022) 응답 없음 ({e}) — 다른 터미널에서 'ROBOT_CHECK=1 ROBOT=h2 ./start_editor.sh real' 먼저")
     if st.get("mode") != "hold" or float(st.get("weight", 0)) < 0.99:
         sys.exit(f"❌ arm_server 가 hold·weight 1 아님 ({st}) — /check 에서 [제어권 잡기]")
 

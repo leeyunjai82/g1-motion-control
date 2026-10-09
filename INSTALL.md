@@ -35,7 +35,7 @@ sudo apt update
 sudo apt install -y wget curl
 ```
 
-- `curl` : `start_sim.sh` / `start_simulator.sh` 가 서버 응답 확인에 사용 (가상환경 활성화 전에 호출).
+- `curl` : `start_grab_sim.sh` / `start_editor.sh` 가 서버 응답 확인에 사용 (가상환경 활성화 전에 호출).
 - 빌드 도구(build-essential, libssl-dev, libsuitesparse-dev 등)는 **필요 없습니다** — cyclonedds 는 pip 바이너리 휠,
   scikit-sparse 는 conda-forge 패키지로 설치합니다.
 - 머리 카메라(`head_track`, `utils/check_head_cam.py`) RGB 디코딩 — 없으면 `start_robot.sh` 가 head_track 을 건너뜀:
@@ -141,7 +141,7 @@ python -c "import numpy, torch, cv2, pinocchio, sksparse, unitree_sdk2py, openvi
 # numpy 1.24.4 | torch 2.4.1+cpu 가 나와야 정상
 ```
 
-- 검증 (2026-10, Ubuntu 24.04): 위 순서로 설치 후 `./start_sim.sh` 잡기 시퀀스 완료.
+- 검증 (2026-10, Ubuntu 24.04): 위 순서로 설치 후 `./start_grab_sim.sh` 잡기 시퀀스 완료.
   운영 mini PC 실설치에서 `numpy 1.24.4 | torch 2.4.1+cpu` 확인 (CPU 판 torch 정상).
 - `openvino`, `logging-mp` 는 버전을 고정하지 않았습니다 — 운영 mini PC 의 `pip freeze` 값과 맞추는 것을 권장 (확인 필요).
 - `unitree_sdk2py`: requirements 의 고정 커밋 `f559291` 은 tv 환경 기본값이고 `unitree_sdk2py.h2` 가 없습니다.
@@ -230,7 +230,7 @@ conda deactivate && conda activate tv && echo $OMP_NUM_THREADS   # 1
 ## 12. 실행 권한
 
 ```bash
-chmod +x robot_env.sh activate_tv.sh start_fsm.sh start_robot.sh start_simulator.sh start_sim.sh launcher.sh
+chmod +x robot_env.sh activate_tv.sh start_fsm.sh start_robot.sh start_editor.sh start_grab_sim.sh launcher.sh
 ```
 
 ---

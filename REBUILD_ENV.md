@@ -139,7 +139,7 @@ python utils/get_dev.py | head -3         # Available devices 에 CPU, GPU, NPU
 python common/ctrl/hw_usage.py --sec 3    # CPU / GPU / NPU 숫자 (못 읽으면 이유)
 sudo -n "$TV_PY" -c "print('sudo ok')"    # 비밀번호를 묻지 않아야 정상 (환경 이름 tv 그대로면 sudoers 수정 불필요)
 
-./start_sim.sh                            # 가상 잡기 — http://<pc-ip>:50000/ 에서 Box → Grab Now 가 끝까지 가면 정상
+./start_grab_sim.sh                            # 가상 잡기 — http://<pc-ip>:50000/ 에서 Box → Grab Now 가 끝까지 가면 정상
 ```
 
 스냅샷과 비교 (다르면 그 줄이 바뀐 패키지):
