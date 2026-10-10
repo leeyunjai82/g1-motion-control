@@ -43,9 +43,11 @@ joints:
   # URDF 관절 이름 → 모터 슬롯
   #   팔 15–28              : ✓ 실기 확인 2026-10-07 (utils/arm_sdk_test.py 슬롯별 ±8°, 14개 모두 이름대로 움직임 — 사용자 육안)
   #   헤드·weight            : SDK / xr_teleoperate / h2-motion-control.red 일치
-  #   허리 순서               : xr_teleoperate 817fb00 "[fix] H2 waist's joint index" (12 roll / 13 pitch / 14 yaw, SDK low-level 예제도 같음).
-  #                            실기 미확인 — arm_sdk 로 허리가 안 움직이고 아래 waist_hold_initial 로 명령도 안 보내므로 동작 영향 없음
-  #   발목 4/5               : h2-motion-control.red 기준 (이번 범위에서 사용 안 함)
+  #   허리 순서               : 12 roll(모터 A) / 13 pitch(모터 B) / 14 yaw — 공식 문서 「关节电机顺序」(2026-07-30 판) 확인 2026-10-10
+  #                            (xr_teleoperate 817fb00 · SDK low-level 예제도 같음. SDK arm_sdk 예제·C++ 예제의 12 yaw 순서는 틀림)
+  #                            arm_sdk 로 허리가 안 움직이고 아래 waist_hold_initial 로 명령도 안 보냄 — 읽기(check_rsimu 의 13)만 사용
+  #   손목 19/20/21          : roll / pitch / yaw — 같은 공식 문서 확인
+  #   발목 4/5               : roll / pitch — 같은 공식 문서 확인 (이번 범위에서 사용 안 함)
   map:
     left_hip_pitch_joint:        0
     left_hip_roll_joint:         1

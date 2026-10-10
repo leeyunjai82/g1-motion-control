@@ -86,7 +86,7 @@ def _ensure_sub():
             if m is None:
                 continue
             q = np.array([m.motor_state[i].q for i in range(N)], dtype=float)
-            temp = [int(m.motor_state[i].temperature[0]) for i in range(N)]
+            temp = [int(max(m.motor_state[i].temperature)) for i in range(N)]   # [0] 외부, [1] 권선 (공식 底层服务接口) 중 큰 값
             with _ls_lock:
                 _ls.update(q=q, mm=int(m.mode_machine), t=time.time(), temp=temp)
     threading.Thread(target=loop, daemon=True).start()

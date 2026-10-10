@@ -33,6 +33,8 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | ROS | `unitreerobotics/unitree_ros` `5994d4f` (2026-09-30) `robots/h2_description/H2.urdf` |
 | H2R | `leeyunjai82/h2-motion-control.red` `8e7996d` — **실기에서 simulator 동작 확인** (사용자 보고, 2026-10) |
 | STEP | Unitree 공식 H2 단순화 모델 `H2_简化模型_260601.STEP` (oss-global-cdn.unitree.com/static/7585d210dc9b47b6907b70f46f8c24ac.zip, 2026-06-01, 190 MB — repo 미포함). URDF `torso_link` 메시에 정합: STEP→torso x = 0.6932 − y_s, y = x_s − 0.0011, z = z_s − 0.4729 [m] (중앙 오차 1.2 mm) |
+| DOC-joint | 공식 문서 H2 SDK 开发指南 「关节电机顺序」 (`H2_developer/joint_motor_sequence`, 2026-07-30 갱신) — 슬롯 0–30 이름·한계, 허리 12/13 = 모터 A/B (병렬) |
+| DOC-low | 공식 문서 H2 SDK 开发指南 「底层服务接口」 (`H2_developer/basic_services_interface`, 2026-03-18 갱신) — `rt/lowstate` / `rt/lowcmd` 구조체 |
 | 등판도면 | 사용자 제공 등판 도면 — 위 2×M6×18 간격 150, 아래 2×M6×13 간격 176, 위아래 100 |
 
 ## 확인된 값
@@ -40,6 +42,11 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 | 항목 | 값 | 근거 |
 | --- | --- | --- |
 | DDS 메시지 | `unitree_hg` `LowCmd_` / `LowState_` (motor 35 슬롯 고정 배열) | SDK, XR, H2R(실기) |
+| DDS 구조체 필드 | SDK `814556d` IDL (Python `unitree_hg/msg/dds_`, C++ `include/unitree/idl/hg`) 그대로 사용 — `MotorState_` = mode, q, dq, ddq, tau_est, temperature[2], vol, sensor[2], motorstate, reserve[4] / `MotorCmd_` = mode, q, dq, tau, kp, kd, reserve(1개). **DOC-low 는 다름**: `MotorState_` 에 q_raw·dq_raw·ddq_raw 가 더 있고 sensor 가 vol 앞, `MotorCmd_.reserve[3]`. 실기는 SDK IDL 로 35 슬롯 수신(허리 pitch 13·팔 15–28 값 정상)과 arm_sdk 송신(CRC 통과, 팔 동작)이 모두 됨 → **문서 쪽 오기로 판단, IDL 바꾸지 않음** (문서대로 바꾸면 슬롯 1 부터 어긋남) | SDK, 실기 2026-10-07~09, DOC-low (2026-10-10 대조) |
+| `MotorState_.temperature[2]` | [0] 외부(外表), [1] 권선(绕组) °C. dashboard·joint_check 는 둘 중 큰 값 표시 | DOC-low |
+| `mode_pr` | 병렬 기구(발목·허리) 제어 방식 — **0 = PR** (roll/pitch 관절각, 기본), 1 = AB (모터 A/B). 이 repo 는 LowCmd 에 0 | DOC-low, XR |
+| `LowState_.tick` | 1 ms 마다 1 증가 | DOC-low |
+| 관절 한계 (문서 vs `H2.urdf`) | 허리 12–14 · 손목 pitch 20/27 · 머리 29/30 은 같음. **팔은 URDF 가 더 좁음** (어깨 pitch 위 1.20 ↔ 문서 1.83, roll 1.80 ↔ 2.49, yaw ±1.57 ↔ ±2.62, 팔꿈치 위 1.60 ↔ 3.07, 손목 roll ±1.65 ↔ ±2.62, 손목 yaw ±1.22 ↔ ±1.2217 rad) — xr_teleoperate `0c1b4a2` 축소 그대로, 하드웨어 한계 안쪽이라 IK 가 넘을 일 없음. 머리 문서 −0.5236..0.83775 (−30..+48°) · ±1.7453 (±100°) | DOC-joint, XR |
 | 팔 제어 토픽 | `rt/arm_sdk` | SDK-arm, XR, H2R(실기) |
 | arm_sdk weight 슬롯 | `motor_cmd[31].q` | SDK-arm, XR, H2R(실기) |
 | 어깨·팔꿈치 | 왼 15 ShoulderPitch, 16 Roll, 17 Yaw, 18 Elbow / 오른 22–25 같은 순서 | SDK-arm, SDK-low, XR, H2R 모두 일치 |
@@ -89,12 +96,15 @@ H2 지원(4단계)을 위해 **출처로 확인한 값**과 **확인이 필요�
 
 ## 공식 자료끼리 충돌 → h2-motion-control.red 실기 기준으로 결정 (2026-10)
 
-| 항목 | SDK-arm | SDK-low | XR | H2R |
-| --- | --- | --- | --- | --- |
-| 손목 19/20/21 (오른 26/27/28) | Roll/Pitch/Yaw | **Yaw/Pitch/Roll** | Roll/Pitch/Yaw | Roll/Pitch/Yaw ← 채택 (사용자 실기 확인) |
-| 허리 12/13/14 | Yaw/Roll/Pitch | **Roll/Pitch/Yaw** | **Roll/Pitch/Yaw** ← 채택 (2026-10-07, XR 최신 fix) | Yaw/Roll/Pitch (이전 채택) |
-| 발목 4/5 (우리 기능 무관) | Pitch/Roll | Roll/Pitch | Roll/Pitch | Roll/Pitch |
-| arm_sdk 허용 FSM | {4, 703} + `EnableArmSDK()` 필요 | — | (검사 없음) | 601 에서 동작 (실기) |
+**2026-10-10 공식 문서 「关节电机顺序」(DOC-joint, 2026-07-30 판) 로 확정 — 지금 채택값과 손목·허리·발목 모두 일치.**
+틀린 쪽: SDK-arm 예제 허리, SDK-low 예제 손목, SDK C++ `example/h2/low_level/h2_ankle_swing_example.cpp` 허리 (Yaw/Roll/Pitch, G1 순서).
+
+| 항목 | SDK-arm | SDK-low | XR | H2R | **DOC-joint** |
+| --- | --- | --- | --- | --- | --- |
+| 손목 19/20/21 (오른 26/27/28) | Roll/Pitch/Yaw | **Yaw/Pitch/Roll** | Roll/Pitch/Yaw | Roll/Pitch/Yaw ← 채택 (사용자 실기 확인) | **Roll/Pitch/Yaw** (小臂横滚/俯仰/偏航) ✓ |
+| 허리 12/13/14 | Yaw/Roll/Pitch | **Roll/Pitch/Yaw** | **Roll/Pitch/Yaw** ← 채택 (2026-10-07, XR 최신 fix) | Yaw/Roll/Pitch (이전 채택) | **Roll(모터 A)/Pitch(모터 B)/Yaw** ✓ |
+| 발목 4/5 (우리 기능 무관) | Pitch/Roll | Roll/Pitch | Roll/Pitch | Roll/Pitch | **Roll/Pitch** ✓ |
+| arm_sdk 허용 FSM | {4, 703} + `EnableArmSDK()` 필요 | — | (검사 없음) | 601 에서 동작 (실기) | (문서에 없음) |
 
 **실기 확인 방법** (H2R simulator, 관절 모드): 관절 하나만 조금 움직이고 실제로 어느 축이 도는지 확인.
 - 허리 12 → 몸통이 좌우로 도는가(yaw) / 옆으로 기우는가(roll) / 앞뒤로 숙는가(pitch)

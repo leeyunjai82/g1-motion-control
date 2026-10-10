@@ -87,8 +87,8 @@ class LowStateReader:
 
     @staticmethod
     def _read_temp_tau(msg):
-        """hg MotorState_ 의 temperature(int16[2] — 두 센서 중 큰 값)와 tau_est. 표시용.
-        필드 형식이 다르면 None (확인 필요: 펌웨어별 temperature 의미)."""
+        """hg MotorState_ 의 temperature(int16[2] — [0] 외부, [1] 권선 (공식 底层服务接口) 중 큰 값)와 tau_est. 표시용.
+        필드 형식이 다르면 None."""
         try:
             temp = []
             for i in range(NUM_MOTORS):
