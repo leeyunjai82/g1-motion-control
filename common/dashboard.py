@@ -508,7 +508,7 @@ function parseOrig(el){
 const basename=s=>s.split(/[/\\]/).pop().toLowerCase();
 const sid=n=>n.replace(/\W/g,'_');
 
-// ============ Logo: Pion / Circulus / intel (3줄) ============
+// ============ Logo: pion / circulus / intel (3줄, 모두 소문자) ============
 const PION_COLOR     = '#FFFFFF';   // 흰색 — 메인 색(#00b7eb)은 Circulus 색과 거의 같아 구분이 안 됨
 const INTEL_COLOR    = '#0068B5';
 const CIRCULUS_COLOR = '#00AEEF';
@@ -539,12 +539,12 @@ function makeLogoTextMesh(logoGeo){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   // Three-line layout:
-  //   Line 1: "Pion"
-  //   Line 2: "Circulus"
+  //   Line 1: "pion"
+  //   Line 2: "circulus"
   //   Line 3: "intel"
   const lines=[
-    [{text:'Pion',     color:PION_COLOR}],
-    [{text:'Circulus', color:CIRCULUS_COLOR}],
+    [{text:'pion',     color:PION_COLOR}],
+    [{text:'circulus', color:CIRCULUS_COLOR}],
     [{text:'intel',    color:INTEL_COLOR}],
   ];
 
