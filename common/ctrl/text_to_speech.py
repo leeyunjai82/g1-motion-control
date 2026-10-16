@@ -121,7 +121,7 @@ if __name__ == "__main__":
     # 모든 멘트 테스트
     MESSAGES = [
         # 시퀀스 멘트
-        "Hi, Red Hat Summit! I have gifts for you.",
+        "Hi, I am Pion! I have gifts for you.",
         "A box! Let me pick it up.",
         "I got it.",
         "This is for you! Please grab the top of the box.",
@@ -129,12 +129,10 @@ if __name__ == "__main__":
         "Nobody? I will put it back.",
         "Who is next? Bring me another box.",
         # 잡소리
-        "Welcome to Red Hat Summit 2026!",
+        "Welcome! I am Pion.",
         "Free Owala tumbler! Come and get one.",
         "Bring me a box, and I will give you a gift.",
-        "I run on RHEL.",
         "I run on open source.",
-        "I am faster than OpenShift.",
         "I run on Intel Panther Lake.",
         "I have Intel inside.",
         "My software is from Circulus, Korea.",

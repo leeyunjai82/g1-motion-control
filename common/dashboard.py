@@ -508,8 +508,8 @@ function parseOrig(el){
 const basename=s=>s.split(/[/\\]/).pop().toLowerCase();
 const sid=n=>n.replace(/\W/g,'_');
 
-// ============ Logo: RedHat / intel / Circulus ============
-const REDHAT_COLOR   = '#EE0000';
+// ============ Logo: Pion / Circulus / Intel ============
+const PION_COLOR     = '#FFFFFF';   // 흰색 — 메인 색(#00b7eb)은 Circulus 색과 거의 같아 구분이 안 됨
 const INTEL_COLOR    = '#0068B5';
 const CIRCULUS_COLOR = '#00AEEF';
 
@@ -539,15 +539,15 @@ function makeLogoTextMesh(logoGeo){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   // Two-line layout:
-  //   Line 1: "RedHat intel"
-  //   Line 2: "Circulus"
+  //   Line 1: "Pion"
+  //   Line 2: "Circulus Intel"
   const line1=[
-    {text:'RedHat', color:REDHAT_COLOR},
-    {text:' ',      color:'#fff'},
-    {text:'intel',  color:INTEL_COLOR},
+    {text:'Pion',     color:PION_COLOR},
   ];
   const line2=[
     {text:'Circulus', color:CIRCULUS_COLOR},
+    {text:' ',        color:'#fff'},
+    {text:'Intel',    color:INTEL_COLOR},
   ];
 
   // Each line ~ 42% of canvas height
