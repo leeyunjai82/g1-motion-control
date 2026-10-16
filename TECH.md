@@ -4,7 +4,7 @@ A deep dive into the internals of **G1 Motion Control** — architecture, joint 
 
 For installation see [`INSTALL.md`](./INSTALL.md). For user-level usage see [`README.md`](./README.md).
 
-> ⚠️ **Layout note (2026-10):** code moved from `high/` to `common/`; robot-specific files (URDF, meshes, motions, IK cache) moved to `robots/<ROBOT>/`. Every launcher requires `ROBOT=g1`. Some sections below still describe older servers (`ik_box.py`, `run_motion.py`, `simulator_ik.py`) that no longer exist — the current server list is in [`README.md`](./README.md).
+> ⚠️ **Layout note (2026-10):** code moved from `high/` to `common/`; robot-specific files (URDF, meshes, motions, IK cache) moved to `robots/<ROBOT>/`. This repository is G1-only: `ROBOT` defaults to `g1` and other values are refused (Ubuntu 24.04 setup: [`INSTALL.md`](./INSTALL.md)). Some sections below still describe older servers (`ik_box.py`, `run_motion.py`, `simulator_ik.py`) that no longer exist — the current server list is in [`README.md`](./README.md).
 
 ---
 
@@ -429,7 +429,7 @@ Graceful shutdown is `SIGTERM` first; the launcher waits **8 seconds** (the IK s
 설치는 [`INSTALL.md`](./INSTALL.md), 사용법은 [`README.md`](./README.md) 를 참고하세요.
 
 
-> ⚠️ **구조 변경 (2026-10):** 코드는 `high/` → `common/` 으로, 로봇별 파일(URDF·메시·모션·IK 캐시)은 `robots/<ROBOT>/` 로 옮겼습니다. 모든 실행 스크립트는 `ROBOT=g1` 지정이 필요합니다. 아래 일부 절은 지금은 없는 서버(`ik_box.py`, `run_motion.py`, `simulator_ik.py`)를 설명합니다 — 현재 서버 목록은 [`README.md`](./README.md) 참고.
+> ⚠️ **구조 변경 (2026-10):** 코드는 `high/` → `common/` 으로, 로봇별 파일(URDF·메시·모션·IK 캐시)은 `robots/<ROBOT>/` 로 옮겼습니다. 이 저장소는 G1 전용 — `ROBOT` 은 안 줘도 `g1`, 다른 값은 거부합니다 (Ubuntu 24.04 설치: [`INSTALL.md`](./INSTALL.md)). 아래 일부 절은 지금은 없는 서버(`ik_box.py`, `run_motion.py`, `simulator_ik.py`)를 설명합니다 — 현재 서버 목록은 [`README.md`](./README.md) 참고.
 ---
 
 ## 1. 전체 아키텍처

@@ -12,9 +12,10 @@
 #                        (torch 만 먼저 깔면 torchvision 이 numpy 2.x 를 끌어옴 → 같이 깔아야 numpy 1.24.4 유지)
 #   pip_vcs.txt          git 에서 받은 패키지 (unitree_sdk2py)  → pip install -r pip_vcs.txt --src "$CONDA_PREFIX/src"
 #   pip_freeze_all.txt   pip freeze 원문 (참고)
-#   activate.d/          tv 활성화 훅 중 직접 만든 것 (INSTALL 11단계 threads.sh 등, conda 패키지 것은 제외)
-#   system.txt           OS·커널·CPU, GPU/NPU 커널 드라이버·펌웨어, apt 패키지 버전(GStreamer·Intel GPU/NPU 런타임),
-#                        OpenVINO 장치, RealSense, 저장소 커밋, third_party SDK, 캐시
+#   activate.d/          tv 활성화 훅 중 직접 만든 것 (INSTALL 8단계 threads.sh 등, conda 패키지 것은 제외)
+#   system.txt           OS·커널·CPU, GPU/NPU 커널 드라이버·펌웨어, apt 패키지 버전(Intel GPU/NPU 런타임),
+#                        OpenVINO 장치, RealSense, 저장소 커밋, 캐시
+# 원본: h2-motion-control 592d235 (G1 경로로 바꾸고 third_party · GStreamer 항목 삭제)
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/robot_env.sh" || exit 1
@@ -109,7 +110,7 @@ for d in ("activate.d", "deactivate.d"):
         hooks.append(rel)
 
 print(f"[snapshot] pip: torch {len(torch)} · 일반 {len(pkgs)} · git {len(vcs)}  (conda 가 깐 것 {len(by_conda)} 개는 conda_explicit.txt)")
-print(f"[snapshot] 활성화 훅: {', '.join(hooks) or '없음 (INSTALL 11단계 threads.sh 가 없으면 IK 가 느려짐)'}")
+print(f"[snapshot] 활성화 훅: {', '.join(hooks) or '없음 (INSTALL 8단계 threads.sh 가 없으면 IK 가 느려짐)'}")
 for w in warn:
     print(f"[snapshot] ⚠️ {w}")
 PY
@@ -135,7 +136,6 @@ sec() { printf '\n===== %s =====\n' "$1"; }
   sec "저장소"
   git -C "$ROOT" log -1 --format='commit  : %H  %cd  %s' --date=short 2>&1
   echo "branch  : $(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>&1)"
-  echo "third_party: $(ls "$ROOT/third_party" 2>/dev/null | tr '\n' ' ')"
 
   sec "GPU / NPU 커널 드라이버 (사용률을 읽는 파일 — common/ctrl/hw_usage.py)"
   for c in /sys/class/drm/card[0-9]* /sys/class/accel/accel[0-9]*; do
@@ -152,13 +152,11 @@ sec() { printf '\n===== %s =====\n' "$1"; }
   echo "NPU 펌웨어: $(ls /lib/firmware/intel/vpu/ 2>/dev/null | tr '\n' ' ')"
   (cd "$ROOT" && timeout 20 "$TV_PY" common/ctrl/hw_usage.py --sec 0 2>&1)
 
-  sec "apt 패키지 (GStreamer · Intel GPU/NPU 런타임 · 커널 · 펌웨어)"
+  sec "apt 패키지 (Intel GPU/NPU 런타임 · 커널 · 펌웨어)"
   dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${Version}\n' \
-      'gstreamer1.0-*' 'libgstreamer1.0-*' 'libgstreamer-plugins-*' \
       'intel-*' 'libze*' 'level-zero*' 'libigc*' 'libigdgmm*' 'ocl-icd*' 'clinfo' \
-      'linux-firmware' 'linux-image-*' 'libgl1' 'libglib2.0-0*' 'mawk' 'curl' 2>/dev/null \
+      'linux-firmware' 'linux-image-*' 'libgl1' 'libglib2.0-0*' 'mawk' 'curl' 'util-linux' 2>/dev/null \
     | awk -F'\t' '$1 ~ /^ii/ {printf "%-40s %s\n", $2, $3}'
-  echo "gst-launch-1.0: $(gst-launch-1.0 --version 2>/dev/null | head -1 || true)"
   [ -e /etc/udev/rules.d/99-realsense-libusb.rules ] && echo "udev: 99-realsense-libusb.rules 있음" || echo "udev: 99-realsense-libusb.rules 없음"
 
   sec "OpenVINO 장치"
@@ -204,8 +202,8 @@ print('OMP_NUM_THREADS', os.environ.get('OMP_NUM_THREADS'))
 " 2>&1)
 
   sec "캐시"
-  du -sh "$HOME/.cache/h2-motion-control/openvino" 2>/dev/null || echo "OpenVINO 컴파일 캐시 없음"
-  ls -l "$ROOT"/robots/h2/*.pkl 2>/dev/null || echo "IK 모델 캐시(*.pkl) 없음"
+  du -sh "$HOME/.cache/g1-motion-control/openvino" 2>/dev/null || echo "OpenVINO 컴파일 캐시 없음"
+  ls -l "$ROOT"/robots/g1/*.pkl 2>/dev/null || echo "IK 모델 캐시(*.pkl) 없음"
 } > "$OUT/system.txt" 2>&1
 echo "[snapshot] system.txt"
 
