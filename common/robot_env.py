@@ -128,7 +128,7 @@ CAMERA_Y     = float(CAMERA["y"])
 CAMERA_Z     = float(CAMERA["z"])
 CAMERA_PITCH_DEG = float(CAMERA["pitch_deg"])
 CAMERA_PITCH = float(np.radians(CAMERA_PITCH_DEG))
-CAMERA_K     = tuple(float(v) for v in CAMERA["intrinsics"])   # (fx, fy, ppx, ppy) 컬러 640×480 — detect_box / detect_marker / sim   # rad (G1 47.6° → 0.8307767239493009, 비트 동일)
+CAMERA_K     = tuple(float(v) for v in CAMERA["intrinsics"])   # (fx, fy, ppx, ppy) 컬러 640×480 — 시뮬 가상 카메라 전용 (실기 detect_* 는 rs_stream /intrinsics)
 
 JOINTS = CFG["joints"]
 FSM    = CFG["fsm"]

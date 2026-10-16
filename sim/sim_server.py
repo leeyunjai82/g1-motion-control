@@ -12,7 +12,8 @@ sim_server.py — 시뮬레이터: 가상 박스 + 가짜 detect_box (포트 500
     (robot_server.camera_to_torso 의 역변환 — 허리 yaw 를 돌리면 카메라 좌표도 같이 바뀐다).
   · detect_box 와 같은 /pose, /status, /video_feed 를 제공 → robot_server 의 잡기 시퀀스
     (허리 yaw 정렬 → 재검출 → 접근 → 잡기 → 들기 → 건네기) 를 코드 수정 없이 그대로 돌린다.
-  · 카메라 화면 시야(640×480, detect_box 의 K) 밖이면 found=False — 장착 위치 검토용.
+  · 카메라 화면 시야(640×480, robot.yaml camera.intrinsics) 밖이면 found=False — 장착 위치 검토용.
+    실기는 848×480 (가로 화각이 더 넓음, K 는 rs_stream /intrinsics) 이라 시뮬의 '시야 밖' 판정이 더 엄격하다.
   · 손 위치 오차: robot_server 의 IK 목표 vs 현재 팔 관절로 계산한 손끝(L_ee/R_ee) — IK 도달 여부 확인용.
 
 없는 것: 실제 영상 인식(YOLO), 접촉/물리, 박스가 손에 따라 움직이는 것, 보행.
@@ -54,7 +55,8 @@ ARM_SERVER = "http://localhost:50022"
 IMG_W, IMG_H = 640, 480
 INSET = 0.02                       # L/R = 윗면 좌우 변 중점에서 안쪽 2 cm (box_estimator 와 동일)
 
-# ---- 카메라 내부 파라미터: detect_box 와 같은 값 (robot.yaml camera.intrinsics) ----
+# ---- 가상 카메라 내부 파라미터: robot.yaml camera.intrinsics (640×480) ----
+#   실기 detect_box 는 rs_stream /intrinsics (기본 848×480) 를 쓴다 — 시뮬은 실측 848×480 K 가 없어 640×480 그대로
 FX, FY, PPX, PPY = robot_env.CAMERA_K
 
 # ---- 로봇 모델 ----
