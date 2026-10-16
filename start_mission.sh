@@ -21,7 +21,7 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-# ROBOT 미지정/미지원이면 여기서 거부 (이전 서버 정리보다 먼저)
+# robot.yaml 없음 / enabled: false 면 여기서 거부 (이전 서버 정리보다 먼저)
 source "$ROOT/robot_env.sh" || exit 1
 require_robot
 LOG_DIR="$ROOT/logs"
@@ -34,23 +34,50 @@ TARGETS=("rs_stream.py" "ctrl/detect_box.py" \
 # stamp() 는 robot_env.sh (mawk 줄 단위 처리 포함)
 
 # ==========================================
-# 0) 기존 좀비 프로세스 청소
+# 0) 기존 좀비 프로세스 청소 (start_robot.sh 와 같은 방식)
+#   정상 종료 요청(SIGTERM) → 최대 N초 대기 → 남은 것만 SIGKILL
+#   (바로 SIGKILL 하면 arm_server 가 팔 제어권(weight)을 반납하지 못하고 죽는다)
 # ==========================================
+SWEEP_WAIT=5          # TERM 후 대기 (arm_server 반납 램프 1초 + 여유)
+
+# 서버 실행 형태("python -u <...>arm_server.py")에만 일치하는 패턴.
+# 이름만으로 찾으면 vim/tail 등 명령줄에 파일명이 들어간 무관한 프로세스까지 죽인다.
+proc_pat() { local b; b=$(basename "$1"); echo "^[^ ]*python[^ ]* (-u )?[^ ]*${b//./\\.}"; }
+
 sweep_zombies() {
-  local found=0
+  local label="$1" wait_sec="${2:-$SWEEP_WAIT}"
+  local found=()
   for name in "${TARGETS[@]}"; do
-    local base
-    base=$(basename "$name")
-    pids=$(pgrep -f "$base" 2>/dev/null || true)
+    pids=$(pgrep -f "$(proc_pat "$name")" 2>/dev/null || true)
     if [ -n "$pids" ]; then
-      found=1
-      echo "[cleanup] 기존 $base 발견: $pids — SIGKILL"
-      pkill -9 -f "$base" 2>/dev/null || true
+      found+=("$name")
+      echo "[$label] 기존 $name 발견: $(echo $pids) — 정상 종료 요청(TERM)"
+      kill -TERM $pids 2>/dev/null || true
     fi
   done
-  [ $found -eq 1 ] && sleep 0.5 || true
+  [ ${#found[@]} -eq 0 ] && return 0
+
+  # 최대 wait_sec 초 대기 (0.5초 간격)
+  for ((i = 0; i < wait_sec * 2; i++)); do
+    alive=0
+    for name in "${found[@]}"; do
+      pgrep -f "$(proc_pat "$name")" >/dev/null 2>&1 && alive=1
+    done
+    [ $alive -eq 0 ] && { echo "[$label] 정상 종료 완료"; return 0; }
+    sleep 0.5
+  done
+
+  # 남은 것만 SIGKILL
+  for name in "${found[@]}"; do
+    pids=$(pgrep -f "$(proc_pat "$name")" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+      echo "[$label] $name ${wait_sec}초 내 미종료: $(echo $pids) — SIGKILL"
+      kill -KILL $pids 2>/dev/null || true
+    fi
+  done
+  sleep 0.5
 }
-sweep_zombies
+sweep_zombies "cleanup"
 
 # ==========================================
 # venv 활성화
@@ -91,14 +118,8 @@ cleanup() {
       kill -9 "${PIDS[$i]}" 2>/dev/null || true
     fi
   done
-  # 최종 sweep — PID 추적을 벗어나 살아남은 놈들 이름으로 정리
-  for name in "${TARGETS[@]}"; do
-    base=$(basename "$name")
-    if pgrep -f "$base" > /dev/null 2>&1; then
-      echo "[stop] $base 잔존 — 이름 기준 SIGKILL"
-      pkill -9 -f "$base" 2>/dev/null || true
-    fi
-  done
+  # 최종 sweep — PID 추적을 벗어나 살아남은 것 (실행 형태 패턴, 이미 TERM/KILL 거친 뒤라 짧게)
+  sweep_zombies "stop" 2
   echo "[stop] 완료"
   exit 0
 }
@@ -106,7 +127,7 @@ trap cleanup INT TERM EXIT
 
 run() {  # run <이름> <스크립트경로> <대기초>
   echo "[start] $1 ..."
-  python -u "$2" > >(stamp >> "$LOG_DIR/$1_$DAY.log") 2>&1 &
+  with_pdeath python -u "$2" > >(stamp >> "$LOG_DIR/$1_$DAY.log") 2>&1 &
   PIDS+=($!); NAMES+=("$1")
   sleep "$3"
 }

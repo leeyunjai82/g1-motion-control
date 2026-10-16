@@ -41,11 +41,16 @@ import threading
 import time
 from collections import deque
 
-# 로봇 선택 — launcher.sh 가 sudo 뒤에서 인자로 넘긴다 (sudo 가 환경변수를 지우므로).
-#   sudo <tv python> run_launcher.py <robot>
+# 로봇 선택 · DDS 인터페이스 — launcher.sh 가 sudo 뒤에서 인자로 넘긴다 (sudo 가 환경변수를 지우므로).
+#   sudo <tv python> run_launcher.py <robot> [iface=<DDS 인터페이스>]
 # os.environ 에 넣어 두면 start_robot.sh(_user_env) 에도 그대로 전달된다.
 if len(sys.argv) > 1:
     os.environ["ROBOT"] = sys.argv[1]
+for _a in sys.argv[2:]:
+    if _a.startswith("iface=") and len(_a) > 6:
+        os.environ["DDS_IFACE"] = _a[6:]
+    else:
+        sys.exit(f"Usage: run_launcher.py <robot> [iface=<DDS 인터페이스>]  (알 수 없는 인자: {_a})")
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "common"))
 import robot_env   # ROBOT 미지정/미지원이면 여기서 종료
 
@@ -346,6 +351,9 @@ class Job:
             logf = _logfile(self.name)
             drop = as_user and USER_PW is not None
             logf.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} {label} =====\n")
+            # setpriv --pdeathsig 는 여기서 쓰지 않는다: pdeathsig 는 부모 '스레드' 가 끝날 때 신호가 가는데,
+            # 이 Popen 은 FastAPI 동기 엔드포인트(anyio 워커 스레드)에서 불려 워커가 쉬다 끝나면(약 10초)
+            # start_robot.sh 가 정리 없이 죽는다. launcher 종료 시 정지는 lifespan 의 _stop_robot (TERM) 이 맡는다.
             self.proc = subprocess.Popen(
                 args, cwd=ROOT, stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -447,14 +455,18 @@ def status():
     return {"fsm": fsm.state(robot.running()), "robot": robot.state()}
 
 
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return HTML
+    return HTMLResponse(HTML, headers=NO_CACHE)
 
 
 @app.get("/i18n.js", include_in_schema=False)
 def i18n_js():
-    return FileResponse(os.path.join(ROOT, "common", "i18n.js"), media_type="application/javascript")
+    return FileResponse(os.path.join(ROOT, "common", "i18n.js"), media_type="application/javascript",
+                        headers=NO_CACHE)
 
 
 HTML = r"""<!DOCTYPE html>

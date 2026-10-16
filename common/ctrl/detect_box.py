@@ -589,13 +589,16 @@ async def set_auto_mode(enabled: bool=None,
     return {"success": True, "config": auto_mode}
 
 
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     a = auto_mode
-    return (HTML_PAGE.replace("__AX_MIN__", f"{a['x_min']:.2f}").replace("__AX_MAX__", f"{a['x_max']:.2f}")
-            .replace("__AY_MIN__", f"{a['y_min']:.2f}").replace("__AY_MAX__", f"{a['y_max']:.2f}")
-            .replace("__AZ_MIN__", f"{a['z_min']:.2f}").replace("__AZ_MAX__", f"{a['z_max']:.2f}")
-            .replace("__DWELL__", f"{a['dwell_sec']:.1f}"))
+    return HTMLResponse(HTML_PAGE.replace("__AX_MIN__", f"{a['x_min']:.2f}").replace("__AX_MAX__", f"{a['x_max']:.2f}")
+                        .replace("__AY_MIN__", f"{a['y_min']:.2f}").replace("__AY_MAX__", f"{a['y_max']:.2f}")
+                        .replace("__AZ_MIN__", f"{a['z_min']:.2f}").replace("__AZ_MAX__", f"{a['z_max']:.2f}")
+                        .replace("__DWELL__", f"{a['dwell_sec']:.1f}"), headers=NO_CACHE)
 
 
 HTML_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">

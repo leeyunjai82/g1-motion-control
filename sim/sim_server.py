@@ -351,11 +351,14 @@ def sim_home():
         return JSONResponse({"ok": False, "reason": str(e)})
 
 
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (HTML.replace("__ROBOT__", robot_env.ROBOT.upper()).replace("__REALCAM__", "1" if REAL_CAM else "0")
-            .replace("__CAMTITLE__", "실물 D435i — detect_box :50010 (YOLO)" if REAL_CAM
-                     else "가상 D435i 화면 (detect_box 대체 /video_feed)"))
+    return HTMLResponse(HTML.replace("__ROBOT__", robot_env.ROBOT.upper()).replace("__REALCAM__", "1" if REAL_CAM else "0")
+                        .replace("__CAMTITLE__", "실물 D435i — detect_box :50010 (YOLO)" if REAL_CAM
+                                 else "가상 D435i 화면 (detect_box 대체 /video_feed)"), headers=NO_CACHE)
 
 
 HTML = r"""<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">

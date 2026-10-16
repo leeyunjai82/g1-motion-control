@@ -136,10 +136,18 @@ FSM    = CFG["fsm"]
 
 _dds_inited = None
 
+# DDS 네트워크 인터페이스 (실기만). 비우면 자동 선택 — 기존과 같음.
+#   Wi-Fi 와 유선이 같이 켜진 PC 에서 자동 선택이 Wi-Fi 를 잡으면 로봇(192.168.123.x) 데이터가 안 들어온다.
+#   DDS_IFACE=enp3s0 ./start_robot.sh
+#   sudo 는 환경변수를 지우므로 init_fsm.py / run_launcher.py 는 인자 iface=<이름> 으로 받아 여기에 다시 넣는다.
+#   시뮬(ROBOT_SIM=1, 로컬 도메인 1)에는 적용하지 않는다 — 케이블을 뽑은 PC 에서도 시뮬이 돌게.
+DDS_IFACE = os.environ.get("DDS_IFACE", "").strip()
+
 
 def dds_init(interface=None):
     """ChannelFactoryInitialize(DDS_DOMAIN[, interface]).
 
+    interface 를 안 주면 실기에서는 DDS_IFACE (없으면 자동 선택).
     실기: 기존과 똑같이 매번 호출한다 (동작 변경 없음).
     시뮬: 같은 프로세스에서 두 번째 호출은 건너뛴다 — 일부 환경에서 cyclonedds 가 같은 도메인을
           다시 만들 때 'create domain error' 로 실패하기 때문 (arm_server → robot_arm 이 두 번 부름).
@@ -148,8 +156,15 @@ def dds_init(interface=None):
     from unitree_sdk2py.core.channel import ChannelFactoryInitialize
     if SIM and _dds_inited is not None:
         return
-    if interface:
-        ChannelFactoryInitialize(DDS_DOMAIN, interface)
+    iface = interface or ("" if SIM else DDS_IFACE)
+    if iface and not os.path.isdir(os.path.join("/sys/class/net", iface)):
+        print(f"[robot_env] ❌ DDS 인터페이스 '{iface}' 없음 — ip -br link 로 이름 확인 (DDS_IFACE 를 비우면 자동 선택)",
+              file=sys.stderr)
+        sys.exit(2)
+    if iface:
+        if _dds_inited is None:
+            print(f"[robot_env] DDS 인터페이스: {iface}", file=sys.stderr)
+        ChannelFactoryInitialize(DDS_DOMAIN, iface)
     else:
         ChannelFactoryInitialize(DDS_DOMAIN)
     _dds_inited = DDS_DOMAIN

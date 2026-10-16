@@ -515,15 +515,19 @@ async def stop_motion():
 # ==========================================
 # UI — 통합 simulator.html 단일 파일
 # ==========================================
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
+
 @app.get("/i18n.js", include_in_schema=False)
 async def i18n_js():
-    return FileResponse(os.path.join(current_dir, "i18n.js"), media_type="application/javascript")
+    return FileResponse(os.path.join(current_dir, "i18n.js"), media_type="application/javascript",
+                        headers=NO_CACHE)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     p = os.path.join(current_dir, "simulator.html")
-    return FileResponse(p) if os.path.exists(p) else HTMLResponse("simulator.html 없음")
+    return FileResponse(p, headers=NO_CACHE) if os.path.exists(p) else HTMLResponse("simulator.html 없음")
 
 
 if __name__ == "__main__":

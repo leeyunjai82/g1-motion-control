@@ -129,34 +129,34 @@ trap cleanup INT TERM
 #     $!는 python PID 유지(graceful 종료 보존)
 # ==========================================
 echo "[start] rs_stream     (50001) ..."
-python -u rs_stream.py          > >(stamp >> "$LOG_DIR/rs_stream_$DAY.log")     2>&1 &
+with_pdeath python -u rs_stream.py          > >(stamp >> "$LOG_DIR/rs_stream_$DAY.log")     2>&1 &
 PIDS+=($!); NAMES+=("rs_stream")
 sleep 2
 
 echo "[start] arm_server    (50022) ..."
-python -u arm_server.py         > >(stamp >> "$LOG_DIR/arm_server_$DAY.log")    2>&1 &
+with_pdeath python -u arm_server.py         > >(stamp >> "$LOG_DIR/arm_server_$DAY.log")    2>&1 &
 PIDS+=($!); NAMES+=("arm_server")
 sleep 4
 
 echo "[start] robot_server  (50000) ..."
-python -u robot_server.py       > >(stamp >> "$LOG_DIR/robot_server_$DAY.log")  2>&1 &
+with_pdeath python -u robot_server.py       > >(stamp >> "$LOG_DIR/robot_server_$DAY.log")  2>&1 &
 PIDS+=($!); NAMES+=("robot_server")
 sleep 3
 
 echo "[start] dashboard     (50003) ..."
-python -u dashboard.py          > >(stamp >> "$LOG_DIR/dashboard_$DAY.log")     2>&1 &
+with_pdeath python -u dashboard.py          > >(stamp >> "$LOG_DIR/dashboard_$DAY.log")     2>&1 &
 PIDS+=($!); NAMES+=("dashboard")
 sleep 2
 
 if [ "$LOCO" = "1" ]; then
   echo "[start] detect_marker (50011) ..."
-  python -u ctrl/detect_marker.py > >(stamp >> "$LOG_DIR/detect_marker_$DAY.log") 2>&1 &
+  with_pdeath python -u ctrl/detect_marker.py > >(stamp >> "$LOG_DIR/detect_marker_$DAY.log") 2>&1 &
   PIDS+=($!); NAMES+=("detect_marker")
   sleep 1
 fi
 
 echo "[start] detect_box    (50010) ..."
-python -u ctrl/detect_box.py    > >(stamp >> "$LOG_DIR/detect_box_$DAY.log")    2>&1 &
+with_pdeath python -u ctrl/detect_box.py    > >(stamp >> "$LOG_DIR/detect_box_$DAY.log")    2>&1 &
 PIDS+=($!); NAMES+=("detect_box")
 sleep 1
 

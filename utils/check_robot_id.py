@@ -17,6 +17,7 @@ check_robot_id.py — 연결된 로봇 식별값 확인 (rt/lowstate 읽기 전�
   · 슬롯별 temperature / vol / motorstate / q  — 모터가 실제 붙은 슬롯은 온도·전압이 0 이 아님
     (이 판정 기준 자체도 실기 출력으로 확인할 것)
 """
+import os
 import sys
 import time
 
@@ -27,8 +28,9 @@ N_SAMPLES = 20      # 몇 번 읽어서 mode_machine 이 일정한지 확인
 
 
 def main():
-    if len(sys.argv) > 1:
-        ChannelFactoryInitialize(0, sys.argv[1])
+    iface = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("DDS_IFACE", "").strip()   # 인자 > DDS_IFACE > 자동
+    if iface:
+        ChannelFactoryInitialize(0, iface)
     else:
         ChannelFactoryInitialize(0)
 

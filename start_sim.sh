@@ -63,7 +63,7 @@ trap cleanup INT TERM EXIT
 
 run() {  # run <이름> <스크립트> <대기초>
   echo "[sim] $1 ..."
-  python -u "$2" > >(stamp >> "$LOG_DIR/sim_$1_$DAY.log") 2>&1 &
+  with_pdeath python -u "$2" > >(stamp >> "$LOG_DIR/sim_$1_$DAY.log") 2>&1 &
   PIDS+=($!); NAMES+=("$1")
   sleep "$3"
 }

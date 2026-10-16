@@ -2,13 +2,18 @@
 """
 LowState IMU 데이터 확인 스크립트
 """
+import os
 import time
 import threading
 from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as hg_LowState
 
 def main():
-    ChannelFactoryInitialize(0)
+    iface = os.environ.get("DDS_IFACE", "").strip()   # 비우면 자동 선택
+    if iface:
+        ChannelFactoryInitialize(0, iface)
+    else:
+        ChannelFactoryInitialize(0)
 
     sub = ChannelSubscriber("rt/lowstate", hg_LowState)
     sub.Init()

@@ -92,7 +92,7 @@ trap cleanup INT TERM EXIT
 
 run() {  # run <이름> <스크립트>
   echo "[start] $1 ..."
-  python -u "$2" > >(stamp >> "$LOG_DIR/${TAG}$1_$DAY.log") 2>&1 &
+  with_pdeath python -u "$2" > >(stamp >> "$LOG_DIR/${TAG}$1_$DAY.log") 2>&1 &
   PIDS+=($!); NAMES+=("$1")
 }
 wait_http() {  # wait_http <url> <초>

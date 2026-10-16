@@ -1077,21 +1077,24 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 # ==========================================
 # Pages
 # ==========================================
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
 @app.get('/')
 def index():
-    return HTMLResponse(HTML_PAGE)
+    return HTMLResponse(HTML_PAGE, headers=NO_CACHE)
 
 @app.get('/i18n.js', include_in_schema=False)
 def i18n_js():
-    return FileResponse(os.path.join(current_dir, 'i18n.js'), media_type='application/javascript')
+    return FileResponse(os.path.join(current_dir, 'i18n.js'), media_type='application/javascript',
+                        headers=NO_CACHE)
 
 @app.get('/robot-only')
 def robot_dashboard():
-    return HTMLResponse(HTML_PAGE.replace('<body>', '<body class="dashboard-mode">', 1))
+    return HTMLResponse(HTML_PAGE.replace('<body>', '<body class="dashboard-mode">', 1), headers=NO_CACHE)
 
 @app.get('/dashboard')
 def dashboard():
-    return HTMLResponse(DASHBOARD_HTML)
+    return HTMLResponse(DASHBOARD_HTML, headers=NO_CACHE)
 
 
 if __name__ == '__main__':

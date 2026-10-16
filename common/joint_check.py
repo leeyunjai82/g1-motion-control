@@ -203,12 +203,16 @@ def check_ik_state():
         return {"ok": False, "error": str(e)}
 
 
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
+
 @router.get("/check", response_class=HTMLResponse)
 def check_page():
     mode = "가상 (ROBOT_SIM, DDS 도메인 1)" if robot_env.SIM else "실기 (DDS 도메인 0)"
-    return (HTML.replace("__ROBOT__", robot_env.ROBOT.upper()).replace("__MODE__", mode)
-            .replace("__REAL__", "0" if robot_env.SIM else "1")
-            .replace("__STEP__", str(STEP_DEG)).replace("__MAX__", str(MAX_OFFSET_DEG)))
+    return HTMLResponse(HTML.replace("__ROBOT__", robot_env.ROBOT.upper()).replace("__MODE__", mode)
+                        .replace("__REAL__", "0" if robot_env.SIM else "1")
+                        .replace("__STEP__", str(STEP_DEG)).replace("__MAX__", str(MAX_OFFSET_DEG)),
+                        headers=NO_CACHE)
 
 
 @router.get("/check/state")

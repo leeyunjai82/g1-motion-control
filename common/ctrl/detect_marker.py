@@ -344,9 +344,12 @@ async def set_auto_mode(enabled: bool=None,
     return {"success": True, "config": auto_mode}
 
 
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return HTML_PAGE
+    return HTMLResponse(HTML_PAGE, headers=NO_CACHE)
 
 
 HTML_PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">

@@ -705,15 +705,17 @@ window.addEventListener('load',()=>loadRobot());
 # ==========================================
 # Pages
 # ==========================================
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
 @app.get('/')
 def index():
     # 3D 뷰어 + Joint States (모터 값 포함)
-    return HTMLResponse(HTML_PAGE)
+    return HTMLResponse(HTML_PAGE, headers=NO_CACHE)
 
 @app.get('/robot-only')
 def robot_only():
     # 3D 뷰어만 (모터 값/사이드바 모두 숨김)
-    return HTMLResponse(HTML_PAGE.replace('<body>', '<body class="robot-only-mode">', 1))
+    return HTMLResponse(HTML_PAGE.replace('<body>', '<body class="robot-only-mode">', 1), headers=NO_CACHE)
 
 
 if __name__ == '__main__':

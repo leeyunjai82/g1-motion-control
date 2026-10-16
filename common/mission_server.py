@@ -1032,9 +1032,12 @@ setInterval(async()=>{try{const d=await(await fetch('/status')).json();
 </script></body></html>"""
 
 
+NO_CACHE = {"Cache-Control": "no-cache"}   # UI 는 매번 서버에 확인 (git pull 뒤 바로 새 파일)
+
+
 @app.get("/", include_in_schema=False)
 async def index():
-    return HTMLResponse(PAGE)
+    return HTMLResponse(PAGE, headers=NO_CACHE)
 
 
 if __name__ == "__main__":

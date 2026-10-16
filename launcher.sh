@@ -1,6 +1,7 @@
 #!/bin/bash
 # Launcher 웹 (http://<robot-ip>/ , 포트 80) — FSM 버튼 / start_robot.sh 실행
-# 사용: ./launcher.sh   (ROBOT 은 sudo 뒤 run_launcher.py 인자로 넘긴다)
+# 사용: ./launcher.sh            (G1 전용 — ROBOT · DDS_IFACE 는 sudo 뒤 run_launcher.py 인자로 넘긴다)
+#       DDS_IFACE=enp3s0 ./launcher.sh   DDS 네트워크 인터페이스 지정 (start_robot.sh 에도 전달)
 # start_fsm.sh 와 같이 sudo 로 tv 환경 python 을 실행한다 (비밀번호는 여기서 한 번만).
 #
 # 기동 전 정리 (이전 실행이 남아 있으면):
@@ -13,7 +14,7 @@
 # 종료: Ctrl+C  (실행 중인 Robot 서버도 정상 종료 시퀀스로 같이 정지)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# ROBOT 미지정/미지원이면 여기서 거부 (이전 실행 정리보다 먼저)
+# robot.yaml 없음 / enabled: false 면 여기서 거부 (이전 실행 정리보다 먼저)
 source "$SCRIPT_DIR/robot_env.sh" || exit 1
 require_robot
 PY="$TV_PY"
@@ -62,4 +63,4 @@ if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -qE ':80[[:space:
   exit 1
 fi
 
-exec sudo "$PY" "$SCRIPT_DIR/run_launcher.py" "$ROBOT"
+exec sudo "$PY" "$SCRIPT_DIR/run_launcher.py" "$ROBOT" ${DDS_IFACE:+"iface=$DDS_IFACE"}

@@ -3,19 +3,24 @@ import sys
 import time
 
 # 로봇 선택 — start_fsm.sh 가 sudo 뒤에서 두 번째 인자로 넘긴다 (sudo 가 환경변수를 지우므로).
-#   python init_fsm.py <stand|sit|bal|damp|no-bal> <robot> [check]
-#   check : 모터 번호 확인 모드 (ROBOT_CHECK=1) — enabled: false 로봇(H2) 기립/앉기용. start_fsm.sh 가 확인 후 넘긴다.
+#   python init_fsm.py <stand|sit|bal|damp|no-bal> <robot> [check] [iface=<DDS 인터페이스>]
+#   check : 모터 번호 확인 모드 (ROBOT_CHECK=1) — robot.yaml enabled: false 일 때. start_fsm.sh 가 확인 후 넘긴다.
+#   iface : DDS 네트워크 인터페이스 (start_fsm.sh 가 DDS_IFACE 를 넘김) — 없으면 자동 선택
 # FSM ID 는 robots/<robot>/robot.yaml fsm (G1: damp 1 / lock 4 / run 501 / sit 3).
+USAGE = "Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot> [check] [iface=<DDS 인터페이스>]"
 if len(sys.argv) < 3 or not (sys.argv[1] in ("stand", "sit", "bal", "damp", "no-bal") or sys.argv[1].isdigit()):
-    print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot> [check]")
+    print(USAGE)
     sys.exit(1)
 
 os.environ["ROBOT"] = sys.argv[2]
-if len(sys.argv) > 3:
-    if sys.argv[3] != "check":
-        print("Usage: python init_fsm.py [stand|sit|bal|damp|no-bal|<FSM ID>] <robot> [check]")
+for _a in sys.argv[3:]:
+    if _a == "check":
+        os.environ["ROBOT_CHECK"] = "1"
+    elif _a.startswith("iface=") and len(_a) > 6:
+        os.environ["DDS_IFACE"] = _a[6:]
+    else:
+        print(USAGE)
         sys.exit(1)
-    os.environ["ROBOT_CHECK"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "common"))
 import robot_env   # ROBOT 미지정 / robot.yaml 없음 / enabled: false 면 여기서 종료
 
