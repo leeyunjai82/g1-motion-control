@@ -508,7 +508,7 @@ function parseOrig(el){
 const basename=s=>s.split(/[/\\]/).pop().toLowerCase();
 const sid=n=>n.replace(/\W/g,'_');
 
-// ============ Logo: Pion / Circulus / Intel ============
+// ============ Logo: Pion / Circulus / intel (3줄) ============
 const PION_COLOR     = '#FFFFFF';   // 흰색 — 메인 색(#00b7eb)은 Circulus 색과 거의 같아 구분이 안 됨
 const INTEL_COLOR    = '#0068B5';
 const CIRCULUS_COLOR = '#00AEEF';
@@ -538,30 +538,28 @@ function makeLogoTextMesh(logoGeo){
   const ctx=canvas.getContext('2d');
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Two-line layout:
+  // Three-line layout:
   //   Line 1: "Pion"
-  //   Line 2: "Circulus Intel"
-  const line1=[
-    {text:'Pion',     color:PION_COLOR},
-  ];
-  const line2=[
-    {text:'Circulus', color:CIRCULUS_COLOR},
-    {text:' ',        color:'#fff'},
-    {text:'Intel',    color:INTEL_COLOR},
+  //   Line 2: "Circulus"
+  //   Line 3: "intel"
+  const lines=[
+    [{text:'Pion',     color:PION_COLOR}],
+    [{text:'Circulus', color:CIRCULUS_COLOR}],
+    [{text:'intel',    color:INTEL_COLOR}],
   ];
 
-  // Each line ~ 42% of canvas height
-  let fontSize=Math.round(canvas.height*0.42);
+  // Each line ~ 30% of canvas height
+  let fontSize=Math.round(canvas.height*0.30);
   const setFont=()=>{ctx.font=`900 ${fontSize}px "Segoe UI", Arial, sans-serif`;};
   setFont();
   const measure=(parts)=>parts.reduce((w,p)=>w+ctx.measureText(p.text).width,0);
   const maxW=canvas.width*0.92;
-  let w1=measure(line1), w2=measure(line2);
-  let widest=Math.max(w1,w2);
+  let widths=lines.map(measure);
+  const widest=Math.max(...widths);
   if(widest>maxW){
     fontSize=Math.max(18,Math.floor(fontSize*maxW/widest));
     setFont();
-    w1=measure(line1); w2=measure(line2);
+    widths=lines.map(measure);
   }
 
   ctx.textBaseline='middle';ctx.textAlign='left';
@@ -576,8 +574,8 @@ function makeLogoTextMesh(logoGeo){
       x+=ctx.measureText(p.text).width;
     }
   }
-  drawLine(line1, w1, canvas.height*0.30);
-  drawLine(line2, w2, canvas.height*0.72);
+  const ys=[0.19, 0.50, 0.81];          // 줄 가운데 높이 (캔버스 높이 비율)
+  lines.forEach((parts,i)=>drawLine(parts, widths[i], canvas.height*ys[i]));
 
   const tex=new THREE.CanvasTexture(canvas);
   tex.anisotropy=8;tex.needsUpdate=true;
