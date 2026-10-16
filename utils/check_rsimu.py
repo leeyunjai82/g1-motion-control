@@ -5,9 +5,9 @@ check_rsimu.py — D435i IMU + 로봇 LowState IMU 를 같이 읽어 '몸통(tor
 
   start_robot.sh / rs_stream.py 등 카메라를 쓰는 프로그램은 먼저 끌 것 (D435i 동시 사용 불가).
   D435i IMU 권한 오류가 나면 sudo (또는 RealSense udev 규칙).
-  ROBOT=h2 python utils/check_rsimu.py              # 실시간 (0.2 s 마다), Ctrl+C 종료
-  ROBOT=h2 python utils/check_rsimu.py --sec 5      # 5 초 평균 + 권장 pitch_deg 출력
-  ROBOT=h2 python utils/check_rsimu.py --sec 5 eno1 # DDS 네트워크 인터페이스 지정
+  python utils/check_rsimu.py              # 실시간 (0.2 s 마다), Ctrl+C 종료
+  python utils/check_rsimu.py --sec 5      # 5 초 평균 + 권장 pitch_deg 출력
+  python utils/check_rsimu.py --sec 5 eno1 # DDS 네트워크 인터페이스 지정
 
 계산 (G1 원본 식 그대로)
   cam_abs      = D435i 가속도로 구한 광학축 숙임 (중력 기준)        = atan2(−a_z, √(a_x² + a_y²))

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- Version: 2.9
+<!-- Version: 2.10
+  2.10 - Head Vision 카드(머리 카메라 head_track :50013, H2 전용) 삭제 — G1 전용 저장소
   2.9 - Wrist RPY 기본 pitch 30 (robot.yaml grab.wrist_rpy_deg), 페이지를 열면 서버의 지금 손목 값으로 채움
   2.8 - 위 칩에 이 PC 의 CPU / GPU / NPU 사용률 (robot_server /hw, 1초). 카드 머리에 실제 실행 장치 배지
         (Camera View = detect_box, Head Vision = 왼눈 L / 오른눈 R — OpenVINO EXECUTION_DEVICES, AUTO 로 바뀐 것도 실제 장치로)
@@ -215,10 +216,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
   border:1px solid currentColor;margin-left:5px;text-transform:none;vertical-align:middle}
 .dev.cpu{color:#8fb3d9}.dev.gpu{color:#c49bff}.dev.npu{color:#3ddc97}.dev.unk{color:var(--dim)}
 .hd-r{display:flex;align-items:center;gap:6px}
-
-/* head vision strip (head_track :50013) — 인식된 것만 한 줄 */
-.vision-b{padding:6px 8px;overflow-x:auto;overflow-y:hidden}
-.vision-strip{height:90px;width:auto;max-width:none;display:block;border-radius:6px}
 
 /* robot-only iframe */
 .robot-frame{width:100%;border:1px solid var(--line);border-radius:8px;background:#05080c;
@@ -445,10 +442,6 @@ body{font-family:'SF Mono',ui-monospace,'Cascadia Code',Menlo,monospace;
 
   <!-- ===== RIGHT: robot 3D + control ===== -->
   <div class="col">
-    <div class="card" id="card-vision" style="display:none">
-      <div class="card-h">Head Vision <span class="hd-r"><span id="dev-vision"></span><a id="link-vision" href="#" target="_blank" style="color:var(--accent2)">↗</a></span></div>
-      <div class="card-b vision-b"><img id="vision-strip" class="vision-strip" alt=""></div>
-    </div>
     <div class="card grow fill robot">
       <div class="card-h">Robot View <a id="link-robotonly" href="#" target="_blank" style="color:var(--accent2)">↗</a></div>
       <div class="card-b">
@@ -481,30 +474,6 @@ window.addEventListener('g1lang',e=>{
   document.getElementById('link-dash').href=`http://${host}:50003/dashboard?lang=${e.detail}`;
   document.getElementById('link-robotonly').href=`http://${host}:50003/robot-only?lang=${e.detail}`;});
 document.getElementById('link-robotonly').href=`http://${host}:50003/robot-only`;
-
-// 머리 카메라 인식 한 줄 (head_track :50013, H2). 10초마다 /strip.jpg 로 살아 있는지 보고, 없으면 카드 숨김 (G1 등)
-(function(){
-  const card=document.getElementById('card-vision'), img=document.getElementById('vision-strip');
-  const base=`http://${host}:50013`;
-  document.getElementById('link-vision').href=`${base}/`;
-  let live=false;
-  function check(){
-    const probe=new Image();
-    probe.onload=()=>{ if(!live){live=true;card.style.display='';img.src=`${base}/strip?t=${Date.now()}`;devs();} };
-    probe.onerror=()=>{ if(live){live=false;img.removeAttribute('src');} card.style.display='none'; };
-    probe.src=`${base}/strip.jpg?t=${Date.now()}`;
-  }
-  // 왼눈(L)·오른눈(R) 실제 실행 장치 — AUTO 는 처음 몇 초 CPU 였다가 바뀔 수 있어 3초마다
-  function devs(){
-    if(!live)return;
-    fetch(`${base}/status`).then(r=>r.json()).then(s=>{
-      const it=[['L',devName(s.left&&s.left.exec,s.left&&s.left.device)]];
-      if(s.right)it.push(['R',devName(s.right.exec,s.right.device)]);
-      devBadges('dev-vision',it);
-    }).catch(()=>devBadges('dev-vision',[]));
-  }
-  check(); setInterval(check,10000); setInterval(devs,3000);
-})();
 
 // ---- 이 PC 의 CPU / GPU / NPU 사용률 (robot_server /hw, 1초) — 60 % 이상 주황, 85 % 이상 빨강. 마우스 올리면 읽는 곳 ----
 function pollHw(){

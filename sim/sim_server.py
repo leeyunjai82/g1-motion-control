@@ -2,7 +2,7 @@
 """
 sim_server.py — 시뮬레이터: 가상 박스 + 가짜 detect_box (포트 50010) + 조작 화면
 
-  ROBOT=h2 ROBOT_SIM=1 python sim/sim_server.py     (보통은 ./start_sim.sh 가 띄운다)
+  ROBOT_SIM=1 python sim/sim_server.py     (보통은 ./start_sim.sh 가 띄운다)
   → http://localhost:50010/
 
 하는 일

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Launcher 웹 (http://<robot-ip>/ , 포트 80) — FSM 버튼 / start_robot.sh 실행
-# 사용: ROBOT=g1 ./launcher.sh   (ROBOT 은 sudo 뒤 run_launcher.py 인자로 넘긴다)
+# 사용: ./launcher.sh   (ROBOT 은 sudo 뒤 run_launcher.py 인자로 넘긴다)
 # start_fsm.sh 와 같이 sudo 로 tv 환경 python 을 실행한다 (비밀번호는 여기서 한 번만).
 #
 # 기동 전 정리 (이전 실행이 남아 있으면):

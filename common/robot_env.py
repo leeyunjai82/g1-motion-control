@@ -1,12 +1,12 @@
 """
-robot_env.py — 실행 대상 로봇 선택 (ROBOT 환경변수) + 로봇별 설정(robot.yaml)
+robot_env.py — 로봇 설정(robots/g1/robot.yaml) 읽기. 이 저장소는 G1 전용.
 
-  ROBOT=g1 python robot_server.py
+  python robot_server.py            # ROBOT 을 안 주면 g1
 
-  · ROBOT 미지정 / 미지원 / robot.yaml 의 enabled=false 이면 import 시점에 바로 종료한다 (기본값 없음).
-    다른 로봇을 연결해 둔 채 잘못된 설정으로 지령을 보내는 사고를 막기 위함.
-  · 로봇별 파일(URDF, 메시, 모션 JSON, IK 모델 캐시, robot.yaml)은 robots/<ROBOT>/ 에 둔다.
-  · 로봇마다 다른 값은 robots/<ROBOT>/robot.yaml → CFG 로 읽는다.
+  · ROBOT 환경변수는 남겨 두었지만 g1 만 받는다 (다른 값이면 import 시점에 종료).
+  · robot.yaml 의 enabled=false 면 실행 거부 (시뮬 ROBOT_SIM=1 · 모터 번호 확인 ROBOT_CHECK=1 제외).
+  · 로봇 파일(URDF, 메시, 모션 JSON, IK 모델 캐시, robot.yaml)은 robots/g1/ 에 있다.
+  · unitree_sdk2py 는 tv 환경에 설치된 것 (requirements.txt 고정 커밋 f559291).
 """
 import os
 import sys
@@ -29,7 +29,7 @@ def _available():
 
 def _fail(msg):
     print(f"[robot_env] ❌ {msg}", file=sys.stderr)
-    print(f"[robot_env]    사용 예: ROBOT=g1 ./start_robot.sh   (robots/: {', '.join(_available())})",
+    print(f"[robot_env]    이 저장소는 G1 전용 — ROBOT 은 비우거나 g1   (robots/: {', '.join(_available())})",
           file=sys.stderr)
     sys.exit(2)
 
@@ -83,32 +83,17 @@ DDS_DOMAIN = 1 if SIM else 0
 # 실기 모터 번호 확인 모드 (ROBOT_CHECK=1, start_simulator.sh real) — enabled: false 로봇을 실기에서
 # '확인 목적으로만' 띄운다. 허용 프로세스: arm_server / simulator / dashboard 뿐 (잡기·보행 서버는 거부).
 CHECK = os.environ.get("ROBOT_CHECK", "").strip() == "1"
-CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py", "init_fsm.py", "robot_state.py", "arm_sdk_test.py", "cam_marker_check.py", "hand_to_marker.py"}   # init_fsm: start_fsm.sh, robot_state: 읽기 전용 진단
+CHECK_ALLOWED = {"arm_server.py", "simulator.py", "dashboard.py", "init_fsm.py", "robot_state.py", "cam_marker_check.py", "hand_to_marker.py"}   # init_fsm: start_fsm.sh, robot_state: 읽기 전용 진단
 
-ROBOT = os.environ.get("ROBOT", "").strip().lower()
-if not ROBOT:
-    _fail("ROBOT 환경변수가 없습니다 — 실행 거부 (기본값 없음)")
+ROBOT = os.environ.get("ROBOT", "").strip().lower() or "g1"
+if ROBOT != "g1":
+    _fail(f"ROBOT='{ROBOT}' — 이 저장소는 G1 전용 (H2 는 h2-motion-control)")
 
 ROBOT_DIR = os.path.join(ROBOTS_DIR, ROBOT)
 try:
     CFG = load_config(ROBOT)
 except Exception as e:  # noqa: BLE001 — 어떤 오류든 실행 거부
     _fail(f"ROBOT='{ROBOT}' 설정 오류 — 실행 거부: {e}")
-# 로봇별 unitree_sdk2py (robot.yaml sdk.commit — H2). activate_tv.sh(ensure_robot_sdk) 가 third_party/ 에 받아 둔다.
-#   sys.path 앞에 넣어 tv 환경 SDK(G1 고정 커밋)보다 먼저 쓰게 한다. sudo 실행(init_fsm)에서도 같은 경로.
-SDK_DIR = None
-_sdk_commit = (CFG.get("sdk") or {}).get("commit")
-if _sdk_commit:
-    SDK_DIR = os.path.join(REPO_ROOT, "third_party", f"unitree_sdk2_python-{str(_sdk_commit)[:7]}")
-    if not os.path.isfile(os.path.join(SDK_DIR, "unitree_sdk2py", "__init__.py")):
-        _fail(f"ROBOT='{ROBOT}' 용 unitree_sdk2py {str(_sdk_commit)[:7]} 없음: {SDK_DIR} — "
-              f"'ROBOT={ROBOT} source activate_tv.sh' 를 한 번 실행하면 자동으로 받습니다")
-    _loaded = sys.modules.get("unitree_sdk2py")
-    if _loaded is not None and not os.path.abspath(_loaded.__file__).startswith(SDK_DIR + os.sep):
-        _fail(f"unitree_sdk2py 가 robot_env 보다 먼저 import 됨 ({_loaded.__file__}) — "
-              f"ROBOT='{ROBOT}' 는 {SDK_DIR} 를 써야 함 (import 순서 확인)")
-    if SDK_DIR not in sys.path:
-        sys.path.insert(0, SDK_DIR)
 if CHECK and os.path.basename(sys.argv[0]) not in CHECK_ALLOWED:
     _fail(f"ROBOT_CHECK=1 (모터 번호 확인 모드) 에서는 {sorted(CHECK_ALLOWED)} 만 실행 — "
           f"{os.path.basename(sys.argv[0])} 거부")

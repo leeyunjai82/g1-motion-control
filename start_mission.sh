@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # G1 미션 스택 실행 스크립트 (마커 접근 → 파지 → 후진 → 운반 → 내려놓기)
 # 위치: <repo>/start_mission.sh
-# 사용: ROBOT=g1 ./start_mission.sh
+# 사용: ./start_mission.sh
 # 종료: Ctrl+C (TERM 후 8초 안 죽으면 KILL)
 #
 # 구성 (기동 순서 = 의존 순서):
@@ -15,7 +15,7 @@
 #     POST :50030/grab      잡기 — 박스 정렬·파지·들기·후진 한 걸음
 #     POST :50030/place     놓기 — 한걸음 전진·내려놓기·후진·release
 #   접근은 잡기 전에도 놓기 전에도 동일(/approach 하나).
-#   pilot_server(50040)는 별도 실행: ROBOT=g1 python common/pilot_server.py
+#   pilot_server(50040)는 별도 실행: python common/pilot_server.py
 #
 # ※ robot_server(50000)와 동시에 쓰지 말 것 — loco 명령 소스가 둘이 됨.
 set -u

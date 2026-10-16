@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # 통합 잡기 서비스 실행 스크립트
 # 위치: <repo>/start_robot.sh
-# 사용: ROBOT=g1 ./start_robot.sh
+# 사용: ./start_robot.sh            (G1 전용 — ROBOT 은 안 줘도 g1)
 # 종료: Ctrl+C (TERM 후 8초 안 죽으면 KILL)
 set -u
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-# ROBOT 미지정/미지원이면 여기서 거부 (이전 서버 정리보다 먼저)
+# robot.yaml 없음 / enabled: false 면 여기서 거부 (이전 서버 정리보다 먼저)
 source "$ROOT/robot_env.sh" || exit 1
 require_robot
 LOG_DIR="$ROOT/logs"
@@ -16,7 +16,7 @@ mkdir -p "$LOG_DIR"
 DAY="$(date '+%Y%m%d')"
 
 # 관리 대상 스크립트 (이름 기준 sweep)
-TARGETS=("rs_stream.py" "arm_server.py" "robot_server.py" "dashboard.py" "detect_marker.py" "detect_box.py" "head_track.py")
+TARGETS=("rs_stream.py" "arm_server.py" "robot_server.py" "dashboard.py" "detect_marker.py" "detect_box.py")
 
 # 로그 타임스탬프 필터 stamp() 는 robot_env.sh 에 있음 (mawk 줄 단위 처리 포함)
 
@@ -72,16 +72,9 @@ sweep_zombies "cleanup"
 source "$ROOT/activate_tv.sh" || exit 1
 cd "$ROOT/common"
 
-# 보행·마커 추종이 없는 로봇(robot.yaml features.locomotion: false, H2)은 마커 인식(detect_marker)을 띄우지 않는다
+# robot.yaml features.locomotion: false 면 마커 인식(detect_marker)을 띄우지 않는다 (G1 은 true)
 LOCO=$(python -c 'import sys,yaml; print(1 if (yaml.safe_load(open(sys.argv[1])).get("features") or {}).get("locomotion", True) else 0)' \
        "$ROOT/robots/$ROBOT/robot.yaml") || exit 1
-# 머리 카메라 인식(head_track, H2): robot.yaml 에 head_track 이 있고 gstreamer 가 깔려 있을 때만
-HEADCAM=$(python -c 'import sys,yaml; print(1 if yaml.safe_load(open(sys.argv[1])).get("head_track") else 0)' \
-       "$ROOT/robots/$ROBOT/robot.yaml") || exit 1
-if [ "$HEADCAM" = "1" ] && ! command -v gst-launch-1.0 >/dev/null 2>&1; then
-  echo "[start] ⚠️ gst-launch-1.0 없음 → head_track(머리 카메라 인식) 생략 — common/ctrl/head_cam.py 의 apt 설치 참고"
-  HEADCAM=0
-fi
 
 PIDS=()
 NAMES=()
@@ -167,13 +160,6 @@ python -u ctrl/detect_box.py    > >(stamp >> "$LOG_DIR/detect_box_$DAY.log")    
 PIDS+=($!); NAMES+=("detect_box")
 sleep 1
 
-if [ "$HEADCAM" = "1" ]; then
-  echo "[start] head_track    (50013) ... 머리 카메라 왼눈 얼굴·사람 / 오른눈 사물 (보기만)"
-  python -u head_track.py       > >(stamp >> "$LOG_DIR/head_track_$DAY.log")    2>&1 &
-  PIDS+=($!); NAMES+=("head_track")
-  sleep 1
-fi
-
 if [ "$LOCO" = "1" ]; then
 cat <<EOF
   ✓ 6개 서버 실행 중  (ROBOT=$ROBOT)
@@ -199,7 +185,6 @@ cat <<EOF
     - Dashboard     : http://localhost:50003/dashboard (3D viewer + video + depth)
     - rs_stream     : http://localhost:50001/video_feed
     - detect_box    : http://localhost:50010/          (박스 인식)
-    - head_track    : http://localhost:50013/          (머리 카메라 인식 — 앱 video_hub 끔·Stereo patch PC1 켬 필요, 로그 head_track_$DAY.log)
 
   사용:
     1) http://localhost:50000/ 접속 (제어)

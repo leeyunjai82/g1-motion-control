@@ -5,8 +5,8 @@ cam_marker_check.py — ArUco 마커로 카메라 장착값(robot.yaml camera) �
   마커: DICT_4X4_50, 한 변 45 mm (detect_marker.py 와 같음, --size 로 변경)
   rs_stream.py 등 카메라를 쓰는 프로그램은 먼저 끌 것.  IMU 까지 쓰려면 sudo (또는 RealSense udev 규칙).
 
-  ROBOT_CHECK=1 ROBOT=h2 python utils/cam_marker_check.py --id 0 --watch           # 계속 출력
-  ROBOT_CHECK=1 ROBOT=h2 python utils/cam_marker_check.py --id 0 --points 0.45,0.55 # 2점 보정
+  ROBOT_CHECK=1 python utils/cam_marker_check.py --id 0 --watch           # 계속 출력
+  ROBOT_CHECK=1 python utils/cam_marker_check.py --id 0 --points 0.45,0.55 # 2점 보정
 
   마커 3D 위치는 두 방법으로 구한다.
     depth : 마커 중심 픽셀의 D435i 깊이(컬러에 정렬, 7×7 중앙값) → 컬러 내부 파라미터로 역투영

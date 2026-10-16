@@ -3,8 +3,8 @@
 robot_state.py — 팔 명령이 로봇에 먹는지 진단 (읽기 전용: 조회 API + DDS 구독만, 명령 송신 없음)
 
 사용 (arm_server 가 떠 있는 상태에서 다른 터미널):
-  ROBOT=h2 source activate_tv.sh
-  ROBOT_CHECK=1 ROBOT=h2 python utils/robot_state.py
+  source activate_tv.sh
+  ROBOT_CHECK=1 python utils/robot_state.py
 
 출력
   1) LocoClient 조회: GetFsmId(7001) / GetFsmMode(7002) / GetArmSdkStatus(7007) / GetAvailableFsmIds(7008)
