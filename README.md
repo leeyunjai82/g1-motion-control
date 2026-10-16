@@ -15,6 +15,7 @@
 | 부분 | 출처 |
 | --- | --- |
 | G1 코드 · 설정 · 모션 | `h2-motion-control` `00844a1` (G1 + Ubuntu 24.04 정리가 같이 있는 마지막 커밋) — G1 은 `g1-motion-control.red` `731075b` 기준 |
+| `.red` 2026-10-12 변경 | `0239bdd` 박스 모델 box11s-seg2 · seg 마스크 수정, `0d3c343` 카메라 848×480 · K 를 카메라에서, `9d008de` 잡기 접근 폭 0.15 · 박스 잡기 2 cm 몸쪽 · 웹 색상, `eeff3c8`·`11476fc` 웹 이름 Pion — `.red` 마지막 `11476fc` 와 같은 동작 |
 | 가상환경 스냅샷 · 재구성 문서 | `h2-motion-control` `592d235` (`utils/env_snapshot.sh`, `REBUILD_ENV.md`) |
 | 웹 UI `Cache-Control: no-cache` | `h2-motion-control` `95bc553` (+ 다른 웹 서버에도 같이 적용) |
 | sudo 로 만든 파일의 소유자 유지 | `h2-motion-control` `7b4e607` 의 chown 부분 |
@@ -39,15 +40,19 @@
 자원(하드웨어)마다 소유 프로세스는 하나. 나머지는 HTTP 로 통신합니다.
 
 ```
-rs_stream      :50001   RealSense 카메라 (단독 점유) → MJPEG / depth API
-detect_marker  :50011   ArUco 마커 자세 (rs_stream 사용)
-detect_box     :50010   박스 인식, 파지점 (rs_stream 사용, OpenVINO intel:cpu)
+rs_stream      :50001   RealSense 카메라 (단독 점유, 기본 848×480) → MJPEG / depth API / GET /intrinsics (카메라 K)
+detect_marker  :50011   ArUco 마커 자세 (rs_stream 사용, 시작 시 K 를 rs_stream 에서 읽음)
+detect_box     :50010   박스 인식(box11s-seg2), 파지점 (rs_stream 사용, OpenVINO intel:cpu, 시작 시 K 를 rs_stream 에서 읽음)
 arm_server     :50022   rt/arm_sdk 단독 점유 — 팔/허리, IK, hold/release
 robot_server   :50000   오케스트레이터 — 잡기 시퀀스, 마커 추종, 웹 UI
 dashboard      :50003   3D URDF 뷰어 / 관절 상태 (rt/lowstate 읽기 전용)
 simulator      :8000    모션 에디터 (Joint + IK), arm_server 경유
 launcher       :80      FSM 버튼 + start_robot.sh 실행 웹 (root)
 ```
+
+- 웹 이름: Pion·manipulation (:50000) / Pion·launcher (:80) / Pion motion editor (:8000).
+- 카메라 해상도는 `RS_W` / `RS_H` 환경변수로 바꿀 수 있습니다 (기본 848×480). 인식 서버는 시작할 때 읽은 K 의 해상도와 다른 프레임은 쓰지 않으므로,
+  해상도를 바꾸면 rs_stream 과 인식 서버를 같이 다시 시작하세요 (`start_robot.sh` 를 다시 실행).
 
 규칙:
 - **팔/허리**: 모든 프로세스는 `arm_server` 를 거칩니다 (`rt/arm_sdk` 는 publisher 하나만 허용).
@@ -171,8 +176,9 @@ g1-motion-control/
 
 ## 로봇 설정 — `robots/g1/robot.yaml`
 
-G1 값은 모두 여기서 읽습니다 (`common/robot_env.py` → `CFG`). `.red` 731075b 상수 그대로입니다
-(`python utils/check_g1_equiv.py <red 경로> .` 로 원본과 같은지 확인 — 상수, LowCmd 35 슬롯, launcher HTML, FSM 규칙).
+G1 값은 모두 여기서 읽습니다 (`common/robot_env.py` → `CFG`). `.red` 11476fc 와 같은 값입니다
+(`python utils/check_g1_equiv.py <red 경로> .` 로 원본과 같은지 확인 — 상수, LowCmd 35 슬롯, launcher HTML, FSM 규칙,
+박스 모델 바이트, 848×480·K 로드, 잡기 접근 폭·박스 2 cm. 사용법은 스크립트 머리말).
 
 | 항목 | 키 |
 | --- | --- |
@@ -180,8 +186,9 @@ G1 값은 모두 여기서 읽습니다 (`common/robot_env.py` → `CFG`). `.red
 | FSM ID / 전이 규칙 / launcher 문구 | `fsm` |
 | IK 잠금 관절, 손끝(L_ee/R_ee) | `ik` |
 | 기본 팔 자세 | `default_arm_deg` |
-| pelvis→torso, 잡기 z 오프셋 | `frames`, `grab` |
+| pelvis→torso, 잡기 z 오프셋, 접근 폭(`approach_extra` 0.15), 박스 잡기 x 보정(`box_grab_x_extra` −0.02) | `frames`, `grab` |
 | **D435i 장착 위치** | `camera` (x, y, z [m, torso_link 기준], pitch_deg [아래로 숙인 각]) |
+| 카메라 K | 실기는 rs_stream `/intrinsics` (카메라에서 읽음). `camera.intrinsics` (640×480) 는 시뮬 가상 카메라 전용 |
 | 연결 로봇 확인 | `identity.mode_machine` (`utils/check_robot_id.py` 로 측정) |
 | 실행 허용 | `enabled` (false 면 모든 스크립트/서버가 거부 — 시뮬 제외) |
 | 보행 | `features.locomotion` (G1 true) |

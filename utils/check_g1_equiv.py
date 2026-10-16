@@ -1,8 +1,10 @@
-"""G1 동등성 검사 — g1-motion-control.red(731075b) 원본 상수/동작 vs robot.yaml 로 바꾼 코드.
+"""G1 동등성 검사 — g1-motion-control.red 원본 상수/동작 vs robot.yaml 로 바꾼 코드.
 
 로봇 없이 실행 (unitree_sdk2py 는 가짜 모듈로 대체, numpy·pyyaml·fastapi·uvicorn 필요).
-  git clone https://github.com/leeyunjai82/g1-motion-control.red /tmp/red && git -C /tmp/red checkout 731075b
+  git clone https://github.com/leeyunjai82/g1-motion-control.red /tmp/red && git -C /tmp/red checkout 11476fc
+  cp /tmp/red/high/ctrl/g1_29_model_cache.pkl robots/g1/      # IK 캐시 비교용 (git 제외 파일)
   python utils/check_g1_equiv.py /tmp/red .
+  기준: 11476fc (.red 2026-10-12 마지막). 731075b 와 비교하면 [6] 의 0239bdd~11476fc 항목이 다르게 나온다.
 
 검사: 카메라·잡기·프레임·기본 팔 자세 상수, 관절 맵(순서 포함), IK 잠금/EE, URDF·IK 캐시 파일,
       robot_arm.py 초기화 후 LowCmd 35 슬롯 (mode/q/dq/tau/kp/kd), run_launcher HTML 원문·FSM 표·allowed() 진리표
@@ -157,6 +159,29 @@ for k in ("FSM_NAME", "FSM_BAL", "STANDING", "STEPS"):
 tbl_o = {(t, c, r): lo.allowed(t, c, r) for t in (1, 3, 4, 501, 999) for c in (None, 0, 1, 2, 3, 4, 500, 501, 702, 801) for r in (False, True)}
 tbl_n = {(t, c, r): ln.allowed(t, c, r) for t in (1, 3, 4, 501, 999) for c in (None, 0, 1, 2, 3, 4, 500, 501, 702, 801) for r in (False, True)}
 check(f"allowed() 진리표 {len(tbl_o)}건 (사유 문구 포함)", tbl_o, tbl_n)
+
+print("[6] .red 0239bdd~11476fc 로 옮긴 것 (박스 모델·마스크, 848x480·K, 잡기 폭·박스 2cm)")
+import hashlib, re
+md5 = lambda path: hashlib.md5(open(path, "rb").read()).hexdigest()
+for f in ("box.pt", "box_openvino_model/box.bin", "box_openvino_model/box.xml", "box_openvino_model/metadata.yaml"):
+    check(f"모델 {f} 바이트 동일", md5(H(os.path.join("models", f))), md5(os.path.join(NEW, "common", "models", f)))
+src = lambda path: open(path, encoding="utf-8").read()
+check("box_estimator retina_masks / _mask_to_image",
+      ("retina_masks=True" in src(H("ctrl/box_estimator.py")), "_mask_to_image" in src(H("ctrl/box_estimator.py"))),
+      ("retina_masks=True" in src(os.path.join(NEW, "common/ctrl/box_estimator.py")),
+       "_mask_to_image" in src(os.path.join(NEW, "common/ctrl/box_estimator.py"))))
+rs_def = lambda t: tuple(re.findall(r'os\.environ\.get\("RS_[WH]", (\d+)\)', t)) or None
+check("rs_stream 기본 해상도 (RS_W, RS_H)", rs_def(src(H("rs_stream.py"))), rs_def(src(os.path.join(NEW, "common/rs_stream.py"))))
+check("rs_stream GET /intrinsics", '@app.get("/intrinsics")' in src(H("rs_stream.py")),
+      '@app.get("/intrinsics")' in src(os.path.join(NEW, "common/rs_stream.py")))
+for f in ("ctrl/detect_box.py", "ctrl/detect_box_conv.py", "ctrl/detect_marker.py"):
+    check(f"{f} K 를 카메라에서 (fetch_intrinsics · FrameSizeGuard)",
+          ("fetch_intrinsics(" in src(H(f)), "FrameSizeGuard(" in src(H(f))),
+          ("fetch_intrinsics(" in src(os.path.join(NEW, "common", f)), "FrameSizeGuard(" in src(os.path.join(NEW, "common", f))))
+c = consts(H("robot_server.py"), {"APPROACH_EXTRA", "GRAB_X_OFFSET", "BOX_GRAB_X_EXTRA"})
+check("APPROACH_EXTRA", c["APPROACH_EXTRA"], float(RE.CFG["grab"].get("approach_extra", 0.10)))
+check("GRAB_X_OFFSET", c["GRAB_X_OFFSET"], float(RE.CFG["grab"].get("grab_x_offset", -0.15)))
+check("BOX_GRAB_X_EXTRA (박스만)", c.get("BOX_GRAB_X_EXTRA", 0.0), float(RE.CFG["grab"].get("box_grab_x_extra", 0.0)))
 
 print("\n결과:", "✓ 전부 동일" if not fails else f"✗ 불일치 {len(fails)}건: {fails}")
 sys.exit(1 if fails else 0)

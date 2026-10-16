@@ -353,6 +353,8 @@ conda explicit · pip(torch/일반/git) · activate.d 훅 · `system.txt`(커널
 | RealSense 인식 안 됨 / 권한 오류 | USB 3.0 포트, 3단계 udev 규칙 파일 설치 후 재연결 |
 | RealSense 가 `2.1` (USB2) 로 잡힘 | 케이블 교체, 허브 없이 SS 포트 |
 | D435i IMU 권한 오류 | sudo 로 실행 또는 3단계 udev 규칙 |
+| detect_box / detect_marker: `카메라 K 를 읽지 못함` | rs_stream(50001) 이 60 초 안에 안 뜬 것 — 카메라 연결·rs_stream 로그 확인 (고정 K 로 대체하지 않고 멈춤) |
+| `프레임 WxH ≠ K 해상도 … 프레임 무시` | rs_stream 해상도(`RS_W`/`RS_H`)가 인식 서버 시작 뒤 바뀜 — `start_robot.sh` 다시 실행 |
 | 손 `/dev/ttyACM0` 열기 실패 | `dialout` 그룹, ModemManager (11단계) |
 | `pickle.load` 시 `class version ...` | 다른 pinocchio 버전의 캐시 → `robots/g1/g1_29_model_cache.pkl` 삭제 후 재생성 (14단계) |
 | 로그가 늦게 써짐 | `stamp()` 를 거치지 않은 실행 — `start_*.sh` 로 실행 (mawk `-W interactive`) |
