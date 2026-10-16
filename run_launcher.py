@@ -415,7 +415,7 @@ async def lifespan(app: FastAPI):
         _stop_robot()
 
 
-app = FastAPI(title="G1 Launcher", lifespan=lifespan)
+app = FastAPI(title="Pion launcher", lifespan=lifespan)
 
 
 @app.post("/fsm/{target}")
@@ -472,7 +472,7 @@ def i18n_js():
 HTML = r"""<!DOCTYPE html>
 <html lang="ko"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>G1 Launcher</title>
+<title>Pion launcher</title>
 <style>
 :root{--bg:#0e1116;--panel:#161b22;--panel2:#1c232d;--line:#2a3340;--ink:#c9d4e0;--dim:#6b7785;
   --accent:#00b7eb;--accent2:#7fd8f5;--ok:#3ddc97;--warn:#ff6b6b;--amber:#ffb454}   /* 메인 = 회사 메인 컬러 (H2 와 같음), 상태 OK 는 --ok */
@@ -533,7 +533,7 @@ pre{margin:0;flex:1;min-height:120px;overflow:auto;background:#0a0d12;border:1px
 .mbox .run{background:#5a1f1f;border-color:var(--warn);color:#fff}
 </style></head><body>
 <script src="/i18n.js"></script>
-<div class="top"><b>G1 Launcher</b><span class="r">:80 · 웹 버튼은 비상정지가 아닙니다 — E-STOP/리모컨을 손에 두세요</span><span id="lang-slot" style="margin-left:12px"></span></div>
+<div class="top"><b>Pion<span style="color:var(--ink)">·launcher</span></b><span class="r">:80 · 웹 버튼은 비상정지가 아닙니다 — E-STOP/리모컨을 손에 두세요</span><span id="lang-slot" style="margin-left:12px"></span></div>
 <div class="wrap">
   <div class="card">
     <div class="h"><span>자세 (FSM)</span><span></span></div>
@@ -656,7 +656,7 @@ poll();setInterval(poll,500);
 
 
 def _render_html(h):
-    """HTML 의 G1 FSM 값을 robot.yaml 값으로 바꾼다 (G1 이면 원문 그대로).
+    """HTML 의 G1 FSM 값을 robot.yaml 값으로 바꾼다 (G1 이면 원문 그대로). 이름은 .red 와 같은 'Pion·launcher' 고정.
     목록 → 임시 표식 → 단독 '501' → 표식을 실제 값으로 (G1 목록 안의 501 이 두 번 바뀌지 않게)."""
     js = lambda xs: "[" + ",".join(str(x) for x in xs) + "]"
     lists = [
@@ -666,7 +666,6 @@ def _render_html(h):
         ("[1,4,501,3]", js(STEPS)),                       # 순서 유지 (정렬 안 함)
     ]
     reps = [(old, f"@@L{k}@@", 1) for k, (old, _) in enumerate(lists)] + [
-        ("<b>G1 Launcher</b>", f"<b>{robot_env.ROBOT.upper()} Launcher</b>", 1),
         ("Lock Standing<small>", f"{_LBL['lock_button']}<small>", 1),
         ("Walk 3DoF waist<small>", f"{_LBL['run_button']}<small>", 1),
         ("501", str(FSM_RUN), 10),

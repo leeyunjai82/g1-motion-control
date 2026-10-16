@@ -1,5 +1,5 @@
 """
-simulator.py — G1 Motion Editor 통합본 (관절 + IK)
+simulator.py — Pion motion editor (G1, 관절 + IK)
 Version: 7.0
 
 simulator.py(관절 편집기 v5.3) + simulator_ik.py(IK 편집기 v6.3) 통합.
@@ -206,7 +206,7 @@ def _move_ik(left_xyz, right_xyz, left_rpy, right_rpy, duration):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global hand_controller, arm, loco
-    print("--- G1 Motion Editor 통합본 (v7.0) ---")
+    print("--- Pion motion editor (G1, v7.2) ---")
     print("  팔/허리: arm_server(50022) 경유 · 걷기: LocoClient · 손: 단일 동글")
 
     robot_env.dds_init()
@@ -237,7 +237,7 @@ async def lifespan(app: FastAPI):
     print("--- 서버 종료 (자세 유지 — arm_server 관리) ---")
 
 
-app = FastAPI(title="G1 Motion Editor (통합)", version="7.0", lifespan=lifespan)
+app = FastAPI(title="Pion motion editor", version="7.2", lifespan=lifespan)
 
 # 모터 번호 확인 화면 (/check) — 가상/실기 모두
 from joint_check import router as joint_check_router
