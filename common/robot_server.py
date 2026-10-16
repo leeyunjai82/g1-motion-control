@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Version: 1.8
+# Version: 1.9
 # Changes:
+#   1.9 - 웹 UI(/)·/i18n.js 에 Cache-Control: no-cache — git pull 뒤 새로고침해도 브라우저가 예전 i18n.js 를 쓰던 것
+#          (FileResponse 는 Last-Modified 가 있어 브라우저가 검증 없이 한동안 캐시를 씀) — h2-motion-control 95bc553
 #   1.8 - /viz 에 비교용 다른 박스 추정 방식(other) + 차이(cmp) 추가 — 표시 전용, 잡기는 detect_box BOX_METHOD 값
 #   1.7 - 잡기 단계별 소요 시간 기록 + GET /grab_history (최근 5회) — 표시용
 #   1.6 - 잡기 진행 단계(stage) 노출(/status, /grab_status), 3D 시각화용 GET /viz (박스·손 목표)
@@ -1764,10 +1766,12 @@ async def loco_stop_endpoint():
 # 웹 UI — robot_web.html 읽어 viewer 코드 삽입
 # ==========================================
 WEB_HTML_PATH = os.path.join(current_dir, "robot_web.html")
+NO_CACHE = {"Cache-Control": "no-cache"}   # 매번 서버에 확인 (git pull 뒤 바로 새 파일)
 
 @app.get("/i18n.js", include_in_schema=False)
 async def i18n_js():
-    return FileResponse(os.path.join(current_dir, "i18n.js"), media_type="application/javascript")
+    return FileResponse(os.path.join(current_dir, "i18n.js"), media_type="application/javascript",
+                        headers=NO_CACHE)
 
 
 def _ui_inject():
@@ -1794,7 +1798,7 @@ def _ui_inject():
 @app.get("/", include_in_schema=False)
 async def index():
     html = open(WEB_HTML_PATH, encoding="utf-8").read()
-    return HTMLResponse(html.replace("</head>", _ui_inject() + "</head>", 1))
+    return HTMLResponse(html.replace("</head>", _ui_inject() + "</head>", 1), headers=NO_CACHE)
 
 
 if __name__ == "__main__":
