@@ -299,6 +299,7 @@ def check_save(body: dict):
                         f"{'_sim' if robot_env.SIM else ''}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
+    robot_env.own_by_sudo_user(path)
     return {"ok": True, "path": path}
 
 

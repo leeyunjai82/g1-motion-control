@@ -201,6 +201,8 @@ class ArmIK:
 
         with open(self.cache_path, "wb") as f:
             pickle.dump(data, f)
+        import robot_env   # __init__ 안에서만 import 되어 있음
+        robot_env.own_by_sudo_user(self.cache_path)   # sudo 로 처음 만들어도 소유자는 원래 사용자
 
     # Load both robot.model and reduced_robot.model
     def load_cache(self):

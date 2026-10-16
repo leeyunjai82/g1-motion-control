@@ -170,6 +170,17 @@ def dds_init(interface=None):
     _dds_inited = DDS_DOMAIN
 
 
+def own_by_sudo_user(path):
+    """sudo 로 실행돼 root 가 만든 파일을 원래 사용자(SUDO_UID/SUDO_GID) 소유로 — h2-motion-control 7b4e607 과 같은 방식.
+    root 소유로 남으면 나중에 일반 계정으로 실행할 때 덮어쓰기 실패. sudo 가 아니면 아무것도 안 함."""
+    uid, gid = os.environ.get("SUDO_UID"), os.environ.get("SUDO_GID")
+    if uid and gid and os.geteuid() == 0:
+        try:
+            os.chown(path, int(uid), int(gid))
+        except OSError:
+            pass
+
+
 def loco_client_class():
     """robot.yaml sdk.loco_module 의 LocoClient 클래스 (import 실패 시 ImportError)."""
     import importlib
