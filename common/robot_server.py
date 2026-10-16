@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-# Version: 1.9
+# Version: 1.10
 # Changes:
+#   1.10 - .red 9d008de: APPROACH_EXTRA 0.10 → 0.15 (robot.yaml grab.approach_extra — 측면 하강 때 손이 박스에 걸리던 문제),
+#          박스 잡기 x 2cm 더 몸쪽 (robot.yaml grab.box_grab_x_extra −0.02, 마커 잡기는 그대로).
+#          place(제자리 내려놓기)는 그 2cm 를 빼고 계산해 원래 자리에 놓음
 #   1.9 - 웹 UI(/)·/i18n.js 에 Cache-Control: no-cache — git pull 뒤 새로고침해도 브라우저가 예전 i18n.js 를 쓰던 것
 #          (FileResponse 는 Last-Modified 가 있어 브라우저가 검증 없이 한동안 캐시를 씀) — h2-motion-control 95bc553
 #   1.8 - /viz 에 비교용 다른 박스 추정 방식(other) + 차이(cmp) 추가 — 표시 전용, 잡기는 detect_box BOX_METHOD 값
@@ -141,6 +144,7 @@ GRAB_Z_OFFSET  = float(robot_env.CFG["grab"]["z_offset"])   # robot.yaml grab.z_
 #   · IK 목표점 L_ee/R_ee = 손목 yaw 에서 +5cm 지점 (손바닥 접촉면 아님)
 #   좌표 변환을 pelvis 기준으로 정확히 고치면 이 값을 0.044 줄여야 같은 높이가 된다.
 GRAB_X_OFFSET  = float(robot_env.CFG["grab"].get("grab_x_offset", -0.15))
+BOX_GRAB_X_EXTRA = float(robot_env.CFG["grab"].get("box_grab_x_extra", 0.0))   # 박스만: 잡을 때 x 를 더 옮김 (G1 −0.02 = 2cm 몸쪽, 마커 잡기는 그대로)
 # ↑ 좁혀 잡을 때 손 x 를 박스 중심에서 이만큼 옮김 (robot.yaml grab.grab_x_offset). G1 −0.15 (실험값, 몸쪽으로 당김).
 #   H2 는 카메라를 마커로 보정했으므로 0 (박스 옆면 가운데를 그대로 잡음).
 GRAB_INSET_FRAC = float(robot_env.CFG["grab"].get("grab_inset_frac", 0.0))
@@ -234,6 +238,7 @@ class GrabController:
         self.arm  = arm
         self.speak = speak or (lambda t: print(f"[TTS-DUMMY] {t}"))
         self.robot_available = robot_available
+        self._grab_x_extra = 0.0          # 이번 잡기에서 GRAB_X_OFFSET 에 더한 값 (박스 BOX_GRAB_X_EXTRA / 마커 0) — place 계산용
 
         # 손목 RPY
         r, p, y = WRIST_RPY_DEG
@@ -445,7 +450,7 @@ class GrabController:
         # 잡기에서 박스를 몸쪽으로 (GRAB_X_OFFSET + PULL_X) 만큼 당겼으므로, 원래 자리로 다시 밀어 놓는다
         #   px = 처음 잡은 손 x (박스 중심 − GRAB_INSET_X) → 박스가 원래 자리에 놓임
         #   → 다음 회에도 같은 자리에서 인식·잡기 (반복 시연). 들어 올린 높이에서 앞으로 → 내려놓기
-        px = grab_x_base - GRAB_X_OFFSET - PULL_X
+        px = grab_x_base - GRAB_X_OFFSET - self._grab_x_extra - PULL_X
         print(f"[PLACE] 들어 올린 채 {PLACE_HOLD_SEC:.1f}초")
         time.sleep(PLACE_HOLD_SEC)
         self._stage("놓기")
@@ -527,6 +532,7 @@ class GrabController:
         half_w   = self.box_size["width"] / 2
         height_b = self.box_size["height"]
 
+        self._grab_x_extra = 0.0          # 마커 잡기는 BOX_GRAB_X_EXTRA 안 씀
         grab_x_base = mx + GRAB_X_OFFSET
         grab_z  = mz - height_b / 2 + GRAB_Z_OFFSET
         above_z = mz + 0.10
@@ -640,9 +646,10 @@ class GrabController:
         if not self._move(appL, appR, 1.0, "⑤ 측면 하강", l_rot, r_rot): return
         time.sleep(0.2)
 
-        # 잡기 — 실제 L/R 점 + X는 몸쪽으로 당김(GRAB_X_OFFSET)
-        gripL = [Lx + GRAB_X_OFFSET, Ly + LEFT_HAND_Y_OFFSET, grab_z]
-        gripR = [Rx + GRAB_X_OFFSET, Ry, grab_z]
+        # 잡기 — 실제 L/R 점 + X는 몸쪽으로 당김(GRAB_X_OFFSET + 박스만 BOX_GRAB_X_EXTRA)
+        self._grab_x_extra = BOX_GRAB_X_EXTRA
+        gripL = [Lx + GRAB_X_OFFSET + BOX_GRAB_X_EXTRA, Ly + LEFT_HAND_Y_OFFSET, grab_z]
+        gripR = [Rx + GRAB_X_OFFSET + BOX_GRAB_X_EXTRA, Ry, grab_z]
         self._stage("잡기")
         if not self._move(gripL, gripR, 2.5, "⑥ 잡기", l_rot, r_rot): return
         time.sleep(1.0)
@@ -664,7 +671,7 @@ class GrabController:
             grp_off_L = yL - yc
             grp_off_R = yc - gripR[1]
         else:
-            grab_x_base = cx + GRAB_X_OFFSET + PULL_X
+            grab_x_base = cx + GRAB_X_OFFSET + BOX_GRAB_X_EXTRA + PULL_X
             grp_off_L = abs(Ly - cy)
             grp_off_R = abs(Ry - cy)
             yc = 0.0
